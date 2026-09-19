@@ -5,6 +5,8 @@ import { Users, TrendingUp, Zap, BarChart3, Eye } from 'lucide-react';
 
 function TeamTrendScatterChart({ groupedData, selectedTeam }) {
   const [metric, setMetric] = useState('ev');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   const metricMeta = {
     ev: { label: '打球速度', unit: 'km/h', color: '#10b981', keys: EV_KEYS },
@@ -28,58 +30,110 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
         const rawDate = e.game_date || e.date || e['日付'] || e['Date'] || e['gameDate'] || '';
         if (!rawDate) return;
 
+        const dateStr = String(rawDate).trim().split('T')[0].split(' ')[0];
+        if (startDate && dateStr < startDate) return;
+        if (endDate && dateStr > endDate) return;
+
         const val = parseNumeric(getDataValue(e, currentMeta.keys));
         if (val !== 0 && !isNaN(val)) {
-          const dateStr = String(rawDate).trim().split('T')[0].split(' ')[0];
-          list.push({
-            date: dateStr,
-            val,
-            player,
-          });
+          // Calculate timestamp for continuous date X-axis (prevents duplicate ticks)
+          const parts = dateStr.split('-');
+          let timeMs = 0;
+          if (parts.length === 3) {
+            timeMs = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
+          } else {
+            timeMs = new Date(dateStr).getTime();
+          }
+
+          if (!isNaN(timeMs) && timeMs > 0) {
+            list.push({
+              date: dateStr,
+              timeMs,
+              val,
+              player,
+            });
+          }
         }
       });
     });
 
-    return list.sort((a, b) => a.date.localeCompare(b.date));
-  }, [selectedTeam, groupedData, currentMeta]);
+    return list.sort((a, b) => a.timeMs - b.timeMs);
+  }, [selectedTeam, groupedData, currentMeta, startDate, endDate]);
 
   return (
-    <div className="w-full bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl mt-8 p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-700 pb-4 mb-5">
+    <div className="w-full bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl mt-8 p-4 sm:p-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700 pb-4 mb-5">
         <div className="flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-purple-400" />
-          <h3 className="font-extrabold text-white text-lg">日付別 打撃指標の変動推移 (チーム散布図)</h3>
+          <TrendingUp className="w-5 h-5 text-purple-400 flex-shrink-0" />
+          <h3 className="font-extrabold text-white text-base sm:text-lg">日付別 打撃指標の変動推移 (チーム散布図)</h3>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400 font-bold">Y軸指標:</span>
-          <select
-            value={metric}
-            onChange={e => setMetric(e.target.value)}
-            className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-inner"
-          >
-            <option value="ev">打球速度 (km/h)</option>
-            <option value="la">打球角度 (°)</option>
-            <option value="bs">バット速度 (km/h)</option>
-            <option value="aa">アッパースイング度 (°)</option>
-          </select>
+        
+        {/* 指標選択 & 日付範囲フィルター */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-bold whitespace-nowrap">日付範囲:</span>
+            <input 
+              type="date" 
+              value={startDate} 
+              onChange={e => setStartDate(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-purple-500"
+            />
+            <span className="text-xs text-slate-500">~</span>
+            <input 
+              type="date" 
+              value={endDate} 
+              onChange={e => setEndDate(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-purple-500"
+            />
+            {(startDate || endDate) && (
+              <button 
+                onClick={() => { setStartDate(''); setEndDate(''); }}
+                className="text-[11px] text-purple-400 hover:text-purple-300 font-bold underline"
+              >
+                全期間
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-bold whitespace-nowrap">Y軸指標:</span>
+            <select
+              value={metric}
+              onChange={e => setMetric(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-xl px-3 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-inner"
+            >
+              <option value="ev">打球速度 (km/h)</option>
+              <option value="la">打球角度 (°)</option>
+              <option value="bs">バット速度 (km/h)</option>
+              <option value="aa">アッパースイング度 (°)</option>
+            </select>
+          </div>
         </div>
       </div>
 
       <div style={{ height: '380px' }} className="w-full">
         {trendData.length === 0 ? (
           <div className="flex items-center justify-center h-full text-slate-500 text-sm italic">
-            選択された指標の日付データが見つかりません
+            選択された期間・指標のデータが見つかりません
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 25, right: 30, bottom: 40, left: 20 }}>
+            <ScatterChart margin={{ top: 25, right: 30, bottom: 40, left: 15 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis 
-                dataKey="date" 
+                type="number"
+                dataKey="timeMs" 
                 name="日付" 
                 stroke="#94a3b8" 
                 fontSize={11}
-                tickLine={false}
+                domain={['auto', 'auto']}
+                tickFormatter={(timeMs) => {
+                  const d = new Date(timeMs);
+                  if (isNaN(d.getTime())) return '';
+                  const m = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  return `${d.getFullYear()}-${m}-${day}`;
+                }}
                 label={{ value: '日付', position: 'insideBottom', offset: -25, fill: '#94a3b8', fontSize: 11, fontWeight: 'bold' }}
               />
               <YAxis 
@@ -538,21 +592,21 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
             
             {/* 左グラフ: バットスピード vs 打球速度 プロット散布図 */}
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg p-5 flex flex-col">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 border-b border-slate-700 pb-3">
-                <div className="flex items-center">
-                  <Zap className="w-5 h-5 text-blue-400 mr-2" />
-                  <h3 className="font-bold text-white text-base">バットスピード vs 打球速度 (プロット分布)</h3>
+              <div className="flex flex-row items-center justify-between gap-2 mb-4 border-b border-slate-700 pb-3">
+                <div className="flex items-center min-w-0">
+                  <Zap className="w-5 h-5 text-blue-400 mr-2 flex-shrink-0" />
+                  <h3 className="font-bold text-white text-sm sm:text-base truncate">バットスピード vs 打球速度</h3>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap bg-slate-900 p-1 rounded-lg border border-slate-700/80">
                   <button 
                     onClick={() => setLeftChartType('scatter')}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all ${leftChartType === 'scatter' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${leftChartType === 'scatter' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                   >
                     プロット
                   </button>
                   <button 
                     onClick={() => setLeftChartType('bar')}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all ${leftChartType === 'bar' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${leftChartType === 'bar' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                   >
                     棒グラフ
                   </button>
@@ -666,7 +720,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                       />
                     </ScatterChart>
                   ) : (
-                    <BarChart data={teamStats.players.slice(0, 15)} margin={{ top: 20, right: 30, left: 15, bottom: 60 }}>
+                    <BarChart data={teamStats.players.slice(0, 15)} margin={{ top: 45, right: 30, left: 15, bottom: 60 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                       <XAxis dataKey="player" stroke="#94a3b8" fontSize={10} interval={0} angle={-45} textAnchor="end" />
                       <YAxis 
@@ -698,7 +752,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                           return null;
                         }}
                       />
-                      <Legend verticalAlign="top" height={36}/>
+                      <Legend verticalAlign="top" wrapperStyle={{ top: 0, left: 0, right: 0, paddingBottom: 15 }} fontSize={11} />
                       {hasBatData && <Bar dataKey="avgBatSpeed" name="平均バットスピード" fill="#3b82f6" fillOpacity={0.6} radius={[4, 4, 0, 0]} />}
                       {hasBatData && <Bar dataKey="maxBatSpeed" name="最大バットスピード" fill="#2563eb" radius={[4, 4, 0, 0]} />}
                       {hasBallData && <Bar dataKey="avgExitVelo" name="平均打球速度" fill="#10b981" fillOpacity={0.6} radius={[4, 4, 0, 0]} />}

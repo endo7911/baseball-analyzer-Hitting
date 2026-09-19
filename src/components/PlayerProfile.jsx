@@ -41,35 +41,34 @@ const SprayChart = ({ data }) => {
     const distance = getDataValue(row, ['hit_distance_sc', 'Distance', 'distance', 'CameraDistance']);
     if (hc_x !== undefined && hc_x !== null && hc_y !== undefined && hc_y !== null && hc_x !== '' && hc_y !== '') {
       const x = (parseNumeric(hc_x) - 125.42) * 1.5 + 150;
-      const y = 300 - (204.44 - parseNumeric(hc_y)) * 1.5;
+      const y = 265 - (204.44 - parseNumeric(hc_y)) * 1.5;
       return { x, y };
     } else {
       const rad = (angle * Math.PI) / 180;
-      // Rapsodo distance is typically in meters. Max distance around 130m-140m.
-      const distScale = Math.min(distance, 140) / 140 * 250; 
+      // Rapsodo distance scale
+      const distScale = Math.min(distance, 140) / 140 * 220; 
       const x = 150 + Math.sin(rad) * distScale;
-      const y = 280 - Math.cos(rad) * distScale;
+      const y = 245 - Math.cos(rad) * distScale;
       return { x, y };
     }
   };
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center" ref={containerRef}>
-      <svg viewBox="0 0 300 300" className="spray-chart-svg w-full h-full max-h-[300px] drop-shadow-xl">
-        {/* Field base */}
-        <path className="spray-field-outfield" d="M150 280 L10 140 A 198 198 0 0 1 290 140 Z" fill="#0f172a" stroke="#334155" strokeWidth="2" />
+    <div className="relative w-full h-full flex items-center justify-center py-2" ref={containerRef}>
+      <svg viewBox="0 0 300 270" className="spray-chart-svg w-full h-full max-h-[280px] drop-shadow-xl">
+        {/* Field base - raised home plate to y=245 for better centering */}
+        <path className="spray-field-outfield" d="M150 245 L10 105 A 198 198 0 0 1 290 105 Z" fill="#0f172a" stroke="#334155" strokeWidth="2" />
         {/* Infield dirt area */}
-        <path className="spray-field-infield" d="M150 280 L210 220 A 84 84 0 0 0 90 220 Z" fill="#1e293b" stroke="#475569" strokeWidth="1" />
+        <path className="spray-field-infield" d="M150 245 L210 185 A 84 84 0 0 0 90 185 Z" fill="#1e293b" stroke="#475569" strokeWidth="1" />
         {/* Foul lines */}
-        <path className="spray-field-lines" d="M150 280 L10 140 M150 280 L290 140" fill="none" stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
+        <path className="spray-field-lines" d="M150 245 L10 105 M150 245 L290 105" fill="none" stroke="#475569" strokeWidth="1" strokeDasharray="4 4" />
         {/* Bases */}
-        <rect x="148" y="278" width="4" height="4" fill="#fff" transform="rotate(45 150 280)" />
+        <rect x="148" y="243" width="4" height="4" fill="#fff" transform="rotate(45 150 245)" />
         {data.map((row, i) => {
           const { x, y } = getCoordinates(row);
           const ev = parseNumeric(getDataValue(row, EV_KEYS));
           const la = parseNumeric(getDataValue(row, LA_KEYS));
           const isHit = (row.events || '').toLowerCase().includes('single') || (row.Result || '').toLowerCase().includes('hit') || (row.events || '').toLowerCase().includes('double') || (row.events || '').toLowerCase().includes('home_run');
-          // Size based on exit velocity, default to 3 if unknown
           const r = ev > 140 ? 4.5 : ev > 120 ? 3.5 : 2.5;
           return (
             <circle 
@@ -96,7 +95,7 @@ const SprayChart = ({ data }) => {
           className="absolute z-50 bg-slate-950/90 border border-slate-700 p-2 rounded shadow-2xl pointer-events-none text-[10px]"
           style={{ 
             left: `${(hoveredPoint.x / 300) * 100}%`, 
-            top: `${(hoveredPoint.y / 300) * 100}%`,
+            top: `${(hoveredPoint.y / 270) * 100}%`,
             transform: 'translate(-50%, -120%)'
           }}
         >
@@ -149,6 +148,8 @@ const VelocityAngleChart = ({ data, xKeys, yKeys, xDomain = ['auto', 'auto'], yD
 
 const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
   const [metric, setMetric] = useState('ev');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   const metricMeta = {
     ev: { label: '打球速度', unit: 'km/h', color: '#10b981', keys: EV_KEYS },
@@ -169,56 +170,106 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
       const rawDate = e.game_date || e.date || e['日付'] || e['Date'] || e['gameDate'] || '';
       if (!rawDate) return;
 
+      const dateStr = String(rawDate).trim().split('T')[0].split(' ')[0];
+      if (startDate && dateStr < startDate) return;
+      if (endDate && dateStr > endDate) return;
+
       const val = parseNumeric(getDataValue(e, currentMeta.keys));
       if (val !== 0 && !isNaN(val)) {
-        const dateStr = String(rawDate).trim().split('T')[0].split(' ')[0];
-        list.push({
-          date: dateStr,
-          val,
-        });
+        const parts = dateStr.split('-');
+        let timeMs = 0;
+        if (parts.length === 3) {
+          timeMs = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
+        } else {
+          timeMs = new Date(dateStr).getTime();
+        }
+
+        if (!isNaN(timeMs) && timeMs > 0) {
+          list.push({
+            date: dateStr,
+            timeMs,
+            val,
+          });
+        }
       }
     });
 
-    return list.sort((a, b) => a.date.localeCompare(b.date));
-  }, [allEvents, currentMeta]);
+    return list.sort((a, b) => a.timeMs - b.timeMs);
+  }, [allEvents, currentMeta, startDate, endDate]);
 
   return (
-    <div className="w-full bg-slate-800/60 p-6 rounded-2xl border border-slate-700 mt-6 print:bg-white print:border-slate-200">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700/60 pb-3 mb-4 print:border-slate-200">
+    <div className="w-full bg-slate-800/60 p-4 sm:p-6 rounded-2xl border border-slate-700 mt-6 print:bg-white print:border-slate-200">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-700/60 pb-3 mb-4 print:border-slate-200">
         <div className="flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-purple-400 print:text-purple-600" />
-          <h3 className="text-xs font-black text-slate-300 uppercase print:text-slate-900">日付別 指標変動散布図</h3>
+          <TrendingUp className="w-5 h-5 text-purple-400 print:text-purple-600 flex-shrink-0" />
+          <h3 className="text-xs sm:text-sm font-black text-slate-300 uppercase print:text-slate-900">日付別 指標変動散布図</h3>
         </div>
-        <div className="flex items-center gap-2 no-print">
-          <span className="text-xs text-slate-400 font-bold">Y軸指標:</span>
-          <select
-            value={metric}
-            onChange={e => setMetric(e.target.value)}
-            className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
-          >
-            <option value="ev">打球速度 (km/h)</option>
-            <option value="la">打球角度 (°)</option>
-            <option value="bs">バット速度 (km/h)</option>
-            <option value="aa">アッパースイング度 (°)</option>
-          </select>
+
+        <div className="flex flex-wrap items-center gap-3 no-print">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 font-bold whitespace-nowrap">範囲:</span>
+            <input 
+              type="date" 
+              value={startDate} 
+              onChange={e => setStartDate(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-purple-500"
+            />
+            <span className="text-xs text-slate-500">~</span>
+            <input 
+              type="date" 
+              value={endDate} 
+              onChange={e => setEndDate(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-purple-500"
+            />
+            {(startDate || endDate) && (
+              <button 
+                onClick={() => { setStartDate(''); setEndDate(''); }}
+                className="text-[10px] text-purple-400 hover:text-purple-300 font-bold underline"
+              >
+                全期間
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 font-bold whitespace-nowrap">Y軸:</span>
+            <select
+              value={metric}
+              onChange={e => setMetric(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
+            >
+              <option value="ev">打球速度 (km/h)</option>
+              <option value="la">打球角度 (°)</option>
+              <option value="bs">バット速度 (km/h)</option>
+              <option value="aa">アッパースイング度 (°)</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      <div style={{ height: '300px' }} className="w-full">
+      <div style={{ height: '320px' }} className="w-full">
         {trendData.length === 0 ? (
           <div className="flex items-center justify-center h-full text-slate-500 text-xs italic">
-            選択された指標の日付データが見つかりません
+            選択された期間・指標のデータが見つかりません
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <ScatterChart margin={{ top: 20, right: 25, bottom: 35, left: 15 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis 
-                dataKey="date" 
+                type="number"
+                dataKey="timeMs" 
                 name="日付" 
                 stroke="#94a3b8" 
                 fontSize={11}
-                tickLine={false}
+                domain={['auto', 'auto']}
+                tickFormatter={(timeMs) => {
+                  const d = new Date(timeMs);
+                  if (isNaN(d.getTime())) return '';
+                  const m = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  return `${d.getFullYear()}-${m}-${day}`;
+                }}
                 label={{ value: '日付', position: 'insideBottom', offset: -20, fill: '#94a3b8', fontSize: 11 }}
               />
               <YAxis 
