@@ -213,7 +213,7 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
   }, [allEvents, currentMeta, startDate, endDate]);
 
   return (
-    <div className="w-full bg-slate-800/60 p-4 sm:p-6 rounded-2xl border border-slate-700 mt-6 print:bg-white print:border-slate-200">
+    <div className="player-trend-card w-full bg-slate-800/60 p-4 sm:p-6 rounded-2xl border border-slate-700 mt-6 print:bg-white print:border-slate-200 print:mt-4 print:p-2 print:border-none print:shadow-none">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-700/60 pb-3 mb-4 print:border-slate-200">
         <div className="flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-purple-400 print:text-purple-600 flex-shrink-0" />
@@ -520,13 +520,33 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
         @media print {
           @page {
             size: A4 portrait;
-            margin: 5mm;
+            margin: 6mm;
           }
           body {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
             background-color: white !important;
           }
+
+          /* Force relative positioning on Recharts containers during window.print() */
+          .recharts-responsive-container {
+            position: relative !important;
+            width: 100% !important;
+            height: 200px !important;
+            min-height: 200px !important;
+          }
+          .recharts-wrapper {
+            position: relative !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 200px !important;
+          }
+          .recharts-surface {
+            width: 100% !important;
+            height: 100% !important;
+          }
+
           /* Prevent dark backgrounds on spray chart SVG during print */
           .spray-field-outfield {
             fill: #f1f5f9 !important;
@@ -549,17 +569,26 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
             display: none !important;
           }
           .player-report-body {
-            gap: 1rem !important;
+            display: block !important;
           }
           .player-chart-card-inner {
-            height: 180px !important;
+            height: 200px !important;
           }
           .player-analysis-section {
             padding: 0.5rem !important;
-            margin-bottom: 0.5rem !important;
+            margin-bottom: 1rem !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
-          /* Prevent awkward page breaks in PDF */
-          .player-chart-grid, .player-kpi-grid, .player-analysis-section {
+          /* Page break cleanly before trend chart */
+          .player-trend-card {
+            page-break-before: always !important;
+            break-before: page !important;
+            margin-top: 1.5rem !important;
+            padding-top: 1rem !important;
+            border-top: 2px solid #e2e8f0 !important;
+          }
+          .player-chart-grid, .player-kpi-grid {
             break-inside: avoid !important;
             page-break-inside: avoid !important;
           }
