@@ -216,6 +216,33 @@ function UploadPage({ savantFiles, blastFiles, combinedFiles, updateDataState, s
     );
   };
 
+  const downloadCSVTemplate = (type) => {
+    let filename = '';
+    let content = '';
+
+    if (type === 'combined') {
+      filename = '打撃データ入力フォーマット_統合データ.csv';
+      content = '日付,チーム名,選手名,学年,スイング速度,打球速度,アッパースイング度,打球角度,飛距離\n2026-09-01,Aチーム,山田 太郎,3年,142.5,155.0,12.5,24.0,110\n';
+    } else if (type === 'blast') {
+      filename = '打撃データ入力フォーマット_Blast.csv';
+      content = '日付,選手名,バットスピード,アッパースイング,オンプレーン効率,体とバットの角度スコア,体の回転による加速スコア,スイング時間,手の最大,パワー,垂直バット角度\n2026-09-01,山田 太郎,142.5,12.5,78.5,60,65,0.15,35.0,4.2,30.0\n';
+    } else if (type === 'savant') {
+      filename = '打撃データ入力フォーマット_Rapsodo.csv';
+      content = 'Date,Player Name,Team,ExitVelocity,LaunchAngle,Distance,HitDirection\n2026-09-01,山田 太郎,Aチーム,155.0,24.0,110,0.0\n';
+    }
+
+    // UTF-8 BOM for Microsoft Excel compatibility (prevents garbled Japanese text)
+    const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+    const blob = new Blob([bom, content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="animate-in fade-in duration-300">
       <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -244,6 +271,52 @@ function UploadPage({ savantFiles, blastFiles, combinedFiles, updateDataState, s
           </button>
         </div>
       </header>
+
+      {/* Excel/CSV 入力フォーマットダウンロード セクション */}
+      <div className="bg-slate-800/80 p-6 rounded-2xl border border-slate-700/80 mb-8 max-w-5xl shadow-xl">
+        <div className="flex items-center gap-3 mb-3 border-b border-slate-700 pb-3">
+          <FileText className="w-5 h-5 text-emerald-400" />
+          <div>
+            <h3 className="text-base font-extrabold text-white">エクセル / CSV 入力フォーマットのダウンロード</h3>
+            <p className="text-xs text-slate-400">Excel等で直接入力できる空フォーマット（ヘッダー項目設定済み）を取得できます</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+          <button
+            onClick={() => downloadCSVTemplate('combined')}
+            className="flex items-center justify-between p-3.5 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/40 rounded-xl text-left transition-all group"
+          >
+            <div>
+              <p className="text-xs font-bold text-emerald-300">1ファイル統合フォーマット</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">日付・チーム・名前・速度・角度</p>
+            </div>
+            <span className="text-xs font-bold text-emerald-400 group-hover:translate-y-0.5 transition-transform">↓ DL</span>
+          </button>
+
+          <button
+            onClick={() => downloadCSVTemplate('blast')}
+            className="flex items-center justify-between p-3.5 bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/40 rounded-xl text-left transition-all group"
+          >
+            <div>
+              <p className="text-xs font-bold text-purple-300">Blast Motion フォーマット</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">バット速度・アッパー・回転加速</p>
+            </div>
+            <span className="text-xs font-bold text-purple-400 group-hover:translate-y-0.5 transition-transform">↓ DL</span>
+          </button>
+
+          <button
+            onClick={() => downloadCSVTemplate('savant')}
+            className="flex items-center justify-between p-3.5 bg-blue-950/40 hover:bg-blue-900/60 border border-blue-500/40 rounded-xl text-left transition-all group"
+          >
+            <div>
+              <p className="text-xs font-bold text-blue-300">Rapsodo フォーマット</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">ExitVelocity・LaunchAngle 等</p>
+            </div>
+            <span className="text-xs font-bold text-blue-400 group-hover:translate-y-0.5 transition-transform">↓ DL</span>
+          </button>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl">
         {/* Savant Card */}
