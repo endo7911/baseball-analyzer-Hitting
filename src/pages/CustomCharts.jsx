@@ -1,6 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { LineChart, Settings2, Table } from 'lucide-react';
+import { parseNumeric } from '../utils/dataHelpers';
+
+const parseNum = (val) => {
+  const n = parseNumeric(val);
+  return isNaN(n) ? NaN : n;
+};
 
 // Format a numeric value smartly: integers as integer, otherwise 1dp
 const fmtVal = (v, key = '') => {

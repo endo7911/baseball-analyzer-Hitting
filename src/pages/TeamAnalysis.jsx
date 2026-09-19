@@ -343,51 +343,54 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
-              <div className="p-4 bg-slate-900 border-b border-slate-700 flex items-center">
+          {/* 選手比較テーブル (全幅表示) */}
+          <div className="w-full bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-xl mb-8">
+            <div className="p-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between">
+              <div className="flex items-center">
                 <TrendingUp className="w-5 h-5 text-blue-400 mr-2" />
                 <h3 className="font-bold text-white">選手比較テーブル</h3>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left text-slate-300">
-                  <thead className="text-xs text-slate-400 uppercase bg-slate-900/50">
-                    <tr>
-                      <th className="px-4 py-3">選手名</th>
-                      <th className="px-4 py-3">データ数</th>
-                      {hasBatData && <th className="px-4 py-3 text-blue-400">平均バットスピード</th>}
-                      {hasBatData && <th className="px-4 py-3 text-blue-300">最大バットスピード</th>}
-                      {hasAttackAngle && <th className="px-4 py-3 text-green-400">平均アッパー度</th>}
-                      {hasBallData && <th className="px-4 py-3 text-emerald-400">平均打球速度</th>}
-                      {hasBallData && <th className="px-4 py-3 text-emerald-300">最大打球速度</th>}
-                      <th className="px-4 py-3 text-purple-400">平均打球角度</th>
-                      <th className="px-4 py-3 text-right">アクション</th>
+              <span className="text-xs text-slate-400">全 {teamStats.players.length} 名</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left text-slate-300">
+                <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
+                  <tr>
+                    <th className="px-5 py-3.5">選手名</th>
+                    <th className="px-5 py-3.5">スイング数</th>
+                    {hasBatData && <th className="px-5 py-3.5 text-blue-400 font-bold">平均バットスピード</th>}
+                    {hasBatData && <th className="px-5 py-3.5 text-blue-300 font-bold">最大バットスピード</th>}
+                    {hasAttackAngle && <th className="px-5 py-3.5 text-green-400 font-bold">平均アッパー度</th>}
+                    {hasBallData && <th className="px-5 py-3.5 text-emerald-400 font-bold">平均打球速度</th>}
+                    {hasBallData && <th className="px-5 py-3.5 text-emerald-300 font-bold">最大打球速度</th>}
+                    <th className="px-5 py-3.5 text-purple-400 font-bold">平均打球角度</th>
+                    <th className="px-5 py-3.5 text-right">詳細</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/60">
+                  {teamStats.players.map((p, i) => (
+                    <tr key={i} className="hover:bg-slate-700/40 transition-colors">
+                      <td className="px-5 py-3.5 font-bold text-white text-base">{p.player}</td>
+                      <td className="px-5 py-3.5 text-slate-400 font-mono">{p.swings} 回</td>
+                      {hasBatData && <td className="px-5 py-3.5 font-bold text-blue-300 text-base">{p.avgBatSpeed.toFixed(1)} <span className="text-xs text-slate-500 font-normal">km/h</span></td>}
+                      {hasBatData && <td className="px-5 py-3.5 font-bold text-blue-200 text-base">{p.maxBatSpeed.toFixed(1)} <span className="text-xs text-slate-500 font-normal">km/h</span></td>}
+                      {hasAttackAngle && <td className="px-5 py-3.5 font-bold text-green-300 text-base">{p.avgAttackAngle.toFixed(1)}°</td>}
+                      {hasBallData && <td className="px-5 py-3.5 font-bold text-emerald-300 text-base">{p.avgExitVelo.toFixed(1)} <span className="text-xs text-slate-500 font-normal">km/h</span></td>}
+                      {hasBallData && <td className="px-5 py-3.5 font-bold text-emerald-200 text-base">{p.maxExitVelo.toFixed(1)} <span className="text-xs text-slate-500 font-normal">km/h</span></td>}
+                      <td className="px-5 py-3.5 font-bold text-purple-300 text-base">{p.avgLaunchAngle.toFixed(1)}°</td>
+                      <td className="px-5 py-3.5 text-right">
+                        <button 
+                          onClick={() => onViewPlayer(p.player, selectedTeam, sourceType)}
+                          className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3.5 py-1.5 rounded-lg font-bold transition-all shadow-lg flex items-center ml-auto gap-1 cursor-pointer"
+                        >
+                          <BarChart3 className="w-3.5 h-3.5" />
+                          <span>レポート表示</span>
+                        </button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {teamStats.players.map((p, i) => (
-                      <tr key={i} className="border-b border-slate-700 hover:bg-slate-700/50 transition-colors">
-                        <td className="px-4 py-3 font-medium text-white">{p.player}</td>
-                        <td className="px-4 py-3">{p.swings}</td>
-                        {hasBatData && <td className="px-4 py-3 font-bold text-blue-300">{p.avgBatSpeed.toFixed(1)}</td>}
-                        {hasBatData && <td className="px-4 py-3 font-bold text-blue-200">{p.maxBatSpeed.toFixed(1)}</td>}
-                        {hasAttackAngle && <td className="px-4 py-3 font-bold text-green-300">{p.avgAttackAngle.toFixed(1)}°</td>}
-                        {hasBallData && <td className="px-4 py-3 font-bold text-emerald-300">{p.avgExitVelo.toFixed(1)}</td>}
-                        {hasBallData && <td className="px-4 py-3 font-bold text-emerald-200">{p.maxExitVelo.toFixed(1)}</td>}
-                        <td className="px-4 py-3 font-bold text-purple-300">{p.avgLaunchAngle.toFixed(1)}°</td>
-                        <td className="px-4 py-3 text-right">
-                          <button 
-                            onClick={() => onViewPlayer(p.player, selectedTeam, sourceType)}
-                            className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition-colors shadow-lg flex items-center ml-auto"
-                          >
-                            <BarChart3 className="w-3 h-3 mr-1" />レポート表示
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
