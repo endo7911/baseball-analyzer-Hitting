@@ -469,7 +469,14 @@ function App() {
         } catch (e) { console.error('Parse error:', e); }
       }
       const processed = { ...payload, data: finalData, id: payload.id || crypto.randomUUID() };
-      newFiles.push(processed);
+      
+      // Prevent duplicate file entries by filename
+      const existingIdx = newFiles.findIndex(f => f.filename === payload.filename);
+      if (existingIdx !== -1) {
+        newFiles[existingIdx] = { ...processed, id: newFiles[existingIdx].id };
+      } else {
+        newFiles.push(processed);
+      }
     } else if (action === 'remove') {
       if (typeof payload === 'number') {
         newFiles.splice(payload, 1);

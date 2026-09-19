@@ -56,6 +56,18 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
   const [groupedData, setGroupedData] = useState({});
   const [activePlayers, setActivePlayers] = useState([]);
 
+  // Axis range controls for Left & Right charts
+  const [leftXMin, setLeftXMin] = useState('');
+  const [leftXMax, setLeftXMax] = useState('');
+  const [leftYMin, setLeftYMin] = useState('');
+  const [leftYMax, setLeftYMax] = useState('');
+  const [leftChartType, setLeftChartType] = useState('scatter');
+
+  const [rightXMin, setRightXMin] = useState('');
+  const [rightXMax, setRightXMax] = useState('');
+  const [rightYMin, setRightYMin] = useState('');
+  const [rightYMax, setRightYMax] = useState('');
+
   useEffect(() => {
     if (activeData && activeData.data) {
       // Determine best teamKey - Prioritize 'Team' as requested

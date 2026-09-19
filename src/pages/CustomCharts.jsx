@@ -77,6 +77,28 @@ function CustomCharts({ savantData, blastData, combinedData }) {
     return [...plotData].sort((a, b) => b.x - a.x).slice(0, 200);
   }, [plotData]);
 
+  const isGradeX = useMemo(() => {
+    const GRADE_KEYS = ['学年', '学年（数値）', 'grade', 'Grade', 'Year', 'year'];
+    return GRADE_KEYS.some(k => xAxis.includes(k));
+  }, [xAxis]);
+
+  const isGradeY = useMemo(() => {
+    const GRADE_KEYS = ['学年', '学年（数値）', 'grade', 'Grade', 'Year', 'year'];
+    return GRADE_KEYS.some(k => yAxis.includes(k));
+  }, [yAxis]);
+
+  const xTicks = useMemo(() => {
+    if (!isGradeX || !plotData.length) return undefined;
+    const vals = [...new Set(plotData.map(d => Math.round(d.x)))].filter(v => !isNaN(v)).sort((a, b) => a - b);
+    return vals.length > 0 ? vals : undefined;
+  }, [isGradeX, plotData]);
+
+  const yTicks = useMemo(() => {
+    if (!isGradeY || !plotData.length) return undefined;
+    const vals = [...new Set(plotData.map(d => Math.round(d.y)))].filter(v => !isNaN(v)).sort((a, b) => a - b);
+    return vals.length > 0 ? vals : undefined;
+  }, [isGradeY, plotData]);
+
   const SCATTER_COLOR = source === 'savant' ? '#3b82f6' : source === 'blast' ? '#a855f7' : '#10b981';
 
   return (
@@ -170,7 +192,9 @@ function CustomCharts({ savantData, blastData, combinedData }) {
                     dataKey="x"
                     name={xAxis}
                     stroke="#94a3b8"
-                    domain={['auto', 'auto']}
+                    allowDecimals={!isGradeX}
+                    ticks={xTicks}
+                    domain={isGradeX && xTicks ? [Math.min(...xTicks) - 0.5, Math.max(...xTicks) + 0.5] : ['auto', 'auto']}
                     label={{ value: xAxis, position: 'insideBottom', offset: -10, fill: '#64748b' }}
                     tickFormatter={(v) => fmtVal(v, xAxis)}
                   />
@@ -179,7 +203,9 @@ function CustomCharts({ savantData, blastData, combinedData }) {
                     dataKey="y"
                     name={yAxis}
                     stroke="#94a3b8"
-                    domain={['auto', 'auto']}
+                    allowDecimals={!isGradeY}
+                    ticks={yTicks}
+                    domain={isGradeY && yTicks ? [Math.min(...yTicks) - 0.5, Math.max(...yTicks) + 0.5] : ['auto', 'auto']}
                     label={{ value: yAxis, angle: -90, position: 'insideLeft', fill: '#64748b' }}
                     tickFormatter={(v) => fmtVal(v, yAxis)}
                   />
