@@ -7,12 +7,13 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
   const [metric, setMetric] = useState('ev');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [statFilter, setStatFilter] = useState('all'); // 'all', 'avg', 'max'
 
   const metricMeta = {
-    ev: { label: '打球速度', unit: 'km/h', color: '#10b981', keys: EV_KEYS },
-    la: { label: '打球角度', unit: '°', color: '#a855f7', keys: LA_KEYS },
-    bs: { label: 'バット速度', unit: 'km/h', color: '#3b82f6', keys: BS_KEYS },
-    aa: { label: 'アッパースイング度', unit: '°', color: '#f59e0b', keys: AA_KEYS },
+    ev: { label: '打球速度', unit: 'km/h', avgColor: '#10b981', maxColor: '#ef4444', keys: EV_KEYS },
+    la: { label: '打球角度', unit: '°', avgColor: '#a855f7', maxColor: '#f97316', keys: LA_KEYS },
+    bs: { label: 'バット速度', unit: 'km/h', avgColor: '#3b82f6', maxColor: '#ec4899', keys: BS_KEYS },
+    aa: { label: 'アッパースイング度', unit: '°', avgColor: '#f59e0b', maxColor: '#f43f5e', keys: AA_KEYS },
   };
 
   const currentMeta = metricMeta[metric];
@@ -26,6 +27,8 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
       const events = teamPlayers[player];
       if (!events || !Array.isArray(events)) return;
 
+      // Group events for each player by date
+      const dateMap = {};
       events.forEach(e => {
         const rawDate = e.game_date || e.date || e['日付'] || e['Date'] || e['gameDate'] || '';
         if (!rawDate) return;
@@ -36,21 +39,53 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
 
         const val = parseNumeric(getDataValue(e, currentMeta.keys));
         if (val !== 0 && !isNaN(val)) {
-          // Calculate timestamp for continuous date X-axis (prevents duplicate ticks)
-          const parts = dateStr.split('-');
-          let timeMs = 0;
-          if (parts.length === 3) {
-            timeMs = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
-          } else {
-            timeMs = new Date(dateStr).getTime();
-          }
+          if (!dateMap[dateStr]) dateMap[dateStr] = [];
+          dateMap[dateStr].push(val);
+        }
+      });
 
-          if (!isNaN(timeMs) && timeMs > 0) {
+      // Calculate avg & max for each date
+      Object.keys(dateMap).forEach(dateStr => {
+        const vals = dateMap[dateStr];
+        if (vals.length === 0) return;
+
+        const sum = vals.reduce((a, b) => a + b, 0);
+        const avg = Number((sum / vals.length).toFixed(1));
+        const max = Number(Math.max(...vals).toFixed(1));
+
+        const parts = dateStr.split('-');
+        let timeMs = 0;
+        if (parts.length === 3) {
+          timeMs = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
+        } else {
+          timeMs = new Date(dateStr).getTime();
+        }
+
+        if (!isNaN(timeMs) && timeMs > 0) {
+          if (statFilter === 'all' || statFilter === 'avg') {
             list.push({
               date: dateStr,
               timeMs,
-              val,
+              val: avg,
+              avgVal: avg,
+              maxVal: max,
+              count: vals.length,
               player,
+              statType: '平均',
+              color: currentMeta.avgColor
+            });
+          }
+          if (statFilter === 'all' || statFilter === 'max') {
+            list.push({
+              date: dateStr,
+              timeMs,
+              val: max,
+              avgVal: avg,
+              maxVal: max,
+              count: vals.length,
+              player,
+              statType: '最大',
+              color: currentMeta.maxColor
             });
           }
         }
@@ -58,7 +93,7 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
     });
 
     return list.sort((a, b) => a.timeMs - b.timeMs);
-  }, [selectedTeam, groupedData, currentMeta, startDate, endDate]);
+  }, [selectedTeam, groupedData, currentMeta, startDate, endDate, statFilter]);
 
   return (
     <div className="w-full bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl mt-8 p-4 sm:p-6">
@@ -68,22 +103,22 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
           <h3 className="font-extrabold text-white text-base sm:text-lg">日付別 打撃指標の変動推移 (チーム散布図)</h3>
         </div>
         
-        {/* 指標選択 & 日付範囲フィルター */}
+        {/* コントロール: 範囲・表示切替・Y軸指標 */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400 font-bold whitespace-nowrap">日付範囲:</span>
+            <span className="text-xs text-slate-400 font-bold whitespace-nowrap">範囲:</span>
             <input 
               type="date" 
               value={startDate} 
               onChange={e => setStartDate(e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-purple-500"
+              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-purple-500"
             />
             <span className="text-xs text-slate-500">~</span>
             <input 
               type="date" 
               value={endDate} 
               onChange={e => setEndDate(e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-purple-500"
+              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-purple-500"
             />
             {(startDate || endDate) && (
               <button 
@@ -96,7 +131,20 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400 font-bold whitespace-nowrap">Y軸指標:</span>
+            <span className="text-xs text-slate-400 font-bold whitespace-nowrap">表示:</span>
+            <select
+              value={statFilter}
+              onChange={e => setStatFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
+            >
+              <option value="all">平均 & 最大 (両方)</option>
+              <option value="avg">平均のみ</option>
+              <option value="max">最大のみ</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-bold whitespace-nowrap">Y軸:</span>
             <select
               value={metric}
               onChange={e => setMetric(e.target.value)}
@@ -108,6 +156,18 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
               <option value="aa">アッパースイング度 (°)</option>
             </select>
           </div>
+        </div>
+      </div>
+
+      {/* 色の凡例 (平均 & 最大) */}
+      <div className="flex items-center gap-4 mb-3 px-2 text-xs font-bold">
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full inline-block shadow" style={{ backgroundColor: currentMeta.avgColor }}></span>
+          <span className="text-slate-300">日別平均 (丸プロット)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rotate-45 inline-block shadow" style={{ backgroundColor: currentMeta.maxColor }}></span>
+          <span className="text-slate-300">日別最大 (ひし形プロット)</span>
         </div>
       </div>
 
@@ -154,9 +214,13 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
                     return (
                       <div className="bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl text-sm">
                         <p className="font-bold text-white mb-1 border-b border-slate-700 pb-1">{d.player} ({d.date})</p>
-                        <p style={{ color: currentMeta.color }} className="font-bold">
-                          {currentMeta.label}: <span className="text-white font-mono">{d.val.toFixed(1)} {currentMeta.unit}</span>
+                        <p className="font-bold" style={{ color: currentMeta.avgColor }}>
+                          日別平均: <span className="text-white font-mono">{d.avgVal.toFixed(1)} {currentMeta.unit}</span>
                         </p>
+                        <p className="font-bold" style={{ color: currentMeta.maxColor }}>
+                          日別最大: <span className="text-white font-mono">{d.maxVal.toFixed(1)} {currentMeta.unit}</span>
+                        </p>
+                        <p className="text-slate-400 text-xs mt-1">当日のスイング数: {d.count} 回</p>
                       </div>
                     );
                   }
@@ -165,13 +229,19 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
               />
               <Scatter 
                 data={trendData} 
-                fill={currentMeta.color}
                 shape={(props) => {
                   const { cx, cy, payload } = props;
+                  const isMax = payload.statType === '最大';
                   return (
                     <g>
-                      <circle cx={cx} cy={cy} r={5} fill={currentMeta.color} fillOpacity={0.85} stroke="#fff" strokeWidth={1} />
-                      <text x={cx} y={cy - 8} textAnchor="middle" fill="#cbd5e1" fontSize={9} fontWeight="bold">{payload.player}</text>
+                      {isMax ? (
+                        <rect x={cx - 4.5} y={cy - 4.5} width={9} height={9} fill={payload.color} fillOpacity={0.9} stroke="#fff" strokeWidth={1} transform={`rotate(45 ${cx} ${cy})`} />
+                      ) : (
+                        <circle cx={cx} cy={cy} r={5.5} fill={payload.color} fillOpacity={0.85} stroke="#fff" strokeWidth={1} />
+                      )}
+                      <text x={cx} y={cy - 9} textAnchor="middle" fill="#cbd5e1" fontSize={9} fontWeight="bold">
+                        {payload.player} ({payload.statType})
+                      </text>
                     </g>
                   );
                 }}
