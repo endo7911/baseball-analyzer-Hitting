@@ -139,7 +139,7 @@ const VelocityAngleChart = ({ data, xKeys, yKeys, xDomain = ['auto', 'auto'], yD
             return null;
           }}
         />
-        <Scatter name="Data" data={chartData} fill={fill} fillOpacity={0.6} />
+        <Scatter name="Data" data={chartData} fill={fill} fillOpacity={0.9} stroke="#ffffff" strokeWidth={0.5} />
       </ScatterChart>
     </ResponsiveContainer>
   );
@@ -527,6 +527,28 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
             color: #f8fafc !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+          }
+
+          /* Safari PDF Print Fix: Override semi-transparent colors to solid opaque hex colors */
+          .player-kpi-card {
+            background-color: #1e293b !important;
+            border-color: #334155 !important;
+          }
+          .player-analysis-section {
+            background-color: #0f172a !important;
+            border-color: #334155 !important;
+          }
+          .player-chart-card, .player-chart-card-inner {
+            background-color: #1e293b !important;
+            border-color: #334155 !important;
+          }
+          .player-trend-card {
+            background-color: #1e293b !important;
+            border-color: #334155 !important;
+          }
+          .player-swing-section {
+            background-color: #1e293b !important;
+            border-color: #334155 !important;
           }
 
           /* Force strict single page layout matching screen view 1-to-1 */
