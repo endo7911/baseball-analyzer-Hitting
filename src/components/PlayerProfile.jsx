@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { 
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  Radar, RadarChart, PolarGrid, PolarAngleAxis
+  Radar, RadarChart, PolarGrid, PolarAngleAxis, LineChart, Line, ComposedChart, Legend
 } from 'recharts';
 import { 
   Activity, Zap, Target, Gauge, TrendingUp, BarChart3, 
@@ -165,7 +165,7 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
   }, [savantEvents, blastEvents]);
 
   const trendData = useMemo(() => {
-    const list = [];
+    const dateMap = {};
     allEvents.forEach(e => {
       const rawDate = e.game_date || e.date || e['日付'] || e['Date'] || e['gameDate'] || '';
       if (!rawDate) return;
@@ -176,21 +176,36 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
 
       const val = parseNumeric(getDataValue(e, currentMeta.keys));
       if (val !== 0 && !isNaN(val)) {
-        const parts = dateStr.split('-');
-        let timeMs = 0;
-        if (parts.length === 3) {
-          timeMs = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
-        } else {
-          timeMs = new Date(dateStr).getTime();
-        }
+        if (!dateMap[dateStr]) dateMap[dateStr] = [];
+        dateMap[dateStr].push(val);
+      }
+    });
 
-        if (!isNaN(timeMs) && timeMs > 0) {
-          list.push({
-            date: dateStr,
-            timeMs,
-            val,
-          });
-        }
+    const list = [];
+    Object.keys(dateMap).forEach(dateStr => {
+      const vals = dateMap[dateStr];
+      if (vals.length === 0) return;
+
+      const sum = vals.reduce((a, b) => a + b, 0);
+      const avg = Number((sum / vals.length).toFixed(1));
+      const max = Number(Math.max(...vals).toFixed(1));
+
+      const parts = dateStr.split('-');
+      let timeMs = 0;
+      if (parts.length === 3) {
+        timeMs = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
+      } else {
+        timeMs = new Date(dateStr).getTime();
+      }
+
+      if (!isNaN(timeMs) && timeMs > 0) {
+        list.push({
+          date: dateStr,
+          timeMs,
+          avg,
+          max,
+          count: vals.length
+        });
       }
     });
 
@@ -202,7 +217,7 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-700/60 pb-3 mb-4 print:border-slate-200">
         <div className="flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-purple-400 print:text-purple-600 flex-shrink-0" />
-          <h3 className="text-xs sm:text-sm font-black text-slate-300 uppercase print:text-slate-900">日付別 指標変動散布図</h3>
+          <h3 className="text-xs sm:text-sm font-black text-slate-300 uppercase print:text-slate-900">日付別 指標変動トレンド (平均 & 最大)</h3>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 no-print">
@@ -247,14 +262,14 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
         </div>
       </div>
 
-      <div style={{ height: '320px' }} className="w-full">
+      <div style={{ height: '340px' }} className="w-full">
         {trendData.length === 0 ? (
           <div className="flex items-center justify-center h-full text-slate-500 text-xs italic">
             選択された期間・指標のデータが見つかりません
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 20, right: 25, bottom: 35, left: 15 }}>
+            <ComposedChart data={trendData} margin={{ top: 25, right: 30, bottom: 35, left: 15 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis 
                 type="number"
@@ -274,42 +289,59 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
               />
               <YAxis 
                 type="number" 
-                dataKey="val" 
-                name={currentMeta.label} 
-                unit={currentMeta.unit} 
                 stroke="#94a3b8" 
                 fontSize={11}
                 width={55}
+                unit={currentMeta.unit}
                 domain={['auto', 'auto']}
               />
               <Tooltip 
-                cursor={{ strokeDasharray: '3 3' }} 
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const d = payload[0].payload;
                     return (
-                      <div className="bg-slate-900 border border-slate-700 p-2.5 rounded-lg shadow-xl text-xs">
-                        <p className="font-bold text-white mb-1 border-b border-slate-700 pb-1">{d.date}</p>
-                        <p style={{ color: currentMeta.color }} className="font-bold">
-                          {currentMeta.label}: <span className="text-white font-mono">{d.val.toFixed(1)} {currentMeta.unit}</span>
+                      <div className="bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl text-xs">
+                        <p className="font-bold text-white mb-1.5 border-b border-slate-700 pb-1">{d.date}</p>
+                        <p className="text-emerald-400 font-bold flex justify-between gap-4">
+                          <span>日別平均:</span>
+                          <span className="text-white font-mono">{d.avg} {currentMeta.unit}</span>
                         </p>
+                        <p className="text-red-400 font-bold flex justify-between gap-4">
+                          <span>日別最大:</span>
+                          <span className="text-white font-mono">{d.max} {currentMeta.unit}</span>
+                        </p>
+                        <p className="text-slate-400 text-[11px] mt-1">スイング数: {d.count} 回</p>
                       </div>
                     );
                   }
                   return null;
                 }}
               />
-              <Scatter 
-                data={trendData} 
-                fill={currentMeta.color}
-                shape={(props) => {
-                  const { cx, cy } = props;
-                  return (
-                    <circle cx={cx} cy={cy} r={5} fill={currentMeta.color} fillOpacity={0.85} stroke="#fff" strokeWidth={1} />
-                  );
-                }}
+              <Legend verticalAlign="top" wrapperStyle={{ top: -5, paddingBottom: 10 }} fontSize={11} />
+              
+              {/* 日別平均の折れ線 (Solid Line) */}
+              <Line 
+                type="monotone" 
+                dataKey="avg" 
+                name={`日別平均 (${currentMeta.label})`} 
+                stroke={currentMeta.color} 
+                strokeWidth={3}
+                dot={{ r: 5, fill: currentMeta.color, stroke: '#fff', strokeWidth: 1.5 }}
+                activeDot={{ r: 7 }}
               />
-            </ScatterChart>
+
+              {/* 日別最大の折れ線 (Dashed Line) */}
+              <Line 
+                type="monotone" 
+                dataKey="max" 
+                name={`日別最大 (${currentMeta.label})`} 
+                stroke="#ef4444" 
+                strokeWidth={2.5}
+                strokeDasharray="5 5"
+                dot={{ r: 5, fill: '#ef4444', stroke: '#fff', strokeWidth: 1.5 }}
+                activeDot={{ r: 7 }}
+              />
+            </ComposedChart>
           </ResponsiveContainer>
         )}
       </div>
