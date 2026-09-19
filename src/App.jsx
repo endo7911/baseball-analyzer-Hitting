@@ -1,3 +1,4 @@
+// Baseball Analyzer - Vite React App (Vercel Build Trigger)
 import React, { useState, useEffect, useMemo } from 'react';
 import Papa from 'papaparse';
 import Sidebar from './components/Sidebar';
