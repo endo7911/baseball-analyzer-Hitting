@@ -461,14 +461,14 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
   const renderPro = () => (
     <div className="report-content player-report player-screen-report print:bg-white print:text-slate-900">
       {/* Print-Only Header */}
-      <div className="player-print-header hidden print:block border-b-4 border-blue-600 pb-4 mb-4">
-        <h1 className="text-4xl font-black uppercase leading-none">{playerName}</h1>
-        <p className="text-xs font-bold text-slate-500 mt-2 uppercase tracking-widest">
+      <div className="player-print-header hidden print:block border-b-2 border-blue-600 pb-2 mb-2">
+        <h1 className="text-3xl font-black uppercase leading-none">{playerName}</h1>
+        <p className="text-[10px] font-bold text-slate-500 mt-1 uppercase tracking-widest">
           {reportTeam} • {new Date().toLocaleDateString('ja-JP')} • Pro Report
         </p>
       </div>
 
-      <div className="player-report-body space-y-8 print:space-y-4">
+      <div className="player-report-body space-y-6 print:space-y-2">
         <div className="player-kpi-grid grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 print:grid-cols-4 print:gap-2">
           {[
             { label: 'EV (Avg)', val: summary.avgEV.toFixed(1), color: 'blue' },
@@ -476,23 +476,23 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
             { label: 'Hard Hit%', val: summary.hardHitRate, color: 'orange' },
             { label: 'Launch∠', val: summary.avgLA.toFixed(1), color: 'emerald' }
           ].map((kpi, i) => (
-            <div key={i} className="player-kpi-card bg-slate-800/40 p-5 rounded-3xl border border-slate-700 text-center print:bg-slate-50 print:border-slate-200 print:p-3">
+            <div key={i} className="player-kpi-card bg-slate-800/40 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-700 text-center print:bg-slate-50 print:border-slate-200 print:p-2">
               <p className="text-[10px] text-slate-400 font-black uppercase print:text-slate-500 print:text-[8px]">{kpi.label}</p>
-              <p className="text-3xl font-black text-white print:text-slate-900 print:text-xl">{kpi.val}</p>
+              <p className="text-2xl sm:text-3xl font-black text-white print:text-slate-900 print:text-lg">{kpi.val}</p>
             </div>
           ))}
         </div>
 
-        <section className="player-analysis-section bg-slate-900/30 p-4 sm:p-8 rounded-[2.5rem] border border-slate-700 print:bg-white print:p-2 print:border-none print:m-0">
-          <h3 className="text-2xl font-black text-white mb-8 uppercase italic border-l-4 border-blue-500 pl-4 print:text-sm print:text-slate-900 print:bg-slate-50 print:p-1 print:mb-2">Ball Tracking Analysis</h3>
-          <div className="player-chart-grid grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 h-auto md:h-[400px] print:grid-cols-2 print:gap-4 print:h-[200px]">
-            <div className="player-chart-card player-chart-card-inner flex flex-col h-[320px] md:h-full print:h-[180px]">
-              <h3 className="text-xs font-black text-slate-400 uppercase mb-3 print:text-slate-900 print:mb-1 print:text-[10px]">Velocity vs Angle</h3>
-              <div className="player-chart-body flex-1"><VelocityAngleChart data={filteredData} xKeys={EV_KEYS} yKeys={LA_KEYS} /></div>
+        <section className="player-analysis-section bg-slate-900/30 p-4 sm:p-6 rounded-[2rem] border border-slate-700 print:bg-transparent print:p-0 print:border-none print:m-0 print:mb-2">
+          <h3 className="text-xl sm:text-2xl font-black text-white mb-4 sm:mb-6 uppercase italic border-l-4 border-blue-500 pl-3 print:text-xs print:text-slate-900 print:bg-slate-50 print:p-1 print:mb-1">Ball Tracking Analysis</h3>
+          <div className="player-chart-grid grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 h-auto md:h-[350px] print:grid-cols-2 print:gap-3 print:h-[190px]">
+            <div className="player-chart-card player-chart-card-inner flex flex-col h-[300px] md:h-full print:h-[190px]">
+              <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-slate-900 print:mb-0.5 print:text-[9px]">Velocity vs Angle</h3>
+              <div className="player-chart-body flex-1 h-[250px] md:h-full print:h-[170px]"><VelocityAngleChart data={filteredData} xKeys={EV_KEYS} yKeys={LA_KEYS} /></div>
             </div>
-            <div className="player-chart-card player-chart-card-inner flex flex-col h-[320px] md:h-full print:h-[180px]">
-              <h3 className="text-xs font-black text-slate-400 uppercase mb-3 print:text-slate-900 print:mb-1 print:text-[10px]">Spray Chart</h3>
-              <div className="player-chart-body flex-1"><SprayChart data={filteredData} /></div>
+            <div className="player-chart-card player-chart-card-inner flex flex-col h-[300px] md:h-full print:h-[190px]">
+              <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-slate-900 print:mb-0.5 print:text-[9px]">Spray Chart</h3>
+              <div className="player-chart-body flex-1 h-[250px] md:h-full print:h-[170px]"><SprayChart data={filteredData} /></div>
             </div>
           </div>
         </section>
@@ -520,34 +520,55 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
         @media print {
           @page {
             size: A4 portrait;
-            margin: 6mm;
+            margin: 4mm 6mm;
           }
-          body {
+          html, body {
+            height: 100% !important;
+            overflow: hidden !important;
+            background-color: white !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
-            background-color: white !important;
           }
 
-          /* Force relative positioning on Recharts containers during window.print() */
+          /* Force strict single page layout without breaks */
+          .player-profile-root,
+          .player-report,
+          .player-report-body {
+            max-height: 280mm !important;
+            overflow: hidden !important;
+            display: block !important;
+          }
+
+          /* Prevent any page breaks inside or between sections */
+          *, *::before, *::after {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            page-break-before: avoid !important;
+            break-before: avoid !important;
+            page-break-after: avoid !important;
+            break-after: avoid !important;
+          }
+
+          .no-print {
+            display: none !important;
+          }
+
+          /* Recharts print styling */
           .recharts-responsive-container {
-            position: relative !important;
             width: 100% !important;
-            height: 200px !important;
-            min-height: 200px !important;
+            height: 100% !important;
+            min-height: 150px !important;
           }
           .recharts-wrapper {
-            position: relative !important;
-            top: 0 !important;
-            left: 0 !important;
             width: 100% !important;
-            height: 200px !important;
+            height: 100% !important;
           }
           .recharts-surface {
             width: 100% !important;
             height: 100% !important;
           }
 
-          /* Prevent dark backgrounds on spray chart SVG during print */
+          /* Spray field SVG print styling */
           .spray-field-outfield {
             fill: #f1f5f9 !important;
             stroke: #94a3b8 !important;
@@ -565,32 +586,28 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
           svg text {
             fill: #334155 !important;
           }
-          .no-print {
-            display: none !important;
+
+          .player-print-header {
+            margin-bottom: 0.25rem !important;
+            padding-bottom: 0.25rem !important;
           }
-          .player-report-body {
-            display: block !important;
+          .player-kpi-grid {
+            margin-bottom: 0.25rem !important;
           }
-          .player-chart-card-inner {
-            height: 200px !important;
+          .player-kpi-card {
+            padding: 0.25rem !important;
           }
           .player-analysis-section {
-            padding: 0.5rem !important;
-            margin-bottom: 1rem !important;
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
+            padding: 0.25rem !important;
+            margin-bottom: 0.25rem !important;
+            border: none !important;
+            background: transparent !important;
           }
-          /* Page break cleanly before trend chart */
           .player-trend-card {
-            page-break-before: always !important;
-            break-before: page !important;
-            margin-top: 1.5rem !important;
-            padding-top: 1rem !important;
-            border-top: 2px solid #e2e8f0 !important;
-          }
-          .player-chart-grid, .player-kpi-grid {
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
+            padding: 0.25rem !important;
+            margin-top: 0.25rem !important;
+            border: none !important;
+            background: transparent !important;
           }
         }
       `}</style>
