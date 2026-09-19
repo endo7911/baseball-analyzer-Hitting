@@ -459,16 +459,16 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
   );
 
   const renderPro = () => (
-    <div className="report-content player-report player-screen-report print:bg-white print:text-slate-900">
+    <div className="report-content player-report player-screen-report">
       {/* Print-Only Header */}
-      <div className="player-print-header hidden print:block border-b-2 border-blue-600 pb-2 mb-2">
-        <h1 className="text-3xl font-black uppercase leading-none">{playerName}</h1>
-        <p className="text-[10px] font-bold text-slate-500 mt-1 uppercase tracking-widest">
+      <div className="player-print-header hidden print:block border-b-2 border-blue-500 pb-2 mb-3">
+        <h1 className="text-3xl font-black uppercase text-white leading-none">{playerName}</h1>
+        <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
           {reportTeam} • {new Date().toLocaleDateString('ja-JP')} • Pro Report
         </p>
       </div>
 
-      <div className="player-report-body space-y-6 print:space-y-2">
+      <div className="player-report-body space-y-4 print:space-y-3">
         <div className="player-kpi-grid grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 print:grid-cols-4 print:gap-2">
           {[
             { label: 'EV (Avg)', val: summary.avgEV.toFixed(1), color: 'blue' },
@@ -476,33 +476,33 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
             { label: 'Hard Hit%', val: summary.hardHitRate, color: 'orange' },
             { label: 'Launch∠', val: summary.avgLA.toFixed(1), color: 'emerald' }
           ].map((kpi, i) => (
-            <div key={i} className="player-kpi-card bg-slate-800/40 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-700 text-center print:bg-slate-50 print:border-slate-200 print:p-2">
-              <p className="text-[10px] text-slate-400 font-black uppercase print:text-slate-500 print:text-[8px]">{kpi.label}</p>
-              <p className="text-2xl sm:text-3xl font-black text-white print:text-slate-900 print:text-lg">{kpi.val}</p>
+            <div key={i} className="player-kpi-card bg-slate-800/60 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-700 text-center print:p-2">
+              <p className="text-[10px] text-slate-400 font-black uppercase print:text-[8px]">{kpi.label}</p>
+              <p className="text-2xl sm:text-3xl font-black text-white print:text-lg">{kpi.val}</p>
             </div>
           ))}
         </div>
 
-        <section className="player-analysis-section bg-slate-900/30 p-4 sm:p-6 rounded-[2rem] border border-slate-700 print:bg-transparent print:p-0 print:border-none print:m-0 print:mb-2">
-          <h3 className="text-xl sm:text-2xl font-black text-white mb-4 sm:mb-6 uppercase italic border-l-4 border-blue-500 pl-3 print:text-xs print:text-slate-900 print:bg-slate-50 print:p-1 print:mb-1">Ball Tracking Analysis</h3>
-          <div className="player-chart-grid grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 h-auto md:h-[350px] print:grid-cols-2 print:gap-3 print:h-[190px]">
-            <div className="player-chart-card player-chart-card-inner flex flex-col h-[300px] md:h-full print:h-[190px]">
-              <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-slate-900 print:mb-0.5 print:text-[9px]">Velocity vs Angle</h3>
-              <div className="player-chart-body flex-1 h-[250px] md:h-full print:h-[170px]"><VelocityAngleChart data={filteredData} xKeys={EV_KEYS} yKeys={LA_KEYS} /></div>
+        <section className="player-analysis-section bg-slate-900/40 p-4 sm:p-6 rounded-[2rem] border border-slate-700/80 print:p-2 print:rounded-xl">
+          <h3 className="text-xl sm:text-2xl font-black text-white mb-4 uppercase italic border-l-4 border-blue-500 pl-3 print:text-xs print:mb-2">Ball Tracking Analysis</h3>
+          <div className="player-chart-grid grid grid-cols-1 md:grid-cols-2 gap-4 h-auto md:h-[320px] print:grid-cols-2 print:gap-3 print:h-[200px]">
+            <div className="player-chart-card player-chart-card-inner bg-slate-800/50 p-4 rounded-xl border border-slate-700/60 flex flex-col h-[280px] md:h-full print:h-[190px] print:p-2">
+              <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-[9px]">Velocity vs Angle</h3>
+              <div className="player-chart-body flex-1 h-[220px] md:h-full print:h-[160px]"><VelocityAngleChart data={filteredData} xKeys={EV_KEYS} yKeys={LA_KEYS} /></div>
             </div>
-            <div className="player-chart-card player-chart-card-inner flex flex-col h-[300px] md:h-full print:h-[190px]">
-              <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-slate-900 print:mb-0.5 print:text-[9px]">Spray Chart</h3>
-              <div className="player-chart-body flex-1 h-[250px] md:h-full print:h-[170px]"><SprayChart data={filteredData} /></div>
+            <div className="player-chart-card player-chart-card-inner bg-slate-800/50 p-4 rounded-xl border border-slate-700/60 flex flex-col h-[280px] md:h-full print:h-[190px] print:p-2">
+              <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-[9px]">Spray Chart</h3>
+              <div className="player-chart-body flex-1 h-[220px] md:h-full print:h-[160px]"><SprayChart data={filteredData} /></div>
             </div>
           </div>
         </section>
 
         {hasBatData && (
-          <section className="player-swing-section bg-gradient-to-br from-slate-800 to-slate-900 p-8 rounded-[2.5rem] border border-purple-500/20 print:hidden">
-            <h3 className="text-purple-400 uppercase tracking-widest flex items-center gap-2 mb-8"><Zap size={16} /> Swing Analysis</h3>
+          <section className="player-swing-section bg-gradient-to-br from-slate-800/80 to-slate-900/80 p-5 rounded-2xl border border-purple-500/20 print:p-3 print:rounded-xl">
+            <h3 className="text-purple-400 text-xs font-black uppercase tracking-widest flex items-center gap-2 mb-3 print:text-[10px] print:mb-1"><Zap size={14} /> Swing Analysis</h3>
             <div className="flex justify-around text-center">
-              <div><p className="text-slate-500 text-[10px] font-black uppercase">Avg Bat Speed</p><p className="text-4xl font-black text-white">{summary.avgBS.toFixed(1)}</p></div>
-              <div><p className="text-slate-500 text-[10px] font-black uppercase">On Plane%</p><p className="text-4xl font-black text-white">{summary.avgPlane.toFixed(1)}%</p></div>
+              <div><p className="text-slate-400 text-[10px] font-black uppercase print:text-[8px]">Avg Bat Speed</p><p className="text-2xl font-black text-white print:text-lg">{summary.avgBS.toFixed(1)}</p></div>
+              <div><p className="text-slate-400 text-[10px] font-black uppercase print:text-[8px]">On Plane%</p><p className="text-2xl font-black text-white print:text-lg">{summary.avgPlane.toFixed(1)}%</p></div>
             </div>
           </section>
         )}
@@ -522,42 +522,38 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
             size: A4 portrait;
             margin: 4mm 6mm;
           }
-          html, body {
-            height: 100% !important;
-            overflow: hidden !important;
-            background-color: white !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+          html, body, #root, .app-container {
+            background-color: #0b0f17 !important;
+            color: #f8fafc !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
 
-          /* Force strict single page layout without breaks */
+          /* Force strict single page layout matching screen view 1-to-1 */
           .player-profile-root,
           .player-report,
           .player-report-body {
-            max-height: 280mm !important;
+            max-height: 285mm !important;
             overflow: hidden !important;
             display: block !important;
           }
 
-          /* Prevent any page breaks inside or between sections */
+          /* Prevent page breaks */
           *, *::before, *::after {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             page-break-before: avoid !important;
             break-before: avoid !important;
-            page-break-after: avoid !important;
-            break-after: avoid !important;
           }
 
           .no-print {
             display: none !important;
           }
 
-          /* Recharts print styling */
           .recharts-responsive-container {
             width: 100% !important;
             height: 100% !important;
-            min-height: 150px !important;
+            min-height: 140px !important;
           }
           .recharts-wrapper {
             width: 100% !important;
@@ -566,48 +562,6 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
           .recharts-surface {
             width: 100% !important;
             height: 100% !important;
-          }
-
-          /* Spray field SVG print styling */
-          .spray-field-outfield {
-            fill: #f1f5f9 !important;
-            stroke: #94a3b8 !important;
-          }
-          .spray-field-infield {
-            fill: #e2e8f0 !important;
-            stroke: #94a3b8 !important;
-          }
-          .spray-field-lines {
-            stroke: #94a3b8 !important;
-          }
-          .recharts-cartesian-grid line {
-            stroke: #e2e8f0 !important;
-          }
-          svg text {
-            fill: #334155 !important;
-          }
-
-          .player-print-header {
-            margin-bottom: 0.25rem !important;
-            padding-bottom: 0.25rem !important;
-          }
-          .player-kpi-grid {
-            margin-bottom: 0.25rem !important;
-          }
-          .player-kpi-card {
-            padding: 0.25rem !important;
-          }
-          .player-analysis-section {
-            padding: 0.25rem !important;
-            margin-bottom: 0.25rem !important;
-            border: none !important;
-            background: transparent !important;
-          }
-          .player-trend-card {
-            padding: 0.25rem !important;
-            margin-top: 0.25rem !important;
-            border: none !important;
-            background: transparent !important;
           }
         }
       `}</style>
