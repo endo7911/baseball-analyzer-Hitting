@@ -394,59 +394,258 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
             </div>
           </div>
 
+          {/* 2個のグラフ (プロット表示 & 範囲設定対応) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
-              <div className="p-4 bg-slate-900 border-b border-slate-700 flex items-center">
-                <Zap className="w-5 h-5 text-blue-400 mr-2" />
-                <h3 className="font-bold text-white">
-                  {hasBatData && hasBallData ? "バットスピード & 打球速度 (最大/平均)" :
-                   hasBallData ? "打球速度 (最大 vs 平均)" :
-                   "バットスピード (最大 vs 平均)"}
-                </h3>
+            
+            {/* 左グラフ: バットスピード vs 打球速度 プロット散布図 */}
+            <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg p-5 flex flex-col">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 border-b border-slate-700 pb-3">
+                <div className="flex items-center">
+                  <Zap className="w-5 h-5 text-blue-400 mr-2" />
+                  <h3 className="font-bold text-white text-base">バットスピード vs 打球速度 (プロット分布)</h3>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button 
+                    onClick={() => setLeftChartType('scatter')}
+                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all ${leftChartType === 'scatter' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+                  >
+                    プロット
+                  </button>
+                  <button 
+                    onClick={() => setLeftChartType('bar')}
+                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all ${leftChartType === 'bar' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+                  >
+                    棒グラフ
+                  </button>
+                </div>
               </div>
-              <div className="p-4" style={{ height: '400px' }}>
+
+              {/* 軸範囲設定コントロール */}
+              <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60 mb-4 text-xs grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div>
+                  <span className="text-slate-400 block mb-1">X軸 (バット速) 最小</span>
+                  <input 
+                    type="number" 
+                    placeholder="Auto" 
+                    value={leftXMin} 
+                    onChange={e => setLeftXMin(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-1">X軸 (バット速) 最大</span>
+                  <input 
+                    type="number" 
+                    placeholder="Auto" 
+                    value={leftXMax} 
+                    onChange={e => setLeftXMax(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-1">Y軸 (打球速) 最小</span>
+                  <input 
+                    type="number" 
+                    placeholder="Auto" 
+                    value={leftYMin} 
+                    onChange={e => setLeftYMin(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-1">Y軸 (打球速) 最大</span>
+                  <input 
+                    type="number" 
+                    placeholder="Auto" 
+                    value={leftYMax} 
+                    onChange={e => setLeftYMax(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div style={{ height: '380px' }} className="w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={teamStats.players.slice(0, 15)} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                    <XAxis dataKey="player" stroke="#94a3b8" fontSize={10} interval={0} angle={-45} textAnchor="end" />
-                    <YAxis stroke="#94a3b8" fontSize={10} unit="km/h" />
-                    <Tooltip 
-                      cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                      content={({ active, payload, label }) => {
-                        if (active && payload && payload.length) {
+                  {leftChartType === 'scatter' ? (
+                    <ScatterChart margin={{ top: 20, right: 25, bottom: 20, left: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                      <XAxis 
+                        type="number" 
+                        dataKey="avgBatSpeed" 
+                        name="平均バットスピード" 
+                        unit="km/h" 
+                        stroke="#94a3b8" 
+                        domain={[
+                          leftXMin !== '' && !isNaN(Number(leftXMin)) ? Number(leftXMin) : 'auto',
+                          leftXMax !== '' && !isNaN(Number(leftXMax)) ? Number(leftXMax) : 'auto'
+                        ]}
+                        label={{ value: '平均バットスピード (km/h)', position: 'insideBottom', offset: -12, fill: '#94a3b8', fontSize: 11 }} 
+                      />
+                      <YAxis 
+                        type="number" 
+                        dataKey="avgExitVelo" 
+                        name="平均打球速度" 
+                        unit="km/h" 
+                        stroke="#94a3b8" 
+                        domain={[
+                          leftYMin !== '' && !isNaN(Number(leftYMin)) ? Number(leftYMin) : 'auto',
+                          leftYMax !== '' && !isNaN(Number(leftYMax)) ? Number(leftYMax) : 'auto'
+                        ]}
+                        label={{ value: '平均打球速度 (km/h)', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 11 }} 
+                      />
+                      <Tooltip 
+                        cursor={{ strokeDasharray: '3 3' }} 
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            return (
+                              <div className="bg-slate-900 border border-slate-700 p-3 rounded-lg shadow-xl text-sm">
+                                <p className="font-bold text-white mb-1 border-b border-slate-700 pb-1">{data.player}</p>
+                                <p className="text-blue-400">平均バットスピード: <span className="text-white font-mono">{data.avgBatSpeed.toFixed(1)} km/h</span></p>
+                                <p className="text-emerald-400">平均打球速度: <span className="text-white font-mono">{data.avgExitVelo.toFixed(1)} km/h</span></p>
+                                <p className="text-slate-400 text-xs mt-1">スイング数: {data.swings}</p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Scatter 
+                        data={teamStats.players.filter(p => p.avgBatSpeed > 0 || p.avgExitVelo > 0)} 
+                        fill="#3b82f6"
+                        shape={(props) => {
+                          const { cx, cy, payload } = props;
                           return (
-                            <div className="bg-slate-900 border border-slate-700 p-3 rounded-lg shadow-xl text-sm">
-                              <p className="font-bold text-white mb-2 border-b border-slate-700 pb-1">{label}</p>
-                              {payload.map((entry, index) => (
-                                <p key={index} style={{ color: entry.color }} className="flex justify-between gap-4">
-                                  <span>{entry.name}:</span>
-                                  <span className="text-white font-mono">{Number(entry.value).toFixed(1)} km/h</span>
-                                </p>
-                              ))}
-                            </div>
+                            <g>
+                              <circle cx={cx} cy={cy} r={6} fill="#3b82f6" fillOpacity={0.85} stroke="#60a5fa" strokeWidth={1.5} />
+                              <text x={cx} y={cy - 10} textAnchor="middle" fill="#cbd5e1" fontSize={10} fontWeight="bold">{payload.player}</text>
+                            </g>
                           );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Legend verticalAlign="top" height={36}/>
-                    {hasBatData && <Bar dataKey="avgBatSpeed" name="平均バットスピード" fill="#3b82f6" fillOpacity={0.6} radius={[4, 4, 0, 0]} />}
-                    {hasBatData && <Bar dataKey="maxBatSpeed" name="最大バットスピード" fill="#2563eb" radius={[4, 4, 0, 0]} />}
-                    {hasBallData && <Bar dataKey="avgExitVelo" name="平均打球速度" fill="#10b981" fillOpacity={0.6} radius={[4, 4, 0, 0]} />}
-                    {hasBallData && <Bar dataKey="maxExitVelo" name="最大打球速度" fill="#059669" radius={[4, 4, 0, 0]} />}
-                  </BarChart>
+                        }}
+                      />
+                    </ScatterChart>
+                  ) : (
+                    <BarChart data={teamStats.players.slice(0, 15)} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                      <XAxis dataKey="player" stroke="#94a3b8" fontSize={10} interval={0} angle={-45} textAnchor="end" />
+                      <YAxis 
+                        stroke="#94a3b8" 
+                        fontSize={10} 
+                        unit="km/h" 
+                        domain={[
+                          leftYMin !== '' && !isNaN(Number(leftYMin)) ? Number(leftYMin) : 0,
+                          leftYMax !== '' && !isNaN(Number(leftYMax)) ? Number(leftYMax) : 'auto'
+                        ]}
+                      />
+                      <Tooltip 
+                        cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                        content={({ active, payload, label }) => {
+                          if (active && payload && payload.length) {
+                            return (
+                              <div className="bg-slate-900 border border-slate-700 p-3 rounded-lg shadow-xl text-sm">
+                                <p className="font-bold text-white mb-2 border-b border-slate-700 pb-1">{label}</p>
+                                {payload.map((entry, index) => (
+                                  <p key={index} style={{ color: entry.color }} className="flex justify-between gap-4">
+                                    <span>{entry.name}:</span>
+                                    <span className="text-white font-mono">{Number(entry.value).toFixed(1)} km/h</span>
+                                  </p>
+                                ))}
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Legend verticalAlign="top" height={36}/>
+                      {hasBatData && <Bar dataKey="avgBatSpeed" name="平均バットスピード" fill="#3b82f6" fillOpacity={0.6} radius={[4, 4, 0, 0]} />}
+                      {hasBatData && <Bar dataKey="maxBatSpeed" name="最大バットスピード" fill="#2563eb" radius={[4, 4, 0, 0]} />}
+                      {hasBallData && <Bar dataKey="avgExitVelo" name="平均打球速度" fill="#10b981" fillOpacity={0.6} radius={[4, 4, 0, 0]} />}
+                      {hasBallData && <Bar dataKey="maxExitVelo" name="最大打球速度" fill="#059669" radius={[4, 4, 0, 0]} />}
+                    </BarChart>
+                  )}
                 </ResponsiveContainer>
               </div>
             </div>
 
-            <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 md:p-8 shadow-2xl flex flex-col" style={{height: '400px'}}>
-              <h3 className="font-bold text-white mb-4 text-center">打球速度 vs 打球角度 (チーム内分布)</h3>
-              <div className="flex-1">
+            {/* 右グラフ: 打球速度 vs 打球角度 プロット散布図 */}
+            <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg p-5 flex flex-col">
+              <div className="flex items-center justify-between mb-4 border-b border-slate-700 pb-3">
+                <h3 className="font-bold text-white text-base">打球速度 vs 打球角度 (チーム内分布)</h3>
+                <span className="text-xs text-slate-400">プロット表示</span>
+              </div>
+
+              {/* 軸範囲設定コントロール */}
+              <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60 mb-4 text-xs grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div>
+                  <span className="text-slate-400 block mb-1">X軸 (打球速) 最小</span>
+                  <input 
+                    type="number" 
+                    placeholder="Auto" 
+                    value={rightXMin} 
+                    onChange={e => setRightXMin(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-1">X軸 (打球速) 最大</span>
+                  <input 
+                    type="number" 
+                    placeholder="Auto" 
+                    value={rightXMax} 
+                    onChange={e => setRightXMax(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-1">Y軸 (打球角) 最小</span>
+                  <input 
+                    type="number" 
+                    placeholder="Auto" 
+                    value={rightYMin} 
+                    onChange={e => setRightYMin(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-1">Y軸 (打球角) 最大</span>
+                  <input 
+                    type="number" 
+                    placeholder="Auto" 
+                    value={rightYMax} 
+                    onChange={e => setRightYMax(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div style={{ height: '380px' }} className="w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                  <ScatterChart margin={{ top: 20, right: 25, bottom: 20, left: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis type="number" dataKey="avgExitVelo" name="打球速度" unit="km/h" stroke="#94a3b8" label={{ value: '平均打球速度', position: 'insideBottom', offset: -15, fill: '#94a3b8', fontSize: 11 }} domain={['auto', 'auto']} />
-                    <YAxis type="number" dataKey="avgLaunchAngle" name="打球角度" unit="°" stroke="#94a3b8" label={{ value: '平均打球角度', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 11 }} domain={['auto', 'auto']} />
+                    <XAxis 
+                      type="number" 
+                      dataKey="avgExitVelo" 
+                      name="打球速度" 
+                      unit="km/h" 
+                      stroke="#94a3b8" 
+                      domain={[
+                        rightXMin !== '' && !isNaN(Number(rightXMin)) ? Number(rightXMin) : 'auto',
+                        rightXMax !== '' && !isNaN(Number(rightXMax)) ? Number(rightXMax) : 'auto'
+                      ]}
+                      label={{ value: '平均打球速度 (km/h)', position: 'insideBottom', offset: -12, fill: '#94a3b8', fontSize: 11 }} 
+                    />
+                    <YAxis 
+                      type="number" 
+                      dataKey="avgLaunchAngle" 
+                      name="打球角度" 
+                      unit="°" 
+                      stroke="#94a3b8" 
+                      domain={[
+                        rightYMin !== '' && !isNaN(Number(rightYMin)) ? Number(rightYMin) : 'auto',
+                        rightYMax !== '' && !isNaN(Number(rightYMax)) ? Number(rightYMax) : 'auto'
+                      ]}
+                      label={{ value: '平均打球角度 (°)', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 11 }} 
+                    />
                     <Tooltip 
                       cursor={{ strokeDasharray: '3 3' }} 
                       content={({ active, payload }) => {
@@ -465,14 +664,14 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                       }}
                     />
                     <Scatter 
-                      data={teamStats.players.filter(p => p.avgExitVelo > 0)} 
+                      data={teamStats.players.filter(p => p.avgExitVelo > 0 || p.avgLaunchAngle !== 0)} 
                       fill="#10b981"
                       shape={(props) => {
                         const { cx, cy, payload } = props;
                         return (
                           <g>
-                            <circle cx={cx} cy={cy} r={6} fill="#10b981" fillOpacity={0.8} />
-                            <text x={cx} y={cy - 10} textAnchor="middle" fill="#94a3b8" fontSize={9}>{payload.player}</text>
+                            <circle cx={cx} cy={cy} r={6} fill="#10b981" fillOpacity={0.85} stroke="#34d399" strokeWidth={1.5} />
+                            <text x={cx} y={cy - 10} textAnchor="middle" fill="#cbd5e1" fontSize={10} fontWeight="bold">{payload.player}</text>
                           </g>
                         );
                       }}
@@ -481,6 +680,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                 </ResponsiveContainer>
               </div>
             </div>
+
           </div>
         </div>
       ) : (
