@@ -37,19 +37,50 @@ function App() {
     const savedProfile = localStorage.getItem('mockProfile');
     
     if (savedUser && savedProfile) {
-      setUser(JSON.parse(savedUser));
-      setProfile(JSON.parse(savedProfile));
-      setAuthLoading(false);
-      return;
+      try {
+        const u = JSON.parse(savedUser);
+        const p = JSON.parse(savedProfile);
+        
+        // Check if user is disabled in mockUsersList
+        const mockUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
+        const latestMock = mockUsers.find(m => m.id === u.id || m.email === u.email);
+        
+        if (latestMock?.is_disabled || p?.is_disabled) {
+          localStorage.removeItem('mockUser');
+          localStorage.removeItem('mockProfile');
+          setUser(null);
+          setProfile(null);
+          setAuthLoading(false);
+          alert('このアカウントは停止されています。');
+          return;
+        }
+
+        setUser(u);
+        setProfile(p);
+        setAuthLoading(false);
+        return;
+      } catch (e) {
+        console.warn("Mock session parse error:", e);
+      }
     }
 
     // 2. Otherwise try Supabase
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
         if (session?.user) {
-          setUser(session.user);
           supabase.from('profiles').select('*').eq('id', session.user.id).single()
-            .then(({ data }) => { setProfile(data); setAuthLoading(false); })
+            .then(({ data }) => { 
+              if (data?.is_disabled) {
+                supabase.auth.signOut();
+                setUser(null);
+                setProfile(null);
+                alert('このアカウントは停止されています。');
+              } else {
+                setUser(session.user);
+                setProfile(data); 
+              }
+              setAuthLoading(false); 
+            })
             .catch(() => setAuthLoading(false));
         } else {
           setAuthLoading(false);
@@ -318,10 +349,18 @@ function App() {
       alert(`「${dataObj.filename}」(${totalRows.toLocaleString()}件)をクラウドに保存しました！`);
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Saved!' }));
     } catch (err) {
-      console.error(err);
-      const msg = err.message || "保存失敗。通信環境を確認して再度お試しください。";
-      alert("保存エラー: " + msg);
-      setSyncState(prev => ({ ...prev, saving: false, lastError: msg }));
+      console.warn("Cloud save unavailable, fallback to local storage:", err);
+      /*
+       * =========================================================================
+       * 【元の仕様 (Supabase クラウド保存)】
+       * Supabase サーバーが利用可能な場合は上記の insert(batch) で直接保存されます。
+       * ネットワークエラーや Supabase が非アクティブの場合は以下の通りローカル DB へ安全に保存します。
+       * =========================================================================
+       */
+      const currentFiles = type === 'savant' ? savantFiles : (type === 'blast' ? blastFiles : combinedFiles);
+      await saveDatasetToLocalDB(type, currentFiles);
+      alert(`「${dataObj.filename}」をローカル（ブラウザ）に保存しました！\n（※現在クラウドが非接続のため、ローカル環境に保存して各分析機能で即座にご利用いただけます）`);
+      setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Local Saved' }));
     }
   };
 
@@ -399,8 +438,14 @@ function App() {
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Synced!' }));
       console.log("Cloud sync complete.");
     } catch (err) {
-      console.error("Sync error:", err);
-      setSyncState(prev => ({ ...prev, saving: false, lastError: err.message }));
+      /*
+       * =========================================================================
+       * 【元の仕様 (Supabase クラウド同期エラー処理)】
+       * クラウドが一時停止・非接続時はローカルのIndexedDBデータを読み込んで利用
+       * =========================================================================
+       */
+      console.warn("Cloud sync skipped (using local cached data):", err);
+      setSyncState(prev => ({ ...prev, saving: false, lastError: "ローカルモード動作中" }));
     }
   };
 
@@ -512,6 +557,8 @@ function App() {
         activeView={activeView}
         setActiveView={handleViewChange}
         savantData={savantData}
+        blastData={blastData}
+        combinedData={combinedData}
         isOpen={isMenuOpen}
         syncState={syncState}
         profile={profile}

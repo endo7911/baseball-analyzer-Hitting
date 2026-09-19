@@ -6,6 +6,16 @@ import { Users, TrendingUp, Zap, BarChart3, Eye } from 'lucide-react';
 function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
   const [sourceType, setSourceType] = useState('savant');
   const activeData = sourceType === 'savant' ? savantData : sourceType === 'blast' ? blastData : combinedData;
+
+  useEffect(() => {
+    const savantCount = savantData?.data?.length || 0;
+    const blastCount = blastData?.data?.length || 0;
+    const combinedCount = combinedData?.data?.length || 0;
+
+    if (savantCount === 0 && blastCount === 0 && combinedCount > 0 && sourceType !== 'combined') {
+      setSourceType('combined');
+    }
+  }, [savantData, blastData, combinedData]);
   
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState('');
@@ -21,7 +31,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
   useEffect(() => {
     if (activeData && activeData.data) {
       // Rank candidates: lower index = higher priority
-      const candidates = ['Player Name', 'batter_name', 'player_name', 'PlayerName', '選手名', '氏名', 'pitcher_name', 'batter', 'pitcher'];
+      const candidates = ['選手名', '名前', 'Player Name', 'batter_name', 'player_name', 'PlayerName', '氏名', 'pitcher_name', 'batter', 'pitcher'];
       
       let bestNameKey = nameKey;
       let bestRank = Infinity;
@@ -49,7 +59,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
   useEffect(() => {
     if (activeData && activeData.data) {
       // Determine best teamKey - Prioritize 'Team' as requested
-      const teamCandidates = ['Team', 'team_name', 'home_team', 'away_team', 'Unknown Team'];
+      const teamCandidates = ['チーム名', 'チーム', 'Team', 'team_name', 'home_team', 'away_team', 'Unknown Team'];
       const teamKey = headers.find(h => teamCandidates.includes(h)) || 'Unknown Team';
       
       const grouped = groupEventsByTeamAndPlayer(activeData.data, teamKey, nameKey);

@@ -2,13 +2,12 @@ import React, { useState, useMemo } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { LineChart, Settings2, Table } from 'lucide-react';
 
-// Parse strictly - returns NaN for non-numeric, not 0
-const parseNum = (val) => {
-  if (val === null || val === undefined || val === '') return NaN;
-  if (typeof val === 'number') return isNaN(val) ? NaN : val;
-  const cleaned = String(val).replace(/[^0-9.-]/g, '');
-  const parsed = parseFloat(cleaned);
-  return isNaN(parsed) ? NaN : parsed;
+// Format a numeric value smartly: integers as integer, otherwise 1dp
+const fmtVal = (v, key = '') => {
+  if (v === undefined || v === null || isNaN(v)) return '-';
+  const GRADE_KEYS = ['学年', '学年（数値）', 'grade', 'Grade', 'Year', 'year'];
+  if (GRADE_KEYS.some(k => key.includes(k))) return `${Math.round(v)}年`;
+  return Number.isInteger(v) || v % 1 === 0 ? String(Math.round(v)) : v.toFixed(1);
 };
 
 function CustomCharts({ savantData, blastData, combinedData }) {
@@ -167,7 +166,7 @@ function CustomCharts({ savantData, blastData, combinedData }) {
                     stroke="#94a3b8"
                     domain={['auto', 'auto']}
                     label={{ value: xAxis, position: 'insideBottom', offset: -10, fill: '#64748b' }}
-                    tickFormatter={(v) => typeof v === 'number' ? v.toFixed(1) : v}
+                    tickFormatter={(v) => fmtVal(v, xAxis)}
                   />
                   <YAxis
                     type="number"
@@ -176,7 +175,7 @@ function CustomCharts({ savantData, blastData, combinedData }) {
                     stroke="#94a3b8"
                     domain={['auto', 'auto']}
                     label={{ value: yAxis, angle: -90, position: 'insideLeft', fill: '#64748b' }}
-                    tickFormatter={(v) => typeof v === 'number' ? v.toFixed(1) : v}
+                    tickFormatter={(v) => fmtVal(v, yAxis)}
                   />
                   <Tooltip
                     cursor={{ strokeDasharray: '3 3' }}
@@ -186,8 +185,8 @@ function CustomCharts({ savantData, blastData, combinedData }) {
                         return (
                           <div className="bg-slate-900 border border-slate-700 p-3 rounded-lg shadow-xl text-sm">
                             {d.playerLabel && <p className="font-bold text-white mb-1 border-b border-slate-700 pb-1">{d.playerLabel}</p>}
-                            <p className="text-blue-400">{xAxis}: <span className="text-white font-mono">{d.x.toFixed(1)}</span></p>
-                            <p className="text-purple-400">{yAxis}: <span className="text-white font-mono">{d.y.toFixed(1)}</span></p>
+                            <p className="text-blue-400">{xAxis}: <span className="text-white font-mono">{fmtVal(d.x, xAxis)}</span></p>
+                            <p className="text-purple-400">{yAxis}: <span className="text-white font-mono">{fmtVal(d.y, yAxis)}</span></p>
                           </div>
                         );
                       }
@@ -222,8 +221,8 @@ function CustomCharts({ savantData, blastData, combinedData }) {
                       <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
                         <td className="px-4 py-2 text-slate-500">{i + 1}</td>
                         {row.playerLabel !== '' && <td className="px-4 py-2 font-medium text-white">{row.playerLabel}</td>}
-                        <td className="px-4 py-2 font-mono text-blue-300">{row.x.toFixed(1)}</td>
-                        <td className="px-4 py-2 font-mono text-purple-300">{row.y.toFixed(1)}</td>
+                        <td className="px-4 py-2 font-mono text-blue-300">{fmtVal(row.x, xAxis)}</td>
+                        <td className="px-4 py-2 font-mono text-purple-300">{fmtVal(row.y, yAxis)}</td>
                       </tr>
                     ))}
                   </tbody>

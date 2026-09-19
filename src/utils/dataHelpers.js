@@ -98,19 +98,32 @@ export const calculateStats = (events) => {
   return { ba, slg, totalBases, ab: abEvents.length };
 };
 
-export const BS_KEYS = ['bat_speed', 'BatSpeed', 'バットスピード', 'バット速度', 'バットスピー', 'Bat Speed (mph)'];
+export const BS_KEYS = ['bat_speed', 'BatSpeed', 'バットスピード', 'バット速度', 'バットスピー', 'スイング速度', 'スイングスピード', 'Bat Speed (mph)', 'スイング'];
 export const PLANE_KEYS = ['on_plane_efficiency', 'OnPlaneEfficiency', 'オンプレーン効率', 'オンプレーン%', 'オンプレーン', 'On Plane Efficiency (%)'];
 export const CONN_KEYS = ['connection_score', 'ConnectionScore', 'コネクション', '体とバットの'];
 export const ROT_KEYS = ['rotation_score', 'RotationScore', 'ローテーション', '体の回転によ', '体の回転による加速スコア'];
 export const TIME_KEYS = ['time_to_contact', 'TimeToContact', 'スイング時間', 'Time to Contact (sec)'];
-export const EV_KEYS = ['ExitVelocity', 'launch_speed', 'exit_velocity', 'EV', '打球速度', '打球スピード'];
-export const LA_KEYS = ['LaunchAngle', 'launch_angle', 'LA', '打球角度'];
+export const EV_KEYS = ['ExitVelocity', 'launch_speed', 'exit_velocity', 'EV', '打球速度', '打球スピード', '打球速', '打球'];
+export const LA_KEYS = ['LaunchAngle', 'launch_angle', 'LA', '打球角度', '角度'];
 export const DIST_KEYS = ['Distance', 'hit_distance_sc', 'distance', '飛距離', '推定飛距離'];
 export const ROTATION_ACCEL_KEYS = ['rotation_acceleration', 'Rotation Acceleration', '回転加速', '体の回転による'];
-export const AA_KEYS = ['attack_angle', 'アタックアングル', 'AttackAngle', 'AA', 'アッパースイング度'];
+export const AA_KEYS = ['attack_angle', 'アタックアングル', 'AttackAngle', 'AA', 'アッパースイング度', 'アッパー', 'アッパースイング', 'アッパースイング角度', 'アッパー角度'];
 export const PITCH_VELO_KEYS = ['PitchBallVelo', 'release_speed', 'pitch_velocity', '球速'];
 export const HS_KEYS = ['peak_hand_speed', 'PeakHandSpeed', '手の最大速度', '手の最大スピード', 'Hand Speed'];
 export const ON_PLANE_SCORE_KEYS = ['on_plane_score', 'OnPlaneScore', 'オンプレーンスコア', 'オンプレーンのスコア'];
+export const GRADE_KEYS = ['grade', 'Grade', '学年', '年次', '学年・年次'];
+export const NAME_KEYS = ['player_name', 'Player Name', 'Player', 'PlayerName', '選手名', '氏名', '名前', '名前・氏名', 'batter_name'];
+
+export const getPlayerGrade = (events) => {
+  if (!events || events.length === 0) return '';
+  for (let i = 0; i < events.length; i++) {
+    const row = events[i];
+    if (!row) continue;
+    const val = row['学年'] || row['grade'] || row['Grade'] || row['年次'] || row['学年・年次'];
+    if (val !== undefined && val !== null && val !== '') return String(val);
+  }
+  return '';
+};
 
 // Cache for fuzzy key resolutions to avoid Object.keys() on every row
 const keyResolutionCache = new Map();
@@ -186,11 +199,17 @@ export const groupEventsByTeamAndPlayer = (data, teamKey = 'team_name', nameKey 
   if (!data || !Array.isArray(data)) return {};
   
   const groups = {};
-  const nameFallbacks = ['player_name', 'Player Name', 'Player', 'PlayerName', '選手名', '氏名', 'batter_name', 'pitcher_name'];
+  const nameFallbacks = ['選手名', '名前', 'player_name', 'Player Name', 'Player', 'PlayerName', '氏名', 'batter_name', 'pitcher_name'];
+  const teamFallbacks = ['チーム名', 'チーム', 'Team', 'team_name'];
 
   data.forEach(row => {
-    // Determine Team
-    let tName = (row[teamKey] || 'Unknown Team').toString().trim();
+    // Determine Team — try supplied key, then fallback list
+    let tName = row[teamKey];
+    if (!tName || tName.toString().trim() === '' || tName === 'null' || tName === 'undefined') {
+      const foundTeamKey = teamFallbacks.find(k => k !== teamKey && row[k] !== undefined && row[k] !== null && row[k].toString().trim() !== '');
+      tName = foundTeamKey ? row[foundTeamKey] : 'Unknown Team';
+    }
+    tName = tName.toString().trim();
     if (tName === '' || tName === 'null' || tName === 'undefined') tName = 'Unknown Team';
     
     // Determine Player Name with robust fallback

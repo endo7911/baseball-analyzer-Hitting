@@ -1,16 +1,17 @@
 import React from 'react';
 import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, AlertCircle, Shield, LogOut } from 'lucide-react';
 
-function Sidebar({ activeView, setActiveView, savantData, isOpen, syncState, profile, onLogout }) {
+function Sidebar({ activeView, setActiveView, savantData, blastData, combinedData, isOpen, syncState, profile, onLogout }) {
   const isAdmin = profile?.role === 'admin';
+  const hasData = (savantData?.data?.length > 0) || (blastData?.data?.length > 0) || (combinedData?.data?.length > 0);
 
   const menuItems = [
     { id: 'upload', label: 'データ読み込み', icon: UploadCloud },
     { id: 'cloud', label: 'クラウド管理', icon: HardDrive },
-    { id: 'team', label: 'チーム分析', icon: Users, disabled: !savantData },
-    { id: 'player', label: '個人成績', icon: User, disabled: !savantData },
-    { id: 'game', label: '試合スタッツ', icon: Trophy, disabled: !savantData },
-    { id: 'custom', label: 'カスタムグラフ', icon: LineChart, disabled: !savantData },
+    { id: 'team', label: 'チーム分析', icon: Users, disabled: !hasData },
+    { id: 'player', label: '個人成績', icon: User, disabled: !hasData },
+    { id: 'game', label: '試合スタッツ', icon: Trophy, disabled: !hasData },
+    { id: 'custom', label: 'カスタムグラフ', icon: LineChart, disabled: !hasData },
     ...(isAdmin ? [{ id: 'admin', label: '管理者パネル', icon: Shield }] : []),
   ];
 

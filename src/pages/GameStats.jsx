@@ -19,7 +19,7 @@ function GameStats({ savantData, blastData, combinedData }) {
   useEffect(() => {
     if (activeData && activeData.data) {
       // Determine best teamKey - Prioritize 'Team' as requested
-      const teamCandidates = ['Team', 'team_name', 'home_team', 'away_team', 'Unknown Team'];
+      const teamCandidates = ['チーム名', 'チーム', 'Team', 'team_name', 'home_team', 'away_team'];
       const teamKey = headers.find(h => teamCandidates.includes(h)) || 'Unknown Team';
       
       // Rank candidates for Player Name
@@ -47,7 +47,7 @@ function GameStats({ savantData, blastData, combinedData }) {
   }, [activeData, nameKey, headers]);
 
   // Candidates for the dropdown to filter out useless columns
-  const nameCandidates = ['Player Name', 'batter_name', 'player_name', 'PlayerName', '選手名', '氏名', 'pitcher_name', 'batter', 'pitcher'];
+  const nameCandidates = ['選手名', '名前', 'Player Name', 'batter_name', 'player_name', 'PlayerName', '氏名', 'pitcher_name', 'batter', 'pitcher'];
   const availableNameKeys = headers.filter(h => nameCandidates.includes(h));
 
   useEffect(() => {
@@ -84,6 +84,15 @@ function GameStats({ savantData, blastData, combinedData }) {
       <header className="mb-8">
         <h2 className="text-3xl font-extrabold text-white mb-2">試合スタッツ (Game Stats)</h2>
         <p className="text-slate-400">Rapsodoデータを試合結果と見なし、打率や長打率を算出します。</p>
+        {/* 必要な条件 */}
+        <div className="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm">
+          <p className="font-bold text-amber-400 mb-1">⚠️ このページが機能するために必要な条件</p>
+          <ul className="text-amber-300/80 list-disc list-inside space-y-1">
+            <li>CSVに <code className="bg-slate-700 px-1 rounded text-xs">events</code> 列が必要（値: <code className="bg-slate-700 px-1 rounded text-xs">single / double / triple / home_run / strikeout / walk / out</code> など）</li>
+            <li>スイング速度・打球速度だけの統合CSVでは、events列がないためスタッツは算出できません</li>
+            <li>Rapsodo出力CSVを使用するか、events列を手動で追加してください</li>
+          </ul>
+        </div>
       </header>
 
       <div className="bg-slate-800/80 p-8 rounded-3xl border border-slate-700/50 mb-8 shadow-xl">
@@ -226,8 +235,17 @@ function GameStats({ savantData, blastData, combinedData }) {
       ) : (
         <div className="flex flex-col items-center justify-center py-32 text-slate-500 border-2 border-dashed border-slate-700 rounded-3xl bg-slate-800/30">
           <Users className="w-20 h-20 mb-6 opacity-20" />
-          <p className="text-xl font-medium">チームを選択してスタッツを生成</p>
-          <p className="text-sm mt-2">Rapsodoのevents列を元に自動算出します</p>
+          {selectedTeam ? (
+            <>
+              <p className="text-xl font-medium text-amber-400">データが不足しています</p>
+              <p className="text-sm mt-2 text-center max-w-md">このデータには <code className="bg-slate-700 px-1 rounded">events</code> 列がありません。<br />打率・長打率の算出には「single/double/home_run...」等の試合結果列が必要です。</p>
+            </>
+          ) : (
+            <>
+              <p className="text-xl font-medium">{teams.length > 0 ? 'チームを選択してスタッツを生成' : 'データを読み込んでください'}</p>
+              <p className="text-sm mt-2">Rapsodoの <code className="bg-slate-700 px-1 rounded">events</code> 列を元に自動算出します</p>
+            </>
+          )}
         </div>
       )}
     </div>

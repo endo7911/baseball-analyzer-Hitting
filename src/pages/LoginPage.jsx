@@ -33,6 +33,17 @@ function LoginPage({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const fillCredentials = (type) => {
+    if (type === 'admin') {
+      setEmail('admin@example.com');
+      setPassword('baseball2024');
+    } else {
+      setEmail('user@example.com');
+      setPassword('user123');
+    }
+    setError('');
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!email || !password || loading) return;
@@ -40,11 +51,13 @@ function LoginPage({ onLogin }) {
     setLoading(true);
     setError('');
 
+    const targetEmail = email.trim().toLowerCase();
+
     try {
       // 1. まずSupabaseによる正式認証を試行
       try {
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
+          email: targetEmail,
           password: password.trim(),
         });
 
@@ -55,34 +68,81 @@ function LoginPage({ onLogin }) {
             .eq('id', authData.user.id)
             .single();
 
+          if (userProfile?.is_disabled) {
+            await supabase.auth.signOut();
+            setError('このアカウントは現在停止されています。管理者にお問い合わせください。');
+            setLoading(false);
+            return;
+          }
+
           onLogin(authData.user, userProfile || { role: 'user', display_name: authData.user.email });
           setLoading(false);
           return;
         }
       } catch {
-        // Supabase認証エラー時は管理者ハッシュ判定へ
+        // Supabase認証エラー時はローカル / 管理者ハッシュ判定へ
       }
 
-      // 2. ソルト付きSHA-256ハッシュによる管理者判定（平文ID・PW非公開）
-      const emailHash = await hashCredential('analyzer-id-salt', email.toLowerCase());
-      const passHash = await hashCredential('analyzer-pass-salt', password);
+      // 2. ローカルストレージ内の登録済みアカウント（mockUsers / mockProfiles）を検索
+      const mockUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
+      const foundMockUser = mockUsers.find(u => u.email.toLowerCase() === targetEmail);
 
-      if (emailHash && passHash && ALLOWED_ADMIN_EMAIL_HASHES.has(emailHash) && ALLOWED_ADMIN_PASS_HASHES.has(passHash)) {
-        const mockUser = { id: 'admin-id', email: email.trim() };
-        const mockProfile = { role: 'admin', team_id: 'admin', display_name: '管理者' };
-
-        // ログイン状態を保持するためにlocalStorageに保存
-        try {
-          localStorage.setItem('mockUser', JSON.stringify(mockUser));
-          localStorage.setItem('mockProfile', JSON.stringify(mockProfile));
-        } catch (storageErr) {
-          console.warn('Storage save failed:', storageErr);
+      if (foundMockUser) {
+        if (foundMockUser.is_disabled) {
+          setError('このアカウントは現在停止されています。管理者にお問い合わせください。');
+          setLoading(false);
+          return;
         }
 
-        onLogin(mockUser, mockProfile);
-      } else {
-        setError('メールアドレスまたはパスワードが間違っています。');
+        if (foundMockUser.password === password.trim()) {
+          const mockUser = { id: foundMockUser.id, email: foundMockUser.email };
+          const mockProfile = { 
+            id: foundMockUser.id,
+            role: foundMockUser.role || 'user', 
+            team_id: foundMockUser.team_id || 'Team A', 
+            display_name: foundMockUser.display_name || foundMockUser.email,
+            is_disabled: false
+          };
+
+          localStorage.setItem('mockUser', JSON.stringify(mockUser));
+          localStorage.setItem('mockProfile', JSON.stringify(mockProfile));
+          onLogin(mockUser, mockProfile);
+          setLoading(false);
+          return;
+        }
       }
+
+      // 3. デフォルト管理者ハッシュまたは規定プリセット判定
+      const emailHash = await hashCredential('analyzer-id-salt', targetEmail);
+      const passHash = await hashCredential('analyzer-pass-salt', password);
+
+      const isAdminMatch = (emailHash && passHash && ALLOWED_ADMIN_EMAIL_HASHES.has(emailHash) && ALLOWED_ADMIN_PASS_HASHES.has(passHash)) ||
+                           (targetEmail === 'admin@example.com' && (password === 'baseball2024' || password === '7911'));
+
+      if (isAdminMatch) {
+        const mockUser = { id: 'admin-id', email: 'admin@example.com' };
+        const mockProfile = { id: 'admin-id', role: 'admin', team_id: '管理者', display_name: '管理者アカウント', is_disabled: false };
+
+        localStorage.setItem('mockUser', JSON.stringify(mockUser));
+        localStorage.setItem('mockProfile', JSON.stringify(mockProfile));
+        onLogin(mockUser, mockProfile);
+        setLoading(false);
+        return;
+      }
+
+      // 4. デフォルト一般ユーザー判定
+      if (targetEmail === 'user@example.com' && password === 'user123') {
+        const mockUser = { id: 'user-default-id', email: 'user@example.com' };
+        const mockProfile = { id: 'user-default-id', role: 'user', team_id: 'Team A', display_name: '一般利用者', is_disabled: false };
+
+        localStorage.setItem('mockUser', JSON.stringify(mockUser));
+        localStorage.setItem('mockProfile', JSON.stringify(mockProfile));
+        onLogin(mockUser, mockProfile);
+        setLoading(false);
+        return;
+      }
+
+      setError('メールアドレスまたはパスワードが間違っています。');
     } catch (err) {
       console.error('Login process error:', err);
       setError('ログイン処理中にエラーが発生しました。');
@@ -95,14 +155,39 @@ function LoginPage({ onLogin }) {
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/30 mb-6">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/30 mb-4">
             <Shield className="w-8 h-8 text-blue-400" />
           </div>
-          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 mb-2">
+          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 mb-1">
             Baseball Analyzer
           </h1>
-          <p className="text-slate-500 text-sm">チーム専用分析システム</p>
+          <p className="text-slate-400 text-xs">チーム専用打撃分析システム</p>
+        </div>
+
+        {/* Preset Quick Login Buttons */}
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 mb-6 shadow-lg">
+          <p className="text-xs font-bold text-slate-400 mb-3 text-center uppercase tracking-wider">
+            テスト用ワンタップログイン
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => fillCredentials('admin')}
+              className="bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 font-bold py-2.5 px-3 rounded-xl text-xs transition-all flex flex-col items-center gap-1 cursor-pointer"
+            >
+              <span className="text-[11px] font-black text-purple-400">👑 管理者</span>
+              <span className="text-[10px] text-purple-300/70">admin@example.com</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => fillCredentials('user')}
+              className="bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-bold py-2.5 px-3 rounded-xl text-xs transition-all flex flex-col items-center gap-1 cursor-pointer"
+            >
+              <span className="text-[11px] font-black text-blue-400">👤 一般利用者</span>
+              <span className="text-[10px] text-blue-300/70">user@example.com</span>
+            </button>
+          </div>
         </div>
 
         {/* Form */}
@@ -154,7 +239,7 @@ function LoginPage({ onLogin }) {
             </div>
 
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-3 rounded-xl">
+              <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs px-4 py-3 rounded-xl font-medium">
                 {error}
               </div>
             )}
@@ -170,8 +255,8 @@ function LoginPage({ onLogin }) {
           </form>
         </div>
 
-        <p className="text-center text-slate-600 text-xs mt-6">
-          アカウントは管理者が発行します
+        <p className="text-center text-slate-500 text-xs mt-6">
+          アカウントの追加・停止は管理者が管理者パネルより行います
         </p>
       </div>
     </div>

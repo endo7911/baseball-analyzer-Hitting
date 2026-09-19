@@ -1,20 +1,72 @@
 import React from 'react';
 import Papa from 'papaparse';
-import { UploadCloud, FileText, Database, Cloud, Save, RefreshCw, X } from 'lucide-react';
+import { UploadCloud, FileText, Database, Cloud, Save, RefreshCw, X, Sparkles, Zap } from 'lucide-react';
 import { getSupabase } from '../lib/supabase';
 
 function UploadPage({ savantFiles, blastFiles, combinedFiles, updateDataState, setActiveView, saveToCloud, syncState, profile, fetchFromCloud }) {
   const [isLoading, setIsLoading] = React.useState(false);
 
+  const handleLoadSampleData = () => {
+    const players = [
+      { name: '山田 太郎', grade: '3年', team: 'Aチーム', baseBs: 142, baseEv: 155, baseAa: 12.5, baseLa: 24 },
+      { name: '佐藤 健太', grade: '2年', team: 'Aチーム', baseBs: 136, baseEv: 146, baseAa: 9.8, baseLa: 19 },
+      { name: '鈴木 翔太', grade: '3年', team: 'Aチーム', baseBs: 148, baseEv: 162, baseAa: 14.0, baseLa: 27 },
+      { name: '高橋 陸',   grade: '1年', team: 'Aチーム', baseBs: 128, baseEv: 135, baseAa: 7.2, baseLa: 14 },
+      { name: '田中 拓海', grade: '2年', team: 'Aチーム', baseBs: 140, baseEv: 150, baseAa: 11.0, baseLa: 21 },
+      { name: '渡辺 蓮',   grade: '3年', team: 'Bチーム', baseBs: 145, baseEv: 158, baseAa: 13.2, baseLa: 25 },
+      { name: '伊藤 颯太', grade: '1年', team: 'Bチーム', baseBs: 132, baseEv: 138, baseAa: 8.5, baseLa: 16 },
+    ];
+
+    const sampleRows = [];
+    const dates = ['2026-09-01', '2026-09-05', '2026-09-10', '2026-09-15'];
+
+    players.forEach((p) => {
+      // 10 swings per player
+      for (let i = 0; i < 10; i++) {
+        const bsNoise = Math.sin(i * 1.5) * 4;
+        const evNoise = Math.cos(i * 1.2) * 6;
+        const aaNoise = Math.sin(i * 2.1) * 2;
+        const laNoise = Math.cos(i * 1.8) * 4;
+
+        const bs = Math.round((p.baseBs + bsNoise) * 10) / 10;
+        const ev = Math.round((p.baseEv + evNoise) * 10) / 10;
+        const aa = Math.round((p.baseAa + aaNoise) * 10) / 10;
+        const la = Math.round((p.baseLa + laNoise) * 10) / 10;
+        const dist = Math.round(ev * 0.68 + la * 1.1);
+
+        sampleRows.push({
+          'チーム名': p.team,
+          '選手名': p.name,
+          '学年': p.grade,
+          'スイング速度': bs,
+          '打球速度': ev,
+          'アッパー': aa,
+          '打球角度': la,
+          '飛距離': dist,
+          '日付': dates[i % dates.length],
+          'Direction': ((i % 5 - 2) * 12).toFixed(1)
+        });
+      }
+    });
+
+    const samplePayload = {
+      filename: 'サンプル統合打撃テストデータ.csv',
+      headers: ['チーム名', '選手名', '学年', 'スイング速度', '打球速度', 'アッパー', '打球角度', '飛距離', '日付'],
+      data: sampleRows
+    };
+
+    updateDataState('combined', samplePayload, 'add');
+    alert("テスト（サンプル）データ（7選手・70打席分）を読み込みました！\n下部のボタンまたは左メニューから「チーム分析」「個人成績」に進んでデザインをご確認ください。");
+  };
+
   const handleCloudSync = async () => {
     setIsLoading(true);
     try {
       await fetchFromCloud();
-      // Sync complete, optionally redirect or show success
-      // setActiveView('team');
+      alert("同期処理を実行しました。（ローカル保存データがある場合はローカルより読み込まれます）");
     } catch (err) {
-      console.error(err);
-      alert("同期に失敗しました。");
+      console.warn("Cloud sync skipped:", err);
+      alert("現在クラウド非接続のため、ブラウザ内に読み込まれたローカルデータを使用します。");
     } finally {
       setIsLoading(false);
     }
@@ -169,17 +221,23 @@ function UploadPage({ savantFiles, blastFiles, combinedFiles, updateDataState, s
       <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-3xl font-extrabold text-white mb-2">データ管理</h2>
-          <p className="text-slate-400">CSVアップロードまたはクラウド(Supabase)からデータを同期します。</p>
+          <p className="text-slate-400">CSVファイルをアップロードして直接分析（ブラウザ内即時保存）します。</p>
         </div>
-        <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col gap-3 w-full md:w-auto">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
-            <Cloud className="w-4 h-4 text-blue-400" />
-            クラウド同期
+        <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col sm:flex-row md:flex-col gap-3 w-full md:w-auto">
+          <button 
+            onClick={handleLoadSampleData}
+            className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold py-2.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer border border-emerald-400/30 transform hover:scale-105"
+          >
+            <Sparkles className="w-4 h-4 text-emerald-200" />
+            テストデータを一括セット
+          </button>
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest hidden sm:flex md:hidden">
+            |
           </div>
           <button 
             onClick={handleCloudSync}
             disabled={isLoading}
-            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-30 text-white text-xs font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-2"
+            className="bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-slate-300 text-xs font-bold py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
           >
             {isLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Cloud className="w-3 h-3" />}
             クラウドから一括読込
@@ -219,22 +277,46 @@ function UploadPage({ savantFiles, blastFiles, combinedFiles, updateDataState, s
         </div>
 
         {/* Combined Card */}
-        <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold text-white flex items-center">
-              <span className="bg-emerald-500 w-3 h-6 rounded-full mr-3"></span>
-              Combined Data (Future)
-            </h3>
-            <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-emerald-900/20">
-              ファイルを選択
-              <input type="file" accept=".csv" className="hidden" onChange={(e) => handleFileUpload(e, 'combined')} />
-            </label>
+        <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50 col-span-1 lg:col-span-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+            <div>
+              <h3 className="text-xl font-bold text-white flex items-center mb-1">
+                <span className="bg-emerald-500 w-3 h-6 rounded-full mr-3"></span>
+                1ファイル統合データ (Combined CSV)
+              </h3>
+              <p className="text-xs text-slate-400">
+                スイング速度・打球速度・アッパー・打球角度・名前・学年が1ファイルにまとまったCSVデータに対応
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleLoadSampleData}
+                className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+              >
+                <Sparkles className="w-4 h-4 text-emerald-400" />
+                テストデータをセット
+              </button>
+              <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-900/30 whitespace-nowrap">
+                統合ファイルを選択
+                <input type="file" accept=".csv" className="hidden" onChange={(e) => handleFileUpload(e, 'combined')} />
+              </label>
+            </div>
           </div>
+          
+          <div className="flex flex-wrap gap-2 mb-4">
+            <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-[11px] font-bold">名前 / 選手名</span>
+            <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-[11px] font-bold">学年</span>
+            <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-[11px] font-bold">スイング速度</span>
+            <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-[11px] font-bold">打球速度</span>
+            <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-[11px] font-bold">アッパー (アタックアングル)</span>
+            <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-[11px] font-bold">打球角度</span>
+          </div>
+
           {renderDataView(combinedFiles, 'combined')}
         </div>
       </div>
 
-      {savantFiles.length > 0 && (
+      {(savantFiles.length > 0 || blastFiles.length > 0 || combinedFiles.length > 0) && (
         <div className="mt-10 p-6 bg-blue-900/20 border border-blue-500/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between">
           <div>
             <h4 className="text-lg font-bold text-blue-100 mb-1">データの準備ができました！</h4>

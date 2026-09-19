@@ -19,11 +19,11 @@ function PlayerAnalysis({ savantData, blastData, combinedData, initialPlayer, in
   useEffect(() => {
     if (activeData && activeData.data) {
       // Determine best teamKey - Prioritize 'Team' as requested
-      const teamCandidates = ['Team', 'team_name', 'home_team', 'away_team', 'Unknown Team'];
+      const teamCandidates = ['チーム名', 'チーム', 'Team', 'team_name', 'home_team', 'away_team', 'Unknown Team'];
       const teamKey = headers.find(h => teamCandidates.includes(h)) || 'Unknown Team';
 
       // Rank candidates for Player Name - batter_name is where 'Player Name' gets mapped after cloud sync
-      const candidates = ['Player Name', 'batter_name', 'player_name', 'PlayerName', '選手名', '氏名', 'pitcher_name', 'batter', 'pitcher'];
+      const candidates = ['選手名', '名前', 'Player Name', 'batter_name', 'player_name', 'PlayerName', '氏名', 'pitcher_name', 'batter', 'pitcher'];
       
       let bestNameKey = nameKey;
       let bestRank = Infinity;
@@ -84,14 +84,12 @@ function PlayerAnalysis({ savantData, blastData, combinedData, initialPlayer, in
       } else if (sourceType === 'blast') {
         bEvents = events;
       } else {
-        // combined: separate them by checking if it has bat_speed (Blast) or exit_velocity (Rapsodo)
+        // combined: for 1-file integrated CSVs or combined files, supply events to both arrays so all metrics render
         events.forEach(e => {
-          const isBlast = getDataValue(e, BS_KEYS) > 0;
-          if (isBlast) {
-            bEvents.push(e);
-          } else {
-            sEvents.push(e);
-          }
+          const hasBat = getDataValue(e, BS_KEYS) > 0 || getDataValue(e, AA_KEYS) !== 0;
+          const hasBall = getDataValue(e, EV_KEYS) > 0 || getDataValue(e, LA_KEYS) !== 0 || e.events;
+          if (hasBall || !hasBat) sEvents.push(e);
+          if (hasBat || !hasBall) bEvents.push(e);
         });
       }
 
