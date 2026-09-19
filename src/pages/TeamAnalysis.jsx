@@ -240,7 +240,7 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
                         <circle cx={cx} cy={cy} r={5.5} fill={payload.color} fillOpacity={0.85} stroke="#fff" strokeWidth={1} />
                       )}
                       <text x={cx} y={cy - 9} textAnchor="middle" fill="#cbd5e1" fontSize={9} fontWeight="bold">
-                        {payload.player} ({payload.statType})
+                        {payload.player}
                       </text>
                     </g>
                   );
