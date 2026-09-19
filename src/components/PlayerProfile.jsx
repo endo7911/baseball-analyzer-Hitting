@@ -262,14 +262,14 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
         </div>
       </div>
 
-      <div style={{ height: '340px' }} className="w-full">
+      <div className="w-full h-[340px] print:h-[200px]">
         {trendData.length === 0 ? (
           <div className="flex items-center justify-center h-full text-slate-500 text-xs italic">
             選択された期間・指標のデータが見つかりません
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={trendData} margin={{ top: 25, right: 30, bottom: 35, left: 15 }}>
+            <ComposedChart data={trendData} margin={{ top: 20, right: 30, bottom: 25, left: 15 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis 
                 type="number"
@@ -285,7 +285,7 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
                   const day = String(d.getDate()).padStart(2, '0');
                   return `${d.getFullYear()}-${m}-${day}`;
                 }}
-                label={{ value: '日付', position: 'insideBottom', offset: -20, fill: '#94a3b8', fontSize: 11 }}
+                label={{ value: '日付', position: 'insideBottom', offset: -5, fill: '#94a3b8', fontSize: 10 }}
               />
               <YAxis 
                 type="number" 
@@ -485,12 +485,12 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
 
         <section className="player-analysis-section bg-slate-900/30 p-4 sm:p-8 rounded-[2.5rem] border border-slate-700 print:bg-white print:p-2 print:border-none print:m-0">
           <h3 className="text-2xl font-black text-white mb-8 uppercase italic border-l-4 border-blue-500 pl-4 print:text-sm print:text-slate-900 print:bg-slate-50 print:p-1 print:mb-2">Ball Tracking Analysis</h3>
-          <div className="player-chart-grid grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 h-auto md:h-[400px] print:grid-cols-2 print:gap-4 print:h-[220px]">
-            <div className="player-chart-card player-chart-card-inner flex flex-col h-[320px] md:h-full">
+          <div className="player-chart-grid grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 h-auto md:h-[400px] print:grid-cols-2 print:gap-4 print:h-[200px]">
+            <div className="player-chart-card player-chart-card-inner flex flex-col h-[320px] md:h-full print:h-[180px]">
               <h3 className="text-xs font-black text-slate-400 uppercase mb-3 print:text-slate-900 print:mb-1 print:text-[10px]">Velocity vs Angle</h3>
               <div className="player-chart-body flex-1"><VelocityAngleChart data={filteredData} xKeys={EV_KEYS} yKeys={LA_KEYS} /></div>
             </div>
-            <div className="player-chart-card player-chart-card-inner flex flex-col h-[320px] md:h-full">
+            <div className="player-chart-card player-chart-card-inner flex flex-col h-[320px] md:h-full print:h-[180px]">
               <h3 className="text-xs font-black text-slate-400 uppercase mb-3 print:text-slate-900 print:mb-1 print:text-[10px]">Spray Chart</h3>
               <div className="player-chart-body flex-1"><SprayChart data={filteredData} /></div>
             </div>
@@ -547,6 +547,21 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
           }
           .no-print {
             display: none !important;
+          }
+          .player-report-body {
+            gap: 1rem !important;
+          }
+          .player-chart-card-inner {
+            height: 180px !important;
+          }
+          .player-analysis-section {
+            padding: 0.5rem !important;
+            margin-bottom: 0.5rem !important;
+          }
+          /* Prevent awkward page breaks in PDF */
+          .player-chart-grid, .player-kpi-grid, .player-analysis-section {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
