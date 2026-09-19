@@ -66,26 +66,21 @@ function Sidebar({ activeView, setActiveView, savantData, blastData, combinedDat
         )}
         <div className="px-4 pb-3 space-y-2">
         {syncState.saving && (
-          <div className="flex items-center justify-center gap-2 text-blue-400 animate-pulse text-[10px] font-bold uppercase">
-            <RefreshCw className="w-3 h-3 animate-spin" />
-            Saving to Cloud...
+          <div className="flex items-center justify-center gap-2 text-blue-400 animate-pulse text-xs font-bold p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            <span>クラウドへ同期中...</span>
           </div>
         )}
-        {syncState.lastSuccess && (
-          <div className="flex items-center justify-center gap-2 text-emerald-500 text-[10px] font-bold uppercase">
-            <CheckCircle2 className="w-3 h-3" />
-            {syncState.lastSuccess}
+        {!syncState.saving && syncState.lastSuccess && (
+          <div className="flex items-center justify-center gap-2 text-emerald-400 text-xs font-bold p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>クラウド同期完了</span>
           </div>
         )}
-        {syncState.lastError && (
-          <div className="flex flex-col items-center justify-center gap-1 text-red-500 text-[10px] font-bold uppercase p-2 bg-red-500/10 rounded-lg border border-red-500/20">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-3 h-3" />
-              Sync Failed
-            </div>
-            <div className="lowercase font-normal text-red-400/80 truncate w-full text-center overflow-hidden" title={syncState.lastError}>
-              {syncState.lastError}
-            </div>
+        {!syncState.saving && !syncState.lastSuccess && (
+          <div className="flex items-center justify-center gap-2 text-slate-300 text-xs font-bold p-2 bg-slate-800 rounded-lg border border-slate-700">
+            <HardDrive className="w-3.5 h-3.5 text-blue-400" />
+            <span>ローカルモード (保存中)</span>
           </div>
         )}
         <div className="text-[10px] text-gray-600 text-center">

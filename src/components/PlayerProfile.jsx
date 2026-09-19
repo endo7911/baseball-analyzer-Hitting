@@ -147,6 +147,126 @@ const VelocityAngleChart = ({ data, xKeys, yKeys, xDomain = ['auto', 'auto'], yD
 };
 
 
+const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
+  const [metric, setMetric] = useState('ev');
+
+  const metricMeta = {
+    ev: { label: '打球速度', unit: 'km/h', color: '#10b981', keys: EV_KEYS },
+    la: { label: '打球角度', unit: '°', color: '#a855f7', keys: LA_KEYS },
+    bs: { label: 'バット速度', unit: 'km/h', color: '#3b82f6', keys: BS_KEYS },
+    aa: { label: 'アッパースイング度', unit: '°', color: '#f59e0b', keys: AA_KEYS },
+  };
+
+  const currentMeta = metricMeta[metric];
+
+  const allEvents = useMemo(() => {
+    return [...(savantEvents || []), ...(blastEvents || [])];
+  }, [savantEvents, blastEvents]);
+
+  const trendData = useMemo(() => {
+    const list = [];
+    allEvents.forEach(e => {
+      const rawDate = e.game_date || e.date || e['日付'] || e['Date'] || e['gameDate'] || '';
+      if (!rawDate) return;
+
+      const val = parseNumeric(getDataValue(e, currentMeta.keys));
+      if (val !== 0 && !isNaN(val)) {
+        const dateStr = String(rawDate).trim().split('T')[0].split(' ')[0];
+        list.push({
+          date: dateStr,
+          val,
+        });
+      }
+    });
+
+    return list.sort((a, b) => a.date.localeCompare(b.date));
+  }, [allEvents, currentMeta]);
+
+  return (
+    <div className="w-full bg-slate-800/60 p-6 rounded-2xl border border-slate-700 mt-6 print:bg-white print:border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700/60 pb-3 mb-4 print:border-slate-200">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-purple-400 print:text-purple-600" />
+          <h3 className="text-xs font-black text-slate-300 uppercase print:text-slate-900">日付別 指標変動散布図</h3>
+        </div>
+        <div className="flex items-center gap-2 no-print">
+          <span className="text-xs text-slate-400 font-bold">Y軸指標:</span>
+          <select
+            value={metric}
+            onChange={e => setMetric(e.target.value)}
+            className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
+          >
+            <option value="ev">打球速度 (km/h)</option>
+            <option value="la">打球角度 (°)</option>
+            <option value="bs">バット速度 (km/h)</option>
+            <option value="aa">アッパースイング度 (°)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style={{ height: '300px' }} className="w-full">
+        {trendData.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-slate-500 text-xs italic">
+            選択された指標の日付データが見つかりません
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <ScatterChart margin={{ top: 20, right: 25, bottom: 35, left: 15 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis 
+                dataKey="date" 
+                name="日付" 
+                stroke="#94a3b8" 
+                fontSize={11}
+                tickLine={false}
+                label={{ value: '日付', position: 'insideBottom', offset: -20, fill: '#94a3b8', fontSize: 11 }}
+              />
+              <YAxis 
+                type="number" 
+                dataKey="val" 
+                name={currentMeta.label} 
+                unit={currentMeta.unit} 
+                stroke="#94a3b8" 
+                fontSize={11}
+                width={55}
+                domain={['auto', 'auto']}
+              />
+              <Tooltip 
+                cursor={{ strokeDasharray: '3 3' }} 
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    const d = payload[0].payload;
+                    return (
+                      <div className="bg-slate-900 border border-slate-700 p-2.5 rounded-lg shadow-xl text-xs">
+                        <p className="font-bold text-white mb-1 border-b border-slate-700 pb-1">{d.date}</p>
+                        <p style={{ color: currentMeta.color }} className="font-bold">
+                          {currentMeta.label}: <span className="text-white font-mono">{d.val.toFixed(1)} {currentMeta.unit}</span>
+                        </p>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Scatter 
+                data={trendData} 
+                fill={currentMeta.color}
+                shape={(props) => {
+                  const { cx, cy } = props;
+                  return (
+                    <circle cx={cx} cy={cy} r={5} fill={currentMeta.color} fillOpacity={0.85} stroke="#fff" strokeWidth={1} />
+                  );
+                }}
+              />
+            </ScatterChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
 // --- Main Component ---
 
 const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
@@ -248,6 +368,9 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
             <div className="player-chart-body flex-1"><SprayChart data={filteredData} /></div>
           </div>
         </div>
+
+        {/* 日付推移散布図 */}
+        <PlayerTrendScatterChart savantEvents={savantEvents} blastEvents={blastEvents} />
       </div>
     </div>
   );
@@ -300,6 +423,9 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
             </div>
           </section>
         )}
+
+        {/* 日付推移散布図 */}
+        <PlayerTrendScatterChart savantEvents={savantEvents} blastEvents={blastEvents} />
       </div>
     </div>
   );

@@ -3,6 +3,133 @@ import { extractTeams, extractPlayersByTeam, getPlayerStats, calculateAverages, 
 import { ScatterChart, Scatter, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, LabelList } from 'recharts';
 import { Users, TrendingUp, Zap, BarChart3, Eye } from 'lucide-react';
 
+function TeamTrendScatterChart({ groupedData, selectedTeam }) {
+  const [metric, setMetric] = useState('ev');
+
+  const metricMeta = {
+    ev: { label: '打球速度', unit: 'km/h', color: '#10b981', keys: EV_KEYS },
+    la: { label: '打球角度', unit: '°', color: '#a855f7', keys: LA_KEYS },
+    bs: { label: 'バット速度', unit: 'km/h', color: '#3b82f6', keys: BS_KEYS },
+    aa: { label: 'アッパースイング度', unit: '°', color: '#f59e0b', keys: AA_KEYS },
+  };
+
+  const currentMeta = metricMeta[metric];
+
+  const trendData = useMemo(() => {
+    if (!selectedTeam || !groupedData[selectedTeam]) return [];
+    const teamPlayers = groupedData[selectedTeam];
+    const list = [];
+
+    Object.keys(teamPlayers).forEach(player => {
+      const events = teamPlayers[player];
+      if (!events || !Array.isArray(events)) return;
+
+      events.forEach(e => {
+        const rawDate = e.game_date || e.date || e['日付'] || e['Date'] || e['gameDate'] || '';
+        if (!rawDate) return;
+
+        const val = parseNumeric(getDataValue(e, currentMeta.keys));
+        if (val !== 0 && !isNaN(val)) {
+          const dateStr = String(rawDate).trim().split('T')[0].split(' ')[0];
+          list.push({
+            date: dateStr,
+            val,
+            player,
+          });
+        }
+      });
+    });
+
+    return list.sort((a, b) => a.date.localeCompare(b.date));
+  }, [selectedTeam, groupedData, currentMeta]);
+
+  return (
+    <div className="w-full bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl mt-8 p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-700 pb-4 mb-5">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-purple-400" />
+          <h3 className="font-extrabold text-white text-lg">日付別 打撃指標の変動推移 (チーム散布図)</h3>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-400 font-bold">Y軸指標:</span>
+          <select
+            value={metric}
+            onChange={e => setMetric(e.target.value)}
+            className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-inner"
+          >
+            <option value="ev">打球速度 (km/h)</option>
+            <option value="la">打球角度 (°)</option>
+            <option value="bs">バット速度 (km/h)</option>
+            <option value="aa">アッパースイング度 (°)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style={{ height: '380px' }} className="w-full">
+        {trendData.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-slate-500 text-sm italic">
+            選択された指標の日付データが見つかりません
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <ScatterChart margin={{ top: 25, right: 30, bottom: 40, left: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis 
+                dataKey="date" 
+                name="日付" 
+                stroke="#94a3b8" 
+                fontSize={11}
+                tickLine={false}
+                label={{ value: '日付', position: 'insideBottom', offset: -25, fill: '#94a3b8', fontSize: 11, fontWeight: 'bold' }}
+              />
+              <YAxis 
+                type="number" 
+                dataKey="val" 
+                name={currentMeta.label} 
+                unit={currentMeta.unit} 
+                stroke="#94a3b8" 
+                fontSize={11}
+                width={55}
+                domain={['auto', 'auto']}
+              />
+              <Tooltip 
+                cursor={{ strokeDasharray: '3 3' }} 
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    const d = payload[0].payload;
+                    return (
+                      <div className="bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl text-sm">
+                        <p className="font-bold text-white mb-1 border-b border-slate-700 pb-1">{d.player} ({d.date})</p>
+                        <p style={{ color: currentMeta.color }} className="font-bold">
+                          {currentMeta.label}: <span className="text-white font-mono">{d.val.toFixed(1)} {currentMeta.unit}</span>
+                        </p>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Scatter 
+                data={trendData} 
+                fill={currentMeta.color}
+                shape={(props) => {
+                  const { cx, cy, payload } = props;
+                  return (
+                    <g>
+                      <circle cx={cx} cy={cy} r={5} fill={currentMeta.color} fillOpacity={0.85} stroke="#fff" strokeWidth={1} />
+                      <text x={cx} y={cy - 8} textAnchor="middle" fill="#cbd5e1" fontSize={9} fontWeight="bold">{payload.player}</text>
+                    </g>
+                  );
+                }}
+              />
+            </ScatterChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
   const [sourceType, setSourceType] = useState('savant');
   const activeData = sourceType === 'savant' ? savantData : sourceType === 'blast' ? blastData : combinedData;
@@ -435,43 +562,43 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
               {/* 軸範囲設定コントロール */}
               <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60 mb-4 text-xs grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div>
-                  <span className="text-slate-400 block mb-1">X軸 (バット速) 最小</span>
+                  <span className="text-slate-400 block mb-1 text-[11px] font-bold">X軸 最小</span>
                   <input 
                     type="number" 
-                    placeholder="Auto" 
+                    placeholder="Auto (バット速)" 
                     value={leftXMin} 
                     onChange={e => setLeftXMin(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500 text-xs"
                   />
                 </div>
                 <div>
-                  <span className="text-slate-400 block mb-1">X軸 (バット速) 最大</span>
+                  <span className="text-slate-400 block mb-1 text-[11px] font-bold">X軸 最大</span>
                   <input 
                     type="number" 
-                    placeholder="Auto" 
+                    placeholder="Auto (バット速)" 
                     value={leftXMax} 
                     onChange={e => setLeftXMax(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500 text-xs"
                   />
                 </div>
                 <div>
-                  <span className="text-slate-400 block mb-1">Y軸 (打球速) 最小</span>
+                  <span className="text-slate-400 block mb-1 text-[11px] font-bold">Y軸 最小</span>
                   <input 
                     type="number" 
-                    placeholder="Auto" 
+                    placeholder="Auto (打球速)" 
                     value={leftYMin} 
                     onChange={e => setLeftYMin(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500 text-xs"
                   />
                 </div>
                 <div>
-                  <span className="text-slate-400 block mb-1">Y軸 (打球速) 最大</span>
+                  <span className="text-slate-400 block mb-1 text-[11px] font-bold">Y軸 最大</span>
                   <input 
                     type="number" 
-                    placeholder="Auto" 
+                    placeholder="Auto (打球速)" 
                     value={leftYMax} 
                     onChange={e => setLeftYMax(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500 text-xs"
                   />
                 </div>
               </div>
@@ -479,7 +606,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
               <div style={{ height: '380px' }} className="w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   {leftChartType === 'scatter' ? (
-                    <ScatterChart margin={{ top: 20, right: 25, bottom: 20, left: 20 }}>
+                    <ScatterChart margin={{ top: 20, right: 25, bottom: 35, left: 15 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                       <XAxis 
                         type="number" 
@@ -487,11 +614,12 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                         name="平均バットスピード" 
                         unit="km/h" 
                         stroke="#94a3b8" 
+                        fontSize={11}
                         domain={[
                           leftXMin !== '' && !isNaN(Number(leftXMin)) ? Number(leftXMin) : 'auto',
                           leftXMax !== '' && !isNaN(Number(leftXMax)) ? Number(leftXMax) : 'auto'
                         ]}
-                        label={{ value: '平均バットスピード (km/h)', position: 'insideBottom', offset: -12, fill: '#94a3b8', fontSize: 11 }} 
+                        label={{ value: '平均バットスピード (km/h)', position: 'insideBottom', offset: -18, fill: '#94a3b8', fontSize: 11 }} 
                       />
                       <YAxis 
                         type="number" 
@@ -499,11 +627,12 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                         name="平均打球速度" 
                         unit="km/h" 
                         stroke="#94a3b8" 
+                        fontSize={11}
+                        width={65}
                         domain={[
                           leftYMin !== '' && !isNaN(Number(leftYMin)) ? Number(leftYMin) : 'auto',
                           leftYMax !== '' && !isNaN(Number(leftYMax)) ? Number(leftYMax) : 'auto'
                         ]}
-                        label={{ value: '平均打球速度 (km/h)', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 11 }} 
                       />
                       <Tooltip 
                         cursor={{ strokeDasharray: '3 3' }} 
@@ -537,13 +666,14 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                       />
                     </ScatterChart>
                   ) : (
-                    <BarChart data={teamStats.players.slice(0, 15)} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                    <BarChart data={teamStats.players.slice(0, 15)} margin={{ top: 20, right: 30, left: 15, bottom: 60 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                       <XAxis dataKey="player" stroke="#94a3b8" fontSize={10} interval={0} angle={-45} textAnchor="end" />
                       <YAxis 
                         stroke="#94a3b8" 
                         fontSize={10} 
                         unit="km/h" 
+                        width={65}
                         domain={[
                           leftYMin !== '' && !isNaN(Number(leftYMin)) ? Number(leftYMin) : 0,
                           leftYMax !== '' && !isNaN(Number(leftYMax)) ? Number(leftYMax) : 'auto'
@@ -589,50 +719,50 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
               {/* 軸範囲設定コントロール */}
               <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60 mb-4 text-xs grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div>
-                  <span className="text-slate-400 block mb-1">X軸 (打球速) 最小</span>
+                  <span className="text-slate-400 block mb-1 text-[11px] font-bold">X軸 最小</span>
                   <input 
                     type="number" 
-                    placeholder="Auto" 
+                    placeholder="Auto (打球速)" 
                     value={rightXMin} 
                     onChange={e => setRightXMin(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500 text-xs"
                   />
                 </div>
                 <div>
-                  <span className="text-slate-400 block mb-1">X軸 (打球速) 最大</span>
+                  <span className="text-slate-400 block mb-1 text-[11px] font-bold">X軸 最大</span>
                   <input 
                     type="number" 
-                    placeholder="Auto" 
+                    placeholder="Auto (打球速)" 
                     value={rightXMax} 
                     onChange={e => setRightXMax(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500 text-xs"
                   />
                 </div>
                 <div>
-                  <span className="text-slate-400 block mb-1">Y軸 (打球角) 最小</span>
+                  <span className="text-slate-400 block mb-1 text-[11px] font-bold">Y軸 最小</span>
                   <input 
                     type="number" 
-                    placeholder="Auto" 
+                    placeholder="Auto (打球角)" 
                     value={rightYMin} 
                     onChange={e => setRightYMin(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500 text-xs"
                   />
                 </div>
                 <div>
-                  <span className="text-slate-400 block mb-1">Y軸 (打球角) 最大</span>
+                  <span className="text-slate-400 block mb-1 text-[11px] font-bold">Y軸 最大</span>
                   <input 
                     type="number" 
-                    placeholder="Auto" 
+                    placeholder="Auto (打球角)" 
                     value={rightYMax} 
                     onChange={e => setRightYMax(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-emerald-500 text-xs"
                   />
                 </div>
               </div>
 
               <div style={{ height: '380px' }} className="w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 20, right: 25, bottom: 20, left: 20 }}>
+                  <ScatterChart margin={{ top: 20, right: 25, bottom: 35, left: 15 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                     <XAxis 
                       type="number" 
@@ -640,11 +770,12 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                       name="打球速度" 
                       unit="km/h" 
                       stroke="#94a3b8" 
+                      fontSize={11}
                       domain={[
                         rightXMin !== '' && !isNaN(Number(rightXMin)) ? Number(rightXMin) : 'auto',
                         rightXMax !== '' && !isNaN(Number(rightXMax)) ? Number(rightXMax) : 'auto'
                       ]}
-                      label={{ value: '平均打球速度 (km/h)', position: 'insideBottom', offset: -12, fill: '#94a3b8', fontSize: 11 }} 
+                      label={{ value: '平均打球速度 (km/h)', position: 'insideBottom', offset: -18, fill: '#94a3b8', fontSize: 11 }} 
                     />
                     <YAxis 
                       type="number" 
@@ -652,11 +783,12 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                       name="打球角度" 
                       unit="°" 
                       stroke="#94a3b8" 
+                      fontSize={11}
+                      width={55}
                       domain={[
                         rightYMin !== '' && !isNaN(Number(rightYMin)) ? Number(rightYMin) : 'auto',
                         rightYMax !== '' && !isNaN(Number(rightYMax)) ? Number(rightYMax) : 'auto'
                       ]}
-                      label={{ value: '平均打球角度 (°)', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 11 }} 
                     />
                     <Tooltip 
                       cursor={{ strokeDasharray: '3 3' }} 
@@ -694,6 +826,9 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
             </div>
 
           </div>
+
+          {/* 日付推移散布図 (日付 vs 指標推移) */}
+          <TeamTrendScatterChart groupedData={groupedData} selectedTeam={selectedTeam} />
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-20 text-slate-500 border-2 border-dashed border-slate-700 rounded-2xl bg-slate-800/30">
