@@ -222,13 +222,13 @@ function UploadPage({ savantFiles, blastFiles, combinedFiles, updateDataState, s
 
     if (type === 'combined') {
       filename = '打撃データ入力フォーマット_統合データ.csv';
-      content = '日付,チーム名,選手名,学年,スイング速度,打球速度,アッパースイング度,打球角度,飛距離\n2026-09-01,Aチーム,山田 太郎,3年,142.5,155.0,12.5,24.0,110\n';
+      content = '日付,チーム名,選手名,学年,スイング速度,打球速度,アッパースイング度,打球角度,飛距離,打球方向\n2026-09-01,Aチーム,山田 太郎,3年,142.5,155.0,12.5,24.0,110,-12.5\n';
     } else if (type === 'blast') {
       filename = '打撃データ入力フォーマット_Blast.csv';
       content = '日付,選手名,バットスピード,アッパースイング,オンプレーン効率,体とバットの角度スコア,体の回転による加速スコア,スイング時間,手の最大,パワー,垂直バット角度\n2026-09-01,山田 太郎,142.5,12.5,78.5,60,65,0.15,35.0,4.2,30.0\n';
     } else if (type === 'savant') {
       filename = '打撃データ入力フォーマット_Rapsodo.csv';
-      content = 'Date,Player Name,Team,ExitVelocity,LaunchAngle,Distance,HitDirection\n2026-09-01,山田 太郎,Aチーム,155.0,24.0,110,0.0\n';
+      content = 'Date,Player Name,Team,ExitVelocity,LaunchAngle,Distance,HitDirection\n2026-09-01,山田 太郎,Aチーム,155.0,24.0,110,-12.5\n';
     }
 
     // UTF-8 BOM for Microsoft Excel compatibility (prevents garbled Japanese text)

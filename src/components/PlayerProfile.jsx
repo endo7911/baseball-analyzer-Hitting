@@ -37,7 +37,7 @@ const SprayChart = ({ data }) => {
   const getCoordinates = (row) => {
     const hc_x = row.hc_x;
     const hc_y = row.hc_y;
-    const angle = getDataValue(row, ['Direction', 'direction', 'bearing', 'Bearing', 'CameraDirection', 'hc_x']);
+    const angle = getDataValue(row, ['Direction', 'direction', 'bearing', 'Bearing', 'CameraDirection', 'hc_x', '打球方向', '方向', '方向角度']);
     const distance = getDataValue(row, ['hit_distance_sc', 'Distance', 'distance', 'CameraDistance']);
     if (hc_x !== undefined && hc_x !== null && hc_y !== undefined && hc_y !== null && hc_x !== '' && hc_y !== '') {
       const x = (parseNumeric(hc_x) - 125.42) * 1.5 + 150;
