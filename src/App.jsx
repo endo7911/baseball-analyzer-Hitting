@@ -544,19 +544,38 @@ function App() {
   // Not logged in → show login
   if (!user) return <LoginPage onLogin={handleLogin} />;
 
+  const viewLabels = {
+    upload: 'データ読み込み',
+    cloud: 'クラウド管理',
+    team: 'チーム分析',
+    player: '個人成績',
+    game: '試合スタッツ',
+    custom: 'カスタムグラフ',
+    admin: '管理者パネル'
+  };
+
   return (
     <div className="main-layout">
-      {isMenuOpen && <div className="sidebar-overlay" onClick={() => setIsMenuOpen(false)} />}
+      {isMenuOpen && <div className="sidebar-overlay fixed inset-0 bg-black/60 z-40 backdrop-blur-sm lg:hidden" onClick={() => setIsMenuOpen(false)} />}
 
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 border-b border-slate-800 z-50 flex items-center px-6 justify-between">
-        <h1 className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
-          Baseball Analyzer
-        </h1>
-        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 text-slate-300 hover:text-white">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 border-b border-slate-800 z-50 flex items-center px-4 sm:px-6 justify-between shadow-xl">
+        <div className="flex items-center gap-2">
+          <h1 className="text-base sm:text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
+            Baseball Analyzer
+          </h1>
+          <span className="text-[10px] font-bold bg-blue-600/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full">
+            {viewLabels[activeView] || '分析'}
+          </span>
+        </div>
+        <button 
+          onClick={() => setIsMenuOpen(!isMenuOpen)} 
+          className="p-2 text-slate-300 hover:text-white bg-slate-800 border border-slate-700 rounded-xl transition-all"
+          title="メニュー開閉"
+        >
           {isMenuOpen
-            ? <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-            : <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
+            ? <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+            : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16m-7 6h7" /></svg>
           }
         </button>
       </div>
@@ -568,12 +587,13 @@ function App() {
         blastData={blastData}
         combinedData={combinedData}
         isOpen={isMenuOpen}
+        setIsOpen={setIsMenuOpen}
         syncState={syncState}
         profile={profile}
         onLogout={handleLogout}
       />
 
-      <main className="content-area">
+      <main className="content-area pt-20 lg:pt-10">
         <div className="max-container">
           {renderActiveView()}
         </div>
