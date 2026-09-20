@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import { 
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Radar, RadarChart, PolarGrid, PolarAngleAxis, LineChart, Line, ComposedChart, Legend
@@ -395,14 +397,36 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
   const hasBatData = summary.avgBS > 0;
   const reportTeam = savantEvents[0]?.Team || savantEvents[0]?.team_name || 'Individual';
 
-  const handlePrint = () => {
-    const originalTitle = document.title;
-    document.title = `${playerName || 'player'}_analysis_report`;
-    window.setTimeout(() => {
-      window.print();
-      document.title = originalTitle;
-    }, 150);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+
+  const exportToPDF = async () => {
+    const targetElement = document.querySelector('.report-content');
+    if (!targetElement) return;
+
+    setIsExportingPDF(true);
+    try {
+      const canvas = await html2canvas(targetElement, {
+        scale: 2, // High DPI retina resolution
+        useCORS: true,
+        backgroundColor: mode === 'pro' ? '#0b0f17' : '#ffffff',
+        logging: false
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${playerName || '選手'}_打撃分析レポート.pdf`);
+    } catch (err) {
+      console.error("PDF Export Error:", err);
+    } finally {
+      setIsExportingPDF(false);
+    }
   };
+
+  const handlePrint = exportToPDF;
 
   const renderClassic = () => (
     <div className="report-content player-report player-classic-report print:bg-white print:text-slate-900">
@@ -566,7 +590,8 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
             <button onClick={() => setForceMode('classic')} className={`p-2 rounded-xl transition-all ${mode === 'classic' ? 'bg-slate-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}><List size={18} /></button>
             <button onClick={() => setForceMode('pro')} className={`p-2 rounded-xl transition-all ${mode === 'pro' ? 'bg-slate-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}><Layout size={18} /></button>
           </div>
-          <button onClick={handlePrint} className="bg-white text-slate-900 font-black py-3 px-6 rounded-2xl flex items-center gap-2 shadow-xl hover:bg-slate-100 transition-all"><Printer size={18} /> PDF出力</button>
+          {/* PDF出力機能は一時非表示（html2canvas + jsPDFキャンバス連携を実装中） */}
+          {/* <button onClick={handlePrint} disabled={isExportingPDF} className="bg-white text-slate-900 font-black py-3 px-6 rounded-2xl flex items-center gap-2 shadow-xl hover:bg-slate-100 transition-all"><Printer size={18} /> {isExportingPDF ? 'PDF生成中...' : 'PDF出力'}</button> */}
         </div>
       </div>
 
