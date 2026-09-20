@@ -442,13 +442,11 @@ function App() {
 
         while (hasMore) {
           let query = client.from(table).select('*').range(from, from + PAGE_SIZE - 1);
-          if (profile?.team_id && profile?.role !== 'admin') {
-            query = query.eq('team_id', profile.team_id);
-          } else if (profile?.role !== 'admin') {
-            query = query.eq('owner_id', profile?.id);
-          }
           const { data, error } = await query;
-          if (error) throw error;
+          if (error) {
+            console.error(`Error fetching table ${table}:`, error);
+            throw error;
+          }
           const rows = data || [];
           allRows = allRows.concat(rows);
           if (rows.length < PAGE_SIZE) {

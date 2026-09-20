@@ -21,34 +21,27 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     setError(null);
     const client = getSupabase();
     try {
-      // 1. Fetch from new unified table (baseball_data)
-      let baseballQuery = client.from('baseball_data').select('file_name, upload_id, updated_at, team_id, owner_id');
-      if (profile && profile.role !== 'admin') {
-        if (profile.team_id) {
-          baseballQuery = baseballQuery.eq('team_id', profile.team_id);
-        } else if (profile.id) {
-          baseballQuery = baseballQuery.eq('owner_id', profile.id);
-        }
+      // 1. Fetch from unified table (baseball_data)
+      const { data: baseballRows, error: bError } = await client
+        .from('baseball_data')
+        .select('file_name, upload_id, updated_at, created_at')
+        .limit(5000);
+
+      if (bError) {
+        console.warn("baseball_data fetch error:", bError);
       }
-      const { data: baseballRows, error: bError } = await baseballQuery.limit(2000);
-      if (bError) console.warn("baseball_data fetch error:", bError);
 
       // 2. Fetch from legacy tables (savant_data & blast_data)
-      let savantQuery = client.from('savant_data').select('file_name, upload_id, updated_at, team_id, owner_id');
-      let blastQuery = client.from('blast_data').select('file_name, upload_id, updated_at, team_id, owner_id');
+      const { data: savantRows, error: sError } = await client
+        .from('savant_data')
+        .select('file_name, upload_id, updated_at, created_at')
+        .limit(5000);
 
-      if (profile && profile.role !== 'admin') {
-        if (profile.team_id) {
-          savantQuery = savantQuery.eq('team_id', profile.team_id);
-          blastQuery = blastQuery.eq('team_id', profile.team_id);
-        } else if (profile.id) {
-          savantQuery = savantQuery.eq('owner_id', profile.id);
-          blastQuery = blastQuery.eq('owner_id', profile.id);
-        }
-      }
+      const { data: blastRows, error: blError } = await client
+        .from('blast_data')
+        .select('file_name, upload_id, updated_at, created_at')
+        .limit(5000);
 
-      const { data: savantRows, error: sError } = await savantQuery.limit(2000);
-      const { data: blastRows, error: blError } = await blastQuery.limit(2000);
       if (sError) console.warn("savant_data fetch error:", sError);
       if (blError) console.warn("blast_data fetch error:", blError);
 
@@ -95,7 +88,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
 
       const legacyNames = new Set([...savantFileMap.keys(), ...blastFileMap.keys()]);
       legacyNames.forEach(name => {
-        // If dataset is already captured in baseball_data, skip duplicate
+        // Skip if captured in baseball_data
         if (datasetMap.has(`baseball-${name}`)) return;
 
         const inSavant = savantFileMap.has(name);
@@ -158,27 +151,11 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         await client.from('savant_data').delete().eq('file_name', filename);
         await client.from('blast_data').delete().eq('file_name', filename);
       } else if (table === 'baseball_data') {
-        let query = client.from('baseball_data').delete().eq('file_name', filename);
-        if (profile && profile.role !== 'admin') {
-          if (profile.team_id) {
-            query = query.eq('team_id', profile.team_id);
-          } else if (profile.id) {
-            query = query.eq('owner_id', profile.id);
-          }
-        }
-        const { error } = await query;
+        const { error } = await client.from('baseball_data').delete().eq('file_name', filename);
         if (error) throw error;
       } else {
         const targetTable = table || (type === 'savant' ? 'savant_data' : 'blast_data');
-        let query = client.from(targetTable).delete().eq('file_name', filename);
-        if (profile && profile.role !== 'admin') {
-          if (profile.team_id) {
-            query = query.eq('team_id', profile.team_id);
-          } else if (profile.id) {
-            query = query.eq('owner_id', profile.id);
-          }
-        }
-        const { error } = await query;
+        const { error } = await client.from(targetTable).delete().eq('file_name', filename);
         if (error) throw error;
       }
 
