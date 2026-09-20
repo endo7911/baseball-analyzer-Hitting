@@ -337,14 +337,16 @@ function App() {
             if (finalRow.game_date) finalRow.game_date = parseJapaneseDate(finalRow.game_date);
             if (finalRow.date) finalRow.date = parseJapaneseDate(finalRow.date);
 
-            return {
+            const rowPayload = {
               ...finalRow,
               file_name: dataObj.filename,
-              upload_id: uploadId,
-              team_id: validTeamId,
-              owner_id: validOwnerId,
-              updated_at: new Date().toISOString()
+              upload_id: uploadId
             };
+            if (targetColumns.includes('team_id') && validTeamId) rowPayload.team_id = validTeamId;
+            if (targetColumns.includes('owner_id') && validOwnerId) rowPayload.owner_id = validOwnerId;
+            if (targetColumns.includes('updated_at')) rowPayload.updated_at = new Date().toISOString();
+
+            return rowPayload;
           });
 
           const { error } = await client.from(targetTable).insert(batch);
