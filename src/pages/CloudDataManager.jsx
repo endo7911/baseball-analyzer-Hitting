@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import Papa from 'papaparse';
-import { supabase, getSupabase } from '../lib/supabase';
-import { Database, Trash2, RefreshCw, HardDrive, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { getSupabase } from '../lib/supabase';
+import { Database, Trash2, RefreshCw, HardDrive, AlertCircle } from 'lucide-react';
 
 function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud }) {
   const [loading, setLoading] = useState(false);
   const [datasets, setDatasets] = useState([]);
   const [error, setError] = useState(null);
 
-  useEffect(() => { fetchDatasets(); }, []);
+  useEffect(() => { 
+    fetchDatasets(); 
+  }, [profile]);
 
   const handleManualSync = async () => {
-    await fetchFromCloud();
-    fetchDatasets();
+    if (fetchFromCloud) await fetchFromCloud();
+    await fetchDatasets();
   };
 
   const fetchDatasets = async () => {
@@ -20,112 +21,180 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     setError(null);
     const client = getSupabase();
     try {
-      // 1. Fetch from new unified table
-      let query = client.from('baseball_data').select('id, type, filename, updated_at, is_csv').order('updated_at', { ascending: false });
+      // 1. Fetch from new unified table (baseball_data)
+      let baseballQuery = client.from('baseball_data').select('file_name, upload_id, updated_at, team_id, owner_id');
       if (profile && profile.role !== 'admin') {
         if (profile.team_id) {
-          query = query.eq('team_id', profile.team_id);
+          baseballQuery = baseballQuery.eq('team_id', profile.team_id);
         } else if (profile.id) {
-          query = query.eq('owner_id', profile.id);
+          baseballQuery = baseballQuery.eq('owner_id', profile.id);
         }
       }
-      const { data: unifiedData, error: unifiedError } = await query;
-      
-      // 2. Fetch from legacy tables
-      let savantLegacyQuery = client.from('savant_data').select('file_name, created_at');
-      let blastLegacyQuery = client.from('blast_data').select('file_name, created_at');
-      
-      if (profile && profile.role !== 'admin') {
-        if (profile.team_id) {
-          savantLegacyQuery = savantLegacyQuery.eq('team_id', profile.team_id);
-          blastLegacyQuery = blastLegacyQuery.eq('team_id', profile.team_id);
-        } else if (profile.id) {
-          savantLegacyQuery = savantLegacyQuery.eq('owner_id', profile.id);
-          blastLegacyQuery = blastLegacyQuery.eq('owner_id', profile.id);
-        }
-      }
-      
-      const { data: savantLegacy } = await savantLegacyQuery.limit(1000);
-      const { data: blastLegacy } = await blastLegacyQuery.limit(1000);
+      const { data: baseballRows, error: bError } = await baseballQuery.limit(2000);
+      if (bError) console.warn("baseball_data fetch error:", bError);
 
-      // Process legacy data into a unified format (Grouping 1-file combined data into 1 row)
-      const savantNames = new Set(savantLegacy?.map(i => i.file_name).filter(Boolean) || []);
-      const blastNames = new Set(blastLegacy?.map(i => i.file_name).filter(Boolean) || []);
-      const allNames = new Set([...savantNames, ...blastNames]);
-      
-      const processedLegacy = [];
-      allNames.forEach(name => {
-        const inSavant = savantNames.has(name);
-        const inBlast = blastNames.has(name);
-        
-        const savantItem = savantLegacy?.find(i => i.file_name === name);
-        const blastItem = blastLegacy?.find(i => i.file_name === name);
-        const updatedAt = savantItem?.created_at || blastItem?.created_at;
+      // 2. Fetch from legacy tables (savant_data & blast_data)
+      let savantQuery = client.from('savant_data').select('file_name, upload_id, updated_at, team_id, owner_id');
+      let blastQuery = client.from('blast_data').select('file_name, upload_id, updated_at, team_id, owner_id');
+
+      if (profile && profile.role !== 'admin') {
+        if (profile.team_id) {
+          savantQuery = savantQuery.eq('team_id', profile.team_id);
+          blastQuery = blastQuery.eq('team_id', profile.team_id);
+        } else if (profile.id) {
+          savantQuery = savantQuery.eq('owner_id', profile.id);
+          blastQuery = blastQuery.eq('owner_id', profile.id);
+        }
+      }
+
+      const { data: savantRows, error: sError } = await savantQuery.limit(2000);
+      const { data: blastRows, error: blError } = await blastQuery.limit(2000);
+      if (sError) console.warn("savant_data fetch error:", sError);
+      if (blError) console.warn("blast_data fetch error:", blError);
+
+      const datasetMap = new Map();
+
+      // Process baseball_data (unified combined table)
+      (baseballRows || []).forEach(row => {
+        const name = row.file_name || row.upload_id || 'ファイル名なし';
+        const key = `baseball-${name}`;
+        if (!datasetMap.has(key)) {
+          datasetMap.set(key, {
+            id: key,
+            type: 'combined',
+            filename: name,
+            updated_at: row.updated_at || row.created_at,
+            table: 'baseball_data',
+            is_legacy: false,
+            count: 1
+          });
+        } else {
+          datasetMap.get(key).count += 1;
+        }
+      });
+
+      // Process savant_data
+      const savantFileMap = new Map();
+      (savantRows || []).forEach(row => {
+        const name = row.file_name || row.upload_id;
+        if (!name) return;
+        if (!savantFileMap.has(name)) {
+          savantFileMap.set(name, row.updated_at || row.created_at);
+        }
+      });
+
+      // Process blast_data
+      const blastFileMap = new Map();
+      (blastRows || []).forEach(row => {
+        const name = row.file_name || row.upload_id;
+        if (!name) return;
+        if (!blastFileMap.has(name)) {
+          blastFileMap.set(name, row.updated_at || row.created_at);
+        }
+      });
+
+      const legacyNames = new Set([...savantFileMap.keys(), ...blastFileMap.keys()]);
+      legacyNames.forEach(name => {
+        // If dataset is already captured in baseball_data, skip duplicate
+        if (datasetMap.has(`baseball-${name}`)) return;
+
+        const inSavant = savantFileMap.has(name);
+        const inBlast = blastFileMap.has(name);
+        const updatedAt = savantFileMap.get(name) || blastFileMap.get(name);
 
         if (inSavant && inBlast) {
-          processedLegacy.push({
+          datasetMap.set(`legacy-combined-${name}`, {
             id: `legacy-combined-${name}`,
             type: 'combined',
             filename: name,
             updated_at: updatedAt,
-            is_legacy: true
+            is_legacy: true,
+            table: 'both'
           });
         } else if (inSavant) {
-          processedLegacy.push({
+          datasetMap.set(`legacy-savant-${name}`, {
             id: `legacy-savant-${name}`,
             type: 'savant',
             filename: name,
             updated_at: updatedAt,
-            is_legacy: true
+            is_legacy: true,
+            table: 'savant_data'
           });
         } else if (inBlast) {
-          processedLegacy.push({
+          datasetMap.set(`legacy-blast-${name}`, {
             id: `legacy-blast-${name}`,
             type: 'blast',
             filename: name,
             updated_at: updatedAt,
-            is_legacy: true
+            is_legacy: true,
+            table: 'blast_data'
           });
         }
       });
 
-      setDatasets([...(unifiedData || []), ...processedLegacy]);
+      const datasetList = Array.from(datasetMap.values()).sort((a, b) => {
+        const dateA = new Date(a.updated_at || 0);
+        const dateB = new Date(b.updated_at || 0);
+        return dateB - dateA;
+      });
+
+      setDatasets(datasetList);
     } catch (err) {
-      console.error(err);
+      console.error("fetchDatasets error:", err);
       setError(err.message || "データの取得に失敗しました。");
     } finally {
       setLoading(false);
     }
   };
 
-  const deleteDataset = async (id, type, filename, isLegacy) => {
+  const deleteDataset = async (dataset) => {
+    const { filename, type, table } = dataset;
     if (!window.confirm(`「${filename}」を削除してもよろしいですか？`)) return;
     
+    setLoading(true);
     const client = getSupabase();
     try {
-      if (isLegacy) {
-        if (type === 'combined') {
-          await client.from('savant_data').delete().eq('file_name', filename);
-          await client.from('blast_data').delete().eq('file_name', filename);
-        } else {
-          const table = type === 'savant' ? 'savant_data' : 'blast_data';
-          const { error } = await client.from(table).delete().eq('file_name', filename);
-          if (error) throw error;
-        }
-      } else {
-        let query = client.from('baseball_data').delete().eq('id', id);
-        if (profile && profile.role !== 'admin' && profile.team_id) {
-          query = query.eq('team_id', profile.team_id);
+      if (table === 'both') {
+        await client.from('savant_data').delete().eq('file_name', filename);
+        await client.from('blast_data').delete().eq('file_name', filename);
+      } else if (table === 'baseball_data') {
+        let query = client.from('baseball_data').delete().eq('file_name', filename);
+        if (profile && profile.role !== 'admin') {
+          if (profile.team_id) {
+            query = query.eq('team_id', profile.team_id);
+          } else if (profile.id) {
+            query = query.eq('owner_id', profile.id);
+          }
         }
         const { error } = await query;
         if (error) throw error;
-        updateDataState(type, id, 'remove');
+      } else {
+        const targetTable = table || (type === 'savant' ? 'savant_data' : 'blast_data');
+        let query = client.from(targetTable).delete().eq('file_name', filename);
+        if (profile && profile.role !== 'admin') {
+          if (profile.team_id) {
+            query = query.eq('team_id', profile.team_id);
+          } else if (profile.id) {
+            query = query.eq('owner_id', profile.id);
+          }
+        }
+        const { error } = await query;
+        if (error) throw error;
       }
-      fetchDatasets();
+
+      if (updateDataState) {
+        updateDataState(type, filename, 'remove');
+      }
+      if (fetchFromCloud) {
+        await fetchFromCloud();
+      }
+      await fetchDatasets();
       alert("削除しました。");
     } catch (err) {
-      console.error(err);
-      alert("削除に失敗しました。");
+      console.error("Delete dataset error:", err);
+      alert("削除に失敗しました: " + (err.message || JSON.stringify(err)));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -143,11 +212,11 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
           onClick={handleManualSync}
           disabled={syncState?.saving || loading}
           className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black transition-all ${
-            syncState?.saving ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-500 shadow-xl'
+            syncState?.saving || loading ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-500 shadow-xl'
           }`}
         >
-          <RefreshCw className={`w-5 h-5 ${syncState?.saving ? 'animate-spin' : ''}`} />
-          {syncState?.saving ? '同期中...' : 'クラウドから同期'}
+          <RefreshCw className={`w-5 h-5 ${syncState?.saving || loading ? 'animate-spin' : ''}`} />
+          {syncState?.saving || loading ? '同期中...' : 'クラウドから同期'}
         </button>
       </header>
 
@@ -165,7 +234,11 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       )}
 
       <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
-        {datasets.length === 0 ? (
+        {loading && datasets.length === 0 ? (
+          <div className="p-10 text-center text-slate-400 animate-pulse">
+            クラウドデータを読み込み中...
+          </div>
+        ) : datasets.length === 0 ? (
           <div className="p-10 text-center text-slate-500">
             <Database className="w-12 h-12 mx-auto mb-3 opacity-20" />
             <p>クラウドに保存されているデータはありません。</p>
@@ -177,6 +250,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
                 <tr>
                   <th className="px-6 py-4">種別</th>
                   <th className="px-6 py-4">ファイル名</th>
+                  <th className="px-6 py-4">件数</th>
                   <th className="px-6 py-4">更新日時</th>
                   <th className="px-6 py-4 text-right">操作</th>
                 </tr>
@@ -191,7 +265,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
                           dataset.type === 'blast' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 
                           'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
                         }`}>
-                          {dataset.type === 'savant' ? 'RAPSODO' : dataset.type === 'combined' ? '1ファイル統合' : dataset.type?.toUpperCase()}
+                          {dataset.type === 'savant' ? 'RAPSODO' : dataset.type === 'combined' ? '統合データ' : dataset.type?.toUpperCase()}
                         </span>
                         {dataset.is_legacy && (
                           <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px] font-bold">LEGACY</span>
@@ -202,11 +276,14 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
                       {dataset.filename}
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-400">
+                      {dataset.count ? `${dataset.count.toLocaleString()} 件` : '-'}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-400">
                       {dataset.updated_at ? new Date(dataset.updated_at).toLocaleString('ja-JP') : '不明'}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button 
-                        onClick={() => deleteDataset(dataset.id, dataset.type, dataset.filename, dataset.is_legacy)}
+                        onClick={() => deleteDataset(dataset)}
                         className="p-2 text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors border border-transparent hover:border-rose-500/30 inline-flex items-center gap-1"
                         title="削除"
                       >
