@@ -102,22 +102,12 @@ function App() {
   useEffect(() => {
     if (!authLoading) {
       const loadCachedData = async () => {
-        const userKey = user?.id ? `user_${user.id}` : 'guest';
-        const cachedSavant = await getDatasetFromLocalDB(`${userKey}_savant`) || [];
-        const cachedBlast = await getDatasetFromLocalDB(`${userKey}_blast`) || [];
-        const cachedCombined = await getDatasetFromLocalDB(`${userKey}_combined`) || [];
+        // Keep UploadPage cards empty on fresh reload so user isn't confused by auto-populated cards
+        setSavantFiles([]);
+        setBlastFiles([]);
+        setCombinedFiles([]);
         
-        const ensureArray = (data) => {
-          if (!data) return [];
-          if (Array.isArray(data)) return data;
-          return [];
-        };
-        
-        setSavantFiles(ensureArray(cachedSavant));
-        setBlastFiles(ensureArray(cachedBlast));
-        setCombinedFiles(ensureArray(cachedCombined));
-        
-        // Auto-fetch from cloud to ensure data is up-to-date if user is logged in
+        // Fetch cloud data for analysis views if user is logged in
         if (user) {
           fetchFromCloud();
         }
@@ -494,21 +484,57 @@ function App() {
         return Object.values(grouped);
       };
 
-      const savantFilesCloud = groupIntoFiles(savantRaw, 'savant');
-      const blastFilesCloud = groupIntoFiles(blastRaw, 'blast');
-      const combinedFilesCloud = groupIntoFiles(combinedRaw, 'combined');
-
-      // Update states
-      setSavantFiles(savantFilesCloud);
-      setBlastFiles(blastFilesCloud);
-      setCombinedFiles(combinedFilesCloud);
+      // Grouping logic for files
+      const savantFileNames = new Set(savantRaw.map(r => r.file_name).filter(Boolean));
+      const blastFileNames = new Set(blastRaw.map(r => r.file_name).filter(Boolean));
       
-      // Cache to local DB (Scoped by user ID)
-      const userKey = user?.id ? `user_${user.id}` : 'guest';
-      await saveDatasetToLocalDB(`${userKey}_savant`, savantFilesCloud);
-      await saveDatasetToLocalDB(`${userKey}_blast`, blastFilesCloud);
-      await saveDatasetToLocalDB(`${userKey}_combined`, combinedFilesCloud);
+      const combinedFileNames = new Set();
+      savantFileNames.forEach(name => {
+        if (blastFileNames.has(name)) {
+          combinedFileNames.add(name);
+        }
+      });
+      savantRaw.forEach(r => {
+        if (r.file_name && (r.bat_speed != null || r.attack_angle != null)) {
+          combinedFileNames.add(r.file_name);
+        }
+      });
 
+      // Construct combined dataset rows from savantRaw & blastRaw
+      const combinedRawList = [...combinedRaw];
+      combinedFileNames.forEach(name => {
+        const sRows = savantRaw.filter(r => r.file_name === name);
+        const bRows = blastRaw.filter(r => r.file_name === name);
+        const maxLen = Math.max(sRows.length, bRows.length);
+        for (let i = 0; i < maxLen; i++) {
+          const s = sRows[i] || {};
+          const b = bRows[i] || {};
+          combinedRawList.push({
+            ...b,
+            ...s,
+            player_name: s.batter_name || b.player_name || 'Unknown',
+            batter_name: s.batter_name || b.player_name || 'Unknown',
+            bat_speed: s.bat_speed ?? b.bat_speed,
+            launch_speed: s.launch_speed ?? b.launch_speed,
+            attack_angle: s.attack_angle ?? b.attack_angle,
+            launch_angle: s.launch_angle ?? b.launch_angle,
+            hit_distance_sc: s.hit_distance_sc ?? b.hit_distance_sc,
+            date: s.game_date || b.date,
+            game_date: s.game_date || b.date,
+            file_name: name
+          });
+        }
+      });
+
+      const savantFilesCloud = groupIntoFiles(savantRaw.filter(r => !combinedFileNames.has(r.file_name)), 'savant');
+      const blastFilesCloud = groupIntoFiles(blastRaw.filter(r => !combinedFileNames.has(r.file_name)), 'blast');
+      const combinedFilesCloud = groupIntoFiles(combinedRawList, 'combined');
+
+      // Update cloud files for analysis views
+      setCloudSavantFiles(savantFilesCloud);
+      setCloudBlastFiles(blastFilesCloud);
+      setCloudCombinedFiles(combinedFilesCloud);
+      
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Synced!' }));
       console.log("Cloud sync complete.");
     } catch (err) {
@@ -603,9 +629,9 @@ function App() {
     };
   };
 
-  const savantData = useMemo(() => mergeFiles(savantFiles), [savantFiles]);
-  const blastData = useMemo(() => mergeFiles(blastFiles), [blastFiles]);
-  const combinedData = useMemo(() => mergeFiles(combinedFiles), [combinedFiles]);
+  const savantData = useMemo(() => mergeFiles([...savantFiles, ...cloudSavantFiles]), [savantFiles, cloudSavantFiles]);
+  const blastData = useMemo(() => mergeFiles([...blastFiles, ...cloudBlastFiles]), [blastFiles, cloudBlastFiles]);
+  const combinedData = useMemo(() => mergeFiles([...combinedFiles, ...cloudCombinedFiles]), [combinedFiles, cloudCombinedFiles]);
 
   const renderActiveView = () => {
     const uploadProps = {
