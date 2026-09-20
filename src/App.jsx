@@ -232,148 +232,141 @@ function App() {
     try {
       const dataArray = Array.isArray(dataObj.data) ? dataObj.data : [];
       const totalRows = dataArray.length;
-      const batchSize = 500; // 安定性重視で500件ずつ
+      const batchSize = 500;
       const uploadId = dataObj.id || `up-${Date.now()}`;
+
+      const validTeamId = profile?.team_id ? String(profile.team_id) : null;
+      const validOwnerId = user?.id ? String(user.id) : null;
 
       console.log(`Starting cloud save for ${totalRows} rows...`);
 
-      for (let i = 0; i < totalRows; i += batchSize) {
-        const batch = dataArray.slice(i, i + batchSize).map(row => {
-          const filteredRow = {};
+      // Date parsing helper - flexible extraction of year/month/day
+      const parseJapaneseDate = (dateStr) => {
+        if (!dateStr || typeof dateStr !== 'string') return null;
+        if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return dateStr;
+        
+        const enMonthMap = {'jan':'01','feb':'02','mar':'03','apr':'04','may':'05','jun':'06','jul':'07','aug':'08','sep':'09','oct':'10','nov':'11','dec':'12'};
+        
+        try {
+          const yearMatch = dateStr.match(/\b(20\d{2})\b/);
+          const monMatch = dateStr.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i);
+          if (yearMatch && monMatch) {
+            const year = yearMatch[1];
+            const month = enMonthMap[monMatch[1].toLowerCase()];
+            const dayMatch = dateStr.match(/\b(\d{1,2})\b/);
+            const day = dayMatch ? dayMatch[1].padStart(2, '0') : '01';
+            return `${year}-${month}-${day}`;
+          }
           
-          // Map all keys in the row
-          Object.keys(row).forEach(key => {
-            let targetKey = key;
-            const normalizedKey = key.trim();
+          let cleaned = dateStr;
+          const months = ['12月','11月','10月','9月','8月','7月','6月','5月','4月','3月','2月','1月'];
+          const monthMap = {'1月':'01','2月':'02','3月':'03','4月':'04','5月':'05','6月':'06','7月':'07','8月':'08','9月':'09','10月':'10','11月':'11','12月':'12'};
+          months.forEach(m => { if (cleaned.includes(m)) cleaned = cleaned.replace(m, monthMap[m]); });
+          const isPM = cleaned.includes('午後');
+          cleaned = cleaned.replace('午前', '').replace('午後', '').trim();
+          const parts = cleaned.split(/[\s,:]+/);
+          if (parts.length >= 6) {
+            const [month, day, year, hour, minute, second] = parts;
+            let h = parseInt(hour);
+            if (isPM && h < 12) h += 12;
+            if (!isPM && h === 12) h = 0;
+            return `${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}T${String(h).padStart(2,'0')}:${minute.padStart(2,'0')}:${second.padStart(2,'0')}`;
+          }
+        } catch (e) {
+          console.warn("Date parse failed:", dateStr, e);
+        }
+        return null;
+      };
+
+      const insertRowsToTable = async (targetTable, targetColumns) => {
+        for (let i = 0; i < totalRows; i += batchSize) {
+          const batch = dataArray.slice(i, i + batchSize).map(row => {
+            const filteredRow = {};
             
-            // Check exact or partial mapping
-            const mapKey = Object.keys(COLUMN_MAP).find(k => normalizedKey === k || normalizedKey.includes(k) || k.includes(normalizedKey));
-            if (mapKey) {
-              targetKey = COLUMN_MAP[mapKey];
-            }
-
-            // Only add if it's in the allowed list for the DB
-            if (allowedColumns.includes(targetKey)) {
-              const val = row[key];
+            Object.keys(row).forEach(key => {
+              let targetKey = key;
+              const normalizedKey = key.trim();
               
-              // Numeric columns that might contain hyphens or non-numeric data
-              const numericColumns = [
-                'launch_speed', 'launch_angle', 'bat_speed', 'attack_angle', 
-                'release_speed', 'release_spin_rate', 'hit_distance_sc', 
-                'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle'
-              ];
+              const mapKey = Object.keys(COLUMN_MAP).find(k => normalizedKey === k || normalizedKey.includes(k) || k.includes(normalizedKey));
+              if (mapKey) {
+                targetKey = COLUMN_MAP[mapKey];
+              }
 
-              if (numericColumns.includes(targetKey)) {
-                // If it's a numeric column, parse it. 
-                // If it's a hyphen or empty, Supabase prefers null for double precision
-                if (val === '-' || val === '' || val === null || val === undefined) {
-                  filteredRow[targetKey] = null;
+              if (targetColumns.includes(targetKey)) {
+                const val = row[key];
+                
+                const numericColumns = [
+                  'launch_speed', 'launch_angle', 'bat_speed', 'attack_angle', 
+                  'release_speed', 'release_spin_rate', 'hit_distance_sc', 
+                  'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle'
+                ];
+
+                if (numericColumns.includes(targetKey)) {
+                  if (val === '-' || val === '' || val === null || val === undefined) {
+                    filteredRow[targetKey] = null;
+                  } else {
+                    const cleaned = String(val).replace(/[^-0-9.]/g, '');
+                    const num = parseFloat(cleaned);
+                    filteredRow[targetKey] = isNaN(num) ? null : num;
+                  }
                 } else {
-                  const cleaned = String(val).replace(/[^-0-9.]/g, '');
-                  const num = parseFloat(cleaned);
-                  filteredRow[targetKey] = isNaN(num) ? null : num;
+                  filteredRow[targetKey] = val;
                 }
-              } else {
-                filteredRow[targetKey] = val;
+              }
+            });
+
+            if (targetTable === 'blast_data') {
+              if (!filteredRow.player_name) {
+                filteredRow.player_name = filteredRow.batter_name || row['選手名'] || row['名前'] || row['Player Name'] || 'Unknown Player';
               }
             }
+            if (targetTable === 'savant_data') {
+              if (!filteredRow.batter_name) {
+                filteredRow.batter_name = filteredRow.player_name || row['選手名'] || row['名前'] || row['Player Name'] || 'Unknown Player';
+              }
+            }
+
+            let finalRow = { ...filteredRow };
+            if (finalRow.game_date) finalRow.game_date = parseJapaneseDate(finalRow.game_date);
+            if (finalRow.date) finalRow.date = parseJapaneseDate(finalRow.date);
+
+            return {
+              ...finalRow,
+              file_name: dataObj.filename,
+              upload_id: uploadId,
+              team_id: validTeamId,
+              owner_id: validOwnerId,
+              updated_at: new Date().toISOString()
+            };
           });
 
-          // Extract Player Name from filename if missing (specifically for Blast data)
-          if (!filteredRow.player_name && dataObj.filename) {
-            const playerMatch = dataObj.filename.match(/Player\s*(\d+)/i) || dataObj.filename.match(/^([^-]+)-/);
-            if (playerMatch) {
-              filteredRow.player_name = playerMatch[0].replace('-', '').trim();
-            }
+          const { error } = await client.from(targetTable).insert(batch);
+          if (error) {
+            console.error(`Error inserting into ${targetTable} at batch ${i}:`, error);
+            throw error;
           }
 
-          // Date parsing helper - flexible extraction of year/month/day
-          const parseJapaneseDate = (dateStr) => {
-            if (!dateStr || typeof dateStr !== 'string') return null;
-            // Already ISO format
-            if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return dateStr;
-            
-            const enMonthMap = {'jan':'01','feb':'02','mar':'03','apr':'04','may':'05','jun':'06','jul':'07','aug':'08','sep':'09','oct':'10','nov':'11','dec':'12'};
-            
-            try {
-              // Flexible: find year, English month, and day in any order
-              const yearMatch = dateStr.match(/\b(20\d{2})\b/);
-              const monMatch = dateStr.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i);
-              if (yearMatch && monMatch) {
-                const year = yearMatch[1];
-                const month = enMonthMap[monMatch[1].toLowerCase()];
-                // Find a 1-2 digit number that's not the year
-                const dayMatch = dateStr.match(/\b(\d{1,2})\b/);
-                const day = dayMatch ? dayMatch[1].padStart(2, '0') : '01';
-                return `${year}-${month}-${day}`;
-              }
-              
-              // Japanese format: "11月 24, 2025 02:30:33 午後"
-              let cleaned = dateStr;
-              const months = ['12月','11月','10月','9月','8月','7月','6月','5月','4月','3月','2月','1月'];
-              const monthMap = {'1月':'01','2月':'02','3月':'03','4月':'04','5月':'05','6月':'06','7月':'07','8月':'08','9月':'09','10月':'10','11月':'11','12月':'12'};
-              months.forEach(m => { if (cleaned.includes(m)) cleaned = cleaned.replace(m, monthMap[m]); });
-              const isPM = cleaned.includes('午後');
-              cleaned = cleaned.replace('午前', '').replace('午後', '').trim();
-              const parts = cleaned.split(/[\s,:]+/);
-              if (parts.length >= 6) {
-                const [month, day, year, hour, minute, second] = parts;
-                let h = parseInt(hour);
-                if (isPM && h < 12) h += 12;
-                if (!isPM && h === 12) h = 0;
-                return `${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}T${String(h).padStart(2,'0')}:${minute.padStart(2,'0')}:${second.padStart(2,'0')}`;
-              }
-            } catch (e) {
-              console.warn("Date parse failed:", dateStr, e);
-            }
-            return null; // Always null on failure, never a broken string
-          };
-
-          const validTeamId = profile?.team_id ? String(profile.team_id) : null;
-          const validOwnerId = user?.id ? String(user.id) : null;
-
-          // Final sanitize
-          let finalRow = { ...filteredRow };
-          if (finalRow.game_date) finalRow.game_date = parseJapaneseDate(finalRow.game_date);
-          if (finalRow.date) finalRow.date = parseJapaneseDate(finalRow.date);
-
-          return {
-            ...finalRow,
-            file_name: dataObj.filename,
-            upload_id: uploadId,
-            team_id: validTeamId,
-            owner_id: validOwnerId,
-            updated_at: new Date().toISOString()
-          };
-        });
-
-        const { error } = await client.from(table).insert(batch);
-        if (error) {
-          console.error(`Error at batch starting ${i}:`, error);
-          throw error;
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
+      };
 
-        // サーバーへの負荷を抑えるために0.1秒待機
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        if (i % 5000 === 0) {
-          console.log(`Cloud save progress: ${i} / ${totalRows} rows...`);
-        }
+      if (type === 'savant') {
+        await insertRowsToTable('savant_data', SAVANT_COLUMNS);
+      } else if (type === 'blast') {
+        await insertRowsToTable('blast_data', BLAST_COLUMNS);
+      } else {
+        // combined: Save Savant portion to savant_data AND Blast portion to blast_data
+        await insertRowsToTable('savant_data', SAVANT_COLUMNS);
+        await insertRowsToTable('blast_data', BLAST_COLUMNS);
       }
       
       alert(`「${dataObj.filename}」(${totalRows.toLocaleString()}件)をクラウドに保存しました！`);
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Saved!' }));
     } catch (err) {
       console.warn("Cloud save unavailable, fallback to local storage:", err);
-      /*
-       * =========================================================================
-       * 【元の仕様 (Supabase クラウド保存)】
-       * Supabase サーバーが利用可能な場合は上記の insert(batch) で直接保存されます。
-       * ネットワークエラーや Supabase が非アクティブの場合は以下の通りローカル DB へ安全に保存します。
-       * =========================================================================
-       */
       const currentFiles = type === 'savant' ? savantFiles : (type === 'blast' ? blastFiles : combinedFiles);
-      await saveDatasetToLocalDB(type, currentFiles);
+      const userKey = user?.id ? `user_${user.id}` : 'guest';
+      await saveDatasetToLocalDB(`${userKey}_${type}`, currentFiles);
       alert(`「${dataObj.filename}」をローカル（ブラウザ）に保存しました！\n（※現在クラウドが非接続のため、ローカル環境に保存して各分析機能で即座にご利用いただけます）`);
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Local Saved' }));
     }
