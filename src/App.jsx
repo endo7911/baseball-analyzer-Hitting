@@ -157,7 +157,7 @@ function App() {
     // Define allowed columns
     const SAVANT_COLUMNS = [
       'game_date', 'pitcher_name', 'batter_name', 'pitch_name', 'release_speed', 'release_spin_rate', 
-      'launch_speed', 'launch_angle', 'hit_distance_sc', 'events', 'description', 'zone', 'stand', 
+      'launch_speed', 'launch_angle', 'bat_speed', 'attack_angle', 'hit_distance_sc', 'events', 'description', 'zone', 'stand', 
       'p_throws', 'home_team', 'away_team', 'team_name', 'type', 'hit_location', 'bb_type', 'balls', 'strikes', 
       'game_year', 'pfx_x', 'pfx_z', 'plate_x', 'plate_z', 'on_3b', 'on_2b', 'on_1b', 
       'outs_when_up', 'inning', 'inning_topbot', 'hc_x', 'hc_y', 'vx0', 'vy0', 'vz0', 
