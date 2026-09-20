@@ -165,30 +165,6 @@ function LoginPage({ onLogin }) {
           <p className="text-slate-400 text-xs">チーム専用打撃分析システム</p>
         </div>
 
-        {/* Preset Quick Login Buttons */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 mb-6 shadow-lg">
-          <p className="text-xs font-bold text-slate-400 mb-3 text-center uppercase tracking-wider">
-            テスト用ワンタップログイン
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => fillCredentials('admin')}
-              className="bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 font-bold py-2.5 px-3 rounded-xl text-xs transition-all flex flex-col items-center gap-1 cursor-pointer"
-            >
-              <span className="text-[11px] font-black text-purple-400">👑 管理者</span>
-              <span className="text-[10px] text-purple-300/70">admin@example.com</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => fillCredentials('user')}
-              className="bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-bold py-2.5 px-3 rounded-xl text-xs transition-all flex flex-col items-center gap-1 cursor-pointer"
-            >
-              <span className="text-[11px] font-black text-blue-400">👤 一般利用者</span>
-              <span className="text-[10px] text-blue-300/70">user@example.com</span>
-            </button>
-          </div>
-        </div>
 
         {/* Form */}
         <div className="bg-slate-800/60 backdrop-blur border border-slate-700/50 rounded-3xl p-8 shadow-2xl">

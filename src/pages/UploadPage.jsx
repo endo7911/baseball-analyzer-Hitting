@@ -251,16 +251,15 @@ function UploadPage({ savantFiles, blastFiles, combinedFiles, updateDataState, s
           <p className="text-slate-400">CSVファイルをアップロードして直接分析（ブラウザ内即時保存）します。</p>
         </div>
         <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex flex-col sm:flex-row md:flex-col gap-3 w-full md:w-auto">
-          <button 
-            onClick={handleLoadSampleData}
-            className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold py-2.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer border border-emerald-400/30 transform hover:scale-105"
-          >
-            <Sparkles className="w-4 h-4 text-emerald-200" />
-            テストデータを一括セット
-          </button>
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest hidden sm:flex md:hidden">
-            |
-          </div>
+          {profile?.role === 'admin' && (
+            <button 
+              onClick={handleLoadSampleData}
+              className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold py-2.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer border border-emerald-400/30 transform hover:scale-105"
+            >
+              <Sparkles className="w-4 h-4 text-emerald-200" />
+              テストデータを一括セット
+            </button>
+          )}
           <button 
             onClick={handleCloudSync}
             disabled={isLoading}
@@ -362,13 +361,15 @@ function UploadPage({ savantFiles, blastFiles, combinedFiles, updateDataState, s
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={handleLoadSampleData}
-                className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
-              >
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                テストデータをセット
-              </button>
+              {profile?.role === 'admin' && (
+                <button
+                  onClick={handleLoadSampleData}
+                  className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                >
+                  <Sparkles className="w-4 h-4 text-emerald-400" />
+                  テストデータをセット
+                </button>
+              )}
               <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-900/30 whitespace-nowrap">
                 統合ファイルを選択
                 <input type="file" accept=".csv" className="hidden" onChange={(e) => handleFileUpload(e, 'combined')} />

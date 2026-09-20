@@ -442,8 +442,8 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
         {/* Summary Metrics */}
         <div className="player-kpi-grid grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 print:grid-cols-4 print:gap-2 print:mb-4">
           {[
-            { label: 'Avg EV', val: summary.avgEV.toFixed(1), unit: 'km/h' },
-            { label: 'Avg LA', val: summary.avgLA.toFixed(1), unit: '°' },
+            { label: '平均打球速度', val: summary.avgEV.toFixed(1), unit: 'km/h' },
+            { label: '平均打球角度', val: summary.avgLA.toFixed(1), unit: '°' },
             { label: 'Hard Hit', val: summary.hardHitRate, unit: '%' },
             { label: 'Sweet Spot', val: summary.sweetSpotRate, unit: '%' }
           ].map((kpi, i) => (
@@ -485,10 +485,10 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
       <div className="player-report-body space-y-4 print:space-y-2">
         <div className="player-kpi-grid grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 print:grid-cols-4 print:gap-2">
           {[
-            { label: 'EV (Avg)', val: summary.avgEV.toFixed(1), color: 'blue' },
+            { label: '平均打球速度', val: summary.avgEV.toFixed(1), color: 'blue' },
             { label: 'EV (Max)', val: summary.maxEV.toFixed(1), color: 'red' },
             { label: 'Hard Hit%', val: summary.hardHitRate, color: 'orange' },
-            { label: 'Launch∠', val: summary.avgLA.toFixed(1), color: 'emerald' }
+            { label: '平均打球角度', val: summary.avgLA.toFixed(1), color: 'emerald' }
           ].map((kpi, i) => (
             <div key={i} className="player-kpi-card bg-slate-800/60 p-3 sm:p-4 rounded-xl border border-slate-700 text-center print:bg-[#1e293b] print:border-slate-700 print:p-1.5">
               <p className="text-[10px] text-slate-400 font-black uppercase print:text-slate-400 print:text-[7px]">{kpi.label}</p>

@@ -98,9 +98,9 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load cached data from IndexedDB when user is authenticated
+  // Load cached data from IndexedDB
   useEffect(() => {
-    if (user && !authLoading) {
+    if (!authLoading) {
       const loadCachedData = async () => {
         const cachedSavant = await getDatasetFromLocalDB('savant') || [];
         const cachedBlast = await getDatasetFromLocalDB('blast') || [];
@@ -109,7 +109,6 @@ function App() {
         const ensureArray = (data) => {
           if (!data) return [];
           if (Array.isArray(data)) return data;
-          // Removed legacy restoration logic to clean up unwanted small datasets
           return [];
         };
         
@@ -117,8 +116,10 @@ function App() {
         setBlastFiles(ensureArray(cachedBlast));
         setCombinedFiles(ensureArray(cachedCombined));
         
-        // Auto-fetch from cloud to ensure data is up-to-date
-        fetchFromCloud();
+        // Auto-fetch from cloud to ensure data is up-to-date if user is logged in
+        if (user) {
+          fetchFromCloud();
+        }
       };
       loadCachedData();
     }
@@ -168,16 +169,31 @@ function App() {
       'time_to_contact', 'peak_hand_speed', 'file_name', 'upload_id'
     ];
 
-    const allowedColumns = table === 'savant_data' ? SAVANT_COLUMNS : (table === 'blast_data' ? BLAST_COLUMNS : []);
+    const COMBINED_COLUMNS = [
+      'date', 'game_date', 'player_name', 'batter_name', 'team_name', 'grade',
+      'bat_speed', 'launch_speed', 'attack_angle', 'launch_angle', 'hit_distance_sc',
+      'hc_x', 'on_plane_efficiency', 'connection_score', 'rotation_score',
+      'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle',
+      'release_speed', 'file_name', 'upload_id'
+    ];
+
+    const allowedColumns = table === 'savant_data' ? SAVANT_COLUMNS : (table === 'blast_data' ? BLAST_COLUMNS : COMBINED_COLUMNS);
 
     // Mapping for Japanese/Rapsodo keys to DB columns
     const COLUMN_MAP = {
-      // Blast
+      // Blast / 共通
       '日付': 'date',
       '選手名': 'player_name',
+      '学年': 'grade',
       'バットスピード': 'bat_speed',
+      'スイング速度': 'bat_speed',
+      '打球速度': 'launch_speed',
       'アッパースイング': 'attack_angle',
       'アタックアングル': 'attack_angle',
+      'アッパー': 'attack_angle',
+      '打球角度': 'launch_angle',
+      '飛距離': 'hit_distance_sc',
+      '推定飛距離': 'hit_distance_sc',
       'オンプレーンの効率': 'on_plane_efficiency',
       'オンプレーン効率': 'on_plane_efficiency',
       'オンプレーンスコア': 'on_plane_score',
@@ -191,10 +207,12 @@ function App() {
       '構え': 'connection_at_address',
       'スイング時間': 'time_to_contact',
       '手の最大': 'peak_hand_speed',
+      '手の最大速度': 'peak_hand_speed',
       'パワー': 'power',
       '垂直バット角度': 'vertical_bat_angle',
       'バット角度': 'bat_angle',
-      // Rapsodo
+      '球速': 'release_speed',
+      // Rapsodo / Savant
       'ExitVelocity': 'launch_speed',
       'LaunchAngle': 'launch_angle',
       'Distance': 'hit_distance_sc',
@@ -203,9 +221,11 @@ function App() {
       'PlayerName': 'batter_name',
       'PitchBallVelo': 'release_speed',
       'Team': 'team_name',
+      'チーム名': 'team_name',
       'Direction': 'hc_x',
       'Bearing': 'hc_x',
-      'HitDirection': 'hc_x'
+      'HitDirection': 'hc_x',
+      '打球方向': 'hc_x'
     };
 
     try {
@@ -401,9 +421,10 @@ function App() {
         return allRows;
       };
 
-      const [savantRaw, blastRaw] = await Promise.all([
-        fetchTable('savant_data'),
-        fetchTable('blast_data')
+      const [savantRaw, blastRaw, combinedRaw] = await Promise.all([
+        fetchTable('savant_data').catch(() => []),
+        fetchTable('blast_data').catch(() => []),
+        fetchTable('baseball_data').catch(() => [])
       ]);
 
       // Helper to group flat rows into the "Files" format the app expects
@@ -427,14 +448,17 @@ function App() {
 
       const savantFilesCloud = groupIntoFiles(savantRaw, 'savant');
       const blastFilesCloud = groupIntoFiles(blastRaw, 'blast');
+      const combinedFilesCloud = groupIntoFiles(combinedRaw, 'combined');
 
       // Update states
       setSavantFiles(savantFilesCloud);
       setBlastFiles(blastFilesCloud);
+      setCombinedFiles(combinedFilesCloud);
       
       // Cache to local DB
       await saveDatasetToLocalDB('savant', savantFilesCloud);
       await saveDatasetToLocalDB('blast', blastFilesCloud);
+      await saveDatasetToLocalDB('combined', combinedFilesCloud);
 
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Synced!' }));
       console.log("Cloud sync complete.");
