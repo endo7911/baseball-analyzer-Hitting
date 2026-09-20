@@ -154,20 +154,24 @@ function App() {
     
     const table = type === 'savant' ? 'savant_data' : (type === 'blast' ? 'blast_data' : 'baseball_data');
 
-    // Define allowed columns
+    // Define allowed columns matching exact Supabase schemas
     const SAVANT_COLUMNS = [
       'game_date', 'pitcher_name', 'batter_name', 'pitch_name', 'release_speed', 'release_spin_rate', 
       'launch_speed', 'launch_angle', 'bat_speed', 'attack_angle', 'hit_distance_sc', 'events', 'description', 'zone', 'stand', 
-      'p_throws', 'home_team', 'away_team', 'team_name', 'type', 'hit_location', 'bb_type', 'balls', 'strikes', 
+      'p_throws', 'home_team', 'away_team', 'type', 'hit_location', 'bb_type', 'balls', 'strikes', 
       'game_year', 'pfx_x', 'pfx_z', 'plate_x', 'plate_z', 'on_3b', 'on_2b', 'on_1b', 
       'outs_when_up', 'inning', 'inning_topbot', 'hc_x', 'hc_y', 'vx0', 'vy0', 'vz0', 
       'ax', 'ay', 'az', 'sz_top', 'sz_bot', 'effective_speed', 'release_extension', 
-      'game_pk', 'spin_axis', 'delta_home_win_exp', 'delta_run_exp', 'file_name', 'upload_id'
+      'game_pk', 'spin_axis', 'delta_home_win_exp', 'delta_run_exp', 'file_name', 'upload_id',
+      'pitch_type', 'release_pos_x', 'release_pos_y', 'release_pos_z', 'vaa', 'haa',
+      'attack_direction', 'estimated_woba_using_speedangle', 'pitcher', 'batter', 'swing_length'
     ];
     
     const BLAST_COLUMNS = [
       'date', 'player_name', 'bat_speed', 'attack_angle', 'vertical_bat_angle', 'power', 
-      'time_to_contact', 'peak_hand_speed', 'file_name', 'upload_id'
+      'time_to_contact', 'peak_hand_speed', 'on_plane_efficiency', 'rotation_score', 
+      'on_plane_score', 'connection_score', 'rotation_acceleration', 'connection_at_impact', 
+      'connection_at_address', 'bat_angle', 'file_name', 'upload_id'
     ];
 
     const COMBINED_COLUMNS = [
