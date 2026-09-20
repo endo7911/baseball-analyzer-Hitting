@@ -566,7 +566,13 @@ function App() {
           finalData = results.data;
         } catch (e) { console.error('Parse error:', e); }
       }
-      const processed = { ...payload, data: finalData, id: payload.id || crypto.randomUUID() };
+      const generateId = () => {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+          return crypto.randomUUID();
+        }
+        return 'id-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+      };
+      const processed = { ...payload, data: finalData, id: payload.id || generateId() };
       
       // Prevent duplicate file entries by filename
       const existingIdx = newFiles.findIndex(f => f.filename === payload.filename);
@@ -721,4 +727,46 @@ function App() {
   );
 }
 
-export default App;
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("App Error Boundary caught an error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+          <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl max-w-md shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-2">画面の表示中に問題が発生しました</h3>
+            <p className="text-slate-400 text-sm mb-6">以下のボタンを押して画面を再読み込みしてください。</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-6 rounded-xl transition-all shadow-lg"
+            >
+              再読み込み
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export default function RootApp() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
