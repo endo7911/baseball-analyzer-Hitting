@@ -19,6 +19,9 @@ function App() {
   const [savantFiles, setSavantFiles] = useState([]);
   const [blastFiles, setBlastFiles] = useState([]);
   const [combinedFiles, setCombinedFiles] = useState([]);
+  const [cloudSavantFiles, setCloudSavantFiles] = useState([]);
+  const [cloudBlastFiles, setCloudBlastFiles] = useState([]);
+  const [cloudCombinedFiles, setCloudCombinedFiles] = useState([]);
   const [activeView, setActiveView] = useState('upload');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [analysisState, setAnalysisState] = useState({ team: '', player: '' });
@@ -464,16 +467,22 @@ function App() {
         fetchTable('baseball_data').catch(() => [])
       ]);
 
+      const sRaw = Array.isArray(savantRaw) ? savantRaw : [];
+      const bRaw = Array.isArray(blastRaw) ? blastRaw : [];
+      const cRaw = Array.isArray(combinedRaw) ? combinedRaw : [];
+
       // Helper to group flat rows into the "Files" format the app expects
       const groupIntoFiles = (rows, type) => {
+        if (!Array.isArray(rows)) return [];
         const grouped = {};
         rows.forEach(row => {
-          const fileName = row.file_name || 'Cloud Data';
+          if (!row) return;
+          const fileName = row.file_name || row.filename || 'Cloud Data';
           if (!grouped[fileName]) {
             grouped[fileName] = {
               id: row.upload_id || `cloud-${fileName}`,
               filename: fileName,
-              updated_at: row.updated_at,
+              updated_at: row.updated_at || row.created_at,
               data: [],
               headers: Object.keys(row).filter(k => !['id', 'owner_id', 'team_id', 'updated_at', 'upload_id'].includes(k))
             };
@@ -484,8 +493,8 @@ function App() {
       };
 
       // Grouping logic for files
-      const savantFileNames = new Set(savantRaw.map(r => r.file_name).filter(Boolean));
-      const blastFileNames = new Set(blastRaw.map(r => r.file_name).filter(Boolean));
+      const savantFileNames = new Set(sRaw.map(r => r?.file_name).filter(Boolean));
+      const blastFileNames = new Set(bRaw.map(r => r?.file_name).filter(Boolean));
       
       const combinedFileNames = new Set();
       savantFileNames.forEach(name => {
@@ -493,17 +502,17 @@ function App() {
           combinedFileNames.add(name);
         }
       });
-      savantRaw.forEach(r => {
-        if (r.file_name && (r.bat_speed != null || r.attack_angle != null)) {
+      sRaw.forEach(r => {
+        if (r?.file_name && (r.bat_speed != null || r.attack_angle != null)) {
           combinedFileNames.add(r.file_name);
         }
       });
 
-      // Construct combined dataset rows from savantRaw & blastRaw
-      const combinedRawList = [...combinedRaw];
+      // Construct combined dataset rows from sRaw & bRaw
+      const combinedRawList = [...cRaw];
       combinedFileNames.forEach(name => {
-        const sRows = savantRaw.filter(r => r.file_name === name);
-        const bRows = blastRaw.filter(r => r.file_name === name);
+        const sRows = sRaw.filter(r => r?.file_name === name);
+        const bRows = bRaw.filter(r => r?.file_name === name);
         const maxLen = Math.max(sRows.length, bRows.length);
         for (let i = 0; i < maxLen; i++) {
           const s = sRows[i] || {};
@@ -525,8 +534,8 @@ function App() {
         }
       });
 
-      const savantFilesCloud = groupIntoFiles(savantRaw.filter(r => !combinedFileNames.has(r.file_name)), 'savant');
-      const blastFilesCloud = groupIntoFiles(blastRaw.filter(r => !combinedFileNames.has(r.file_name)), 'blast');
+      const savantFilesCloud = groupIntoFiles(sRaw.filter(r => r?.file_name && !combinedFileNames.has(r.file_name)), 'savant');
+      const blastFilesCloud = groupIntoFiles(bRaw.filter(r => r?.file_name && !combinedFileNames.has(r.file_name)), 'blast');
       const combinedFilesCloud = groupIntoFiles(combinedRawList, 'combined');
 
       // Update cloud files for analysis views
