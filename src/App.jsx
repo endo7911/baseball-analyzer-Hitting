@@ -235,8 +235,15 @@ function App() {
       const batchSize = 500;
       const uploadId = dataObj.id || `up-${Date.now()}`;
 
-      const validTeamId = profile?.team_id ? String(profile.team_id) : null;
-      const validOwnerId = user?.id ? String(user.id) : null;
+      // UUID validation helper for Postgres uuid column compatibility
+      const isUUID = (str) => {
+        if (!str) return false;
+        const regex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        return regex.test(str);
+      };
+
+      const validTeamId = isUUID(profile?.team_id) ? profile.team_id : null;
+      const validOwnerId = isUUID(user?.id) ? user.id : null;
 
       console.log(`Starting cloud save for ${totalRows} rows...`);
 
@@ -367,7 +374,7 @@ function App() {
       const currentFiles = type === 'savant' ? savantFiles : (type === 'blast' ? blastFiles : combinedFiles);
       const userKey = user?.id ? `user_${user.id}` : 'guest';
       await saveDatasetToLocalDB(`${userKey}_${type}`, currentFiles);
-      alert(`「${dataObj.filename}」をローカル（ブラウザ）に保存しました！\n（※現在クラウドが非接続のため、ローカル環境に保存して各分析機能で即座にご利用いただけます）`);
+      alert(`「${dataObj.filename}」をクラウドへ保存中にエラーが発生したため、ローカル（ブラウザ）に保存しました。\n詳細: ${err?.message || err?.details || JSON.stringify(err)}`);
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Local Saved' }));
     }
   };
