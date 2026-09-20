@@ -21,6 +21,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     const client = getSupabase();
     try {
       // 1. Fetch from new unified table
+      let query = client.from('baseball_data').select('id, type, filename, updated_at, is_csv').order('updated_at', { ascending: false });
       if (profile && profile.role !== 'admin') {
         if (profile.team_id) {
           query = query.eq('team_id', profile.team_id);
