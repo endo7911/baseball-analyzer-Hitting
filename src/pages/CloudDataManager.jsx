@@ -174,7 +174,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
                           dataset.type === 'blast' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 
                           'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
                         }`}>
-                          {dataset.type}
+                          {dataset.type === 'savant' ? 'RAPSODO' : dataset.type?.toUpperCase()}
                         </span>
                         {dataset.is_legacy && (
                           <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px] font-bold">LEGACY</span>
