@@ -48,34 +48,46 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       const { data: savantLegacy } = await savantLegacyQuery.limit(1000);
       const { data: blastLegacy } = await blastLegacyQuery.limit(1000);
 
-      // Process legacy data into a similar format
+      // Process legacy data into a unified format (Grouping 1-file combined data into 1 row)
+      const savantNames = new Set(savantLegacy?.map(i => i.file_name).filter(Boolean) || []);
+      const blastNames = new Set(blastLegacy?.map(i => i.file_name).filter(Boolean) || []);
+      const allNames = new Set([...savantNames, ...blastNames]);
+      
       const processedLegacy = [];
-      if (savantLegacy) {
-        const uniqueSavant = [...new Set(savantLegacy.map(item => item.file_name))].filter(Boolean);
-        uniqueSavant.forEach(name => {
-          const item = savantLegacy.find(i => i.file_name === name);
+      allNames.forEach(name => {
+        const inSavant = savantNames.has(name);
+        const inBlast = blastNames.has(name);
+        
+        const savantItem = savantLegacy?.find(i => i.file_name === name);
+        const blastItem = blastLegacy?.find(i => i.file_name === name);
+        const updatedAt = savantItem?.created_at || blastItem?.created_at;
+
+        if (inSavant && inBlast) {
+          processedLegacy.push({
+            id: `legacy-combined-${name}`,
+            type: 'combined',
+            filename: name,
+            updated_at: updatedAt,
+            is_legacy: true
+          });
+        } else if (inSavant) {
           processedLegacy.push({
             id: `legacy-savant-${name}`,
             type: 'savant',
             filename: name,
-            updated_at: item.created_at,
+            updated_at: updatedAt,
             is_legacy: true
           });
-        });
-      }
-      if (blastLegacy) {
-        const uniqueBlast = [...new Set(blastLegacy.map(item => item.file_name))].filter(Boolean);
-        uniqueBlast.forEach(name => {
-          const item = blastLegacy.find(i => i.file_name === name);
+        } else if (inBlast) {
           processedLegacy.push({
             id: `legacy-blast-${name}`,
             type: 'blast',
             filename: name,
-            updated_at: item.created_at,
+            updated_at: updatedAt,
             is_legacy: true
           });
-        });
-      }
+        }
+      });
 
       setDatasets([...(unifiedData || []), ...processedLegacy]);
     } catch (err) {
@@ -92,9 +104,14 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     const client = getSupabase();
     try {
       if (isLegacy) {
-        const table = type === 'savant' ? 'savant_data' : 'blast_data';
-        const { error } = await client.from(table).delete().eq('file_name', filename);
-        if (error) throw error;
+        if (type === 'combined') {
+          await client.from('savant_data').delete().eq('file_name', filename);
+          await client.from('blast_data').delete().eq('file_name', filename);
+        } else {
+          const table = type === 'savant' ? 'savant_data' : 'blast_data';
+          const { error } = await client.from(table).delete().eq('file_name', filename);
+          if (error) throw error;
+        }
       } else {
         let query = client.from('baseball_data').delete().eq('id', id);
         if (profile && profile.role !== 'admin' && profile.team_id) {
@@ -174,7 +191,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
                           dataset.type === 'blast' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 
                           'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
                         }`}>
-                          {dataset.type === 'savant' ? 'RAPSODO' : dataset.type?.toUpperCase()}
+                          {dataset.type === 'savant' ? 'RAPSODO' : dataset.type === 'combined' ? '1ファイル統合' : dataset.type?.toUpperCase()}
                         </span>
                         {dataset.is_legacy && (
                           <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px] font-bold">LEGACY</span>
