@@ -497,16 +497,16 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
           ))}
         </div>
 
-        <section className="player-analysis-section bg-slate-900/40 p-4 sm:p-5 rounded-2xl border border-slate-700/80 print:bg-[#0f172a] print:p-2 print:border-slate-700 print:m-0 print:mb-1">
-          <h3 className="text-lg sm:text-xl font-black text-white mb-3 uppercase italic border-l-4 border-blue-500 pl-2.5 print:text-[10px] print:mb-1">Ball Tracking Analysis</h3>
-          <div className="player-chart-grid grid grid-cols-1 md:grid-cols-2 gap-3 h-auto md:h-[300px] print:grid-cols-2 print:gap-2 print:h-[160px]">
-            <div className="player-chart-card player-chart-card-inner bg-slate-800/50 p-3 rounded-xl border border-slate-700/60 flex flex-col h-[260px] md:h-full print:bg-[#1e293b] print:h-[160px] print:p-1.5">
-              <h3 className="text-[11px] font-black text-slate-400 uppercase mb-1.5 print:text-[8px] print:mb-0.5">Velocity vs Angle</h3>
-              <div className="player-chart-body flex-1 h-[200px] md:h-full print:h-[135px]"><VelocityAngleChart data={filteredData} xKeys={EV_KEYS} yKeys={LA_KEYS} /></div>
+        <section className="player-analysis-section bg-slate-900/40 p-4 sm:p-6 rounded-[2rem] border border-slate-700/80 print:bg-[#0f172a] print:p-2 print:border-slate-700 print:m-0 print:mb-1">
+          <h3 className="text-lg sm:text-xl font-black text-white mb-4 uppercase italic border-l-4 border-blue-500 pl-2.5 print:text-[10px] print:mb-1">Ball Tracking Analysis</h3>
+          <div className="player-chart-grid grid grid-cols-1 md:grid-cols-2 gap-4 h-auto print:grid-cols-2 print:gap-2 print:h-[160px]">
+            <div className="player-chart-card player-chart-card-inner bg-slate-800/50 p-4 rounded-xl border border-slate-700/60 flex flex-col h-[320px] print:bg-[#1e293b] print:h-[160px] print:p-1.5">
+              <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-[8px] print:mb-0.5">Velocity vs Angle</h3>
+              <div className="player-chart-body flex-1 w-full min-h-[240px] print:h-[135px]"><VelocityAngleChart data={filteredData} xKeys={EV_KEYS} yKeys={LA_KEYS} /></div>
             </div>
-            <div className="player-chart-card player-chart-card-inner bg-slate-800/50 p-3 rounded-xl border border-slate-700/60 flex flex-col h-[260px] md:h-full print:bg-[#1e293b] print:h-[160px] print:p-1.5">
-              <h3 className="text-[11px] font-black text-slate-400 uppercase mb-1.5 print:text-[8px] print:mb-0.5">Spray Chart</h3>
-              <div className="player-chart-body flex-1 h-[200px] md:h-full print:h-[135px]"><SprayChart data={filteredData} /></div>
+            <div className="player-chart-card player-chart-card-inner bg-slate-800/50 p-4 rounded-xl border border-slate-700/60 flex flex-col h-[320px] print:bg-[#1e293b] print:h-[160px] print:p-1.5">
+              <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-[8px] print:mb-0.5">Spray Chart</h3>
+              <div className="player-chart-body flex-1 w-full min-h-[240px] print:h-[135px]"><SprayChart data={filteredData} /></div>
             </div>
           </div>
         </section>
