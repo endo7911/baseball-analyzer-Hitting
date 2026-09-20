@@ -406,9 +406,8 @@ function App() {
       } else if (type === 'blast') {
         await insertRowsToTable('blast_data', BLAST_COLUMNS);
       } else {
-        // combined: Save Savant portion to savant_data AND Blast portion to blast_data
-        await insertRowsToTable('savant_data', SAVANT_COLUMNS);
-        await insertRowsToTable('blast_data', BLAST_COLUMNS);
+        // combined: Save directly to dedicated baseball_data table in Supabase
+        await insertRowsToTable('baseball_data', COMBINED_COLUMNS);
       }
       
       alert(`「${dataObj.filename}」(${totalRows.toLocaleString()}件)をクラウドに保存しました！`);
