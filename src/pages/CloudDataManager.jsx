@@ -21,9 +21,12 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     const client = getSupabase();
     try {
       // 1. Fetch from new unified table
-      let query = client.from('baseball_data').select('id, type, filename, updated_at, is_csv').order('updated_at', { ascending: false });
-      if (profile && profile.role !== 'admin' && profile.team_id) {
-        query = query.eq('team_id', profile.team_id);
+      if (profile && profile.role !== 'admin') {
+        if (profile.team_id) {
+          query = query.eq('team_id', profile.team_id);
+        } else if (profile.id) {
+          query = query.eq('owner_id', profile.id);
+        }
       }
       const { data: unifiedData, error: unifiedError } = await query;
       
@@ -31,9 +34,14 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       let savantLegacyQuery = client.from('savant_data').select('file_name, created_at');
       let blastLegacyQuery = client.from('blast_data').select('file_name, created_at');
       
-      if (profile && profile.role !== 'admin' && profile.team_id) {
-        savantLegacyQuery = savantLegacyQuery.eq('team_id', profile.team_id);
-        blastLegacyQuery = blastLegacyQuery.eq('team_id', profile.team_id);
+      if (profile && profile.role !== 'admin') {
+        if (profile.team_id) {
+          savantLegacyQuery = savantLegacyQuery.eq('team_id', profile.team_id);
+          blastLegacyQuery = blastLegacyQuery.eq('team_id', profile.team_id);
+        } else if (profile.id) {
+          savantLegacyQuery = savantLegacyQuery.eq('owner_id', profile.id);
+          blastLegacyQuery = blastLegacyQuery.eq('owner_id', profile.id);
+        }
       }
       
       const { data: savantLegacy } = await savantLegacyQuery.limit(1000);

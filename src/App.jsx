@@ -98,13 +98,14 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load cached data from IndexedDB
+  // Load cached data from IndexedDB (Scoped by user ID to prevent cross-account leaks)
   useEffect(() => {
     if (!authLoading) {
       const loadCachedData = async () => {
-        const cachedSavant = await getDatasetFromLocalDB('savant') || [];
-        const cachedBlast = await getDatasetFromLocalDB('blast') || [];
-        const cachedCombined = await getDatasetFromLocalDB('combined') || [];
+        const userKey = user?.id ? `user_${user.id}` : 'guest';
+        const cachedSavant = await getDatasetFromLocalDB(`${userKey}_savant`) || [];
+        const cachedBlast = await getDatasetFromLocalDB(`${userKey}_blast`) || [];
+        const cachedCombined = await getDatasetFromLocalDB(`${userKey}_combined`) || [];
         
         const ensureArray = (data) => {
           if (!data) return [];
@@ -328,15 +329,8 @@ function App() {
             return null; // Always null on failure, never a broken string
           };
 
-          // UUID validation helper
-          const isUUID = (str) => {
-            if (!str) return false;
-            const regex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-            return regex.test(str);
-          };
-
-          const validTeamId = isUUID(profile?.team_id) ? profile.team_id : null;
-          const validOwnerId = isUUID(user?.id) ? user.id : null;
+          const validTeamId = profile?.team_id ? String(profile.team_id) : null;
+          const validOwnerId = user?.id ? String(user.id) : null;
 
           // Final sanitize
           let finalRow = { ...filteredRow };
@@ -455,10 +449,11 @@ function App() {
       setBlastFiles(blastFilesCloud);
       setCombinedFiles(combinedFilesCloud);
       
-      // Cache to local DB
-      await saveDatasetToLocalDB('savant', savantFilesCloud);
-      await saveDatasetToLocalDB('blast', blastFilesCloud);
-      await saveDatasetToLocalDB('combined', combinedFilesCloud);
+      // Cache to local DB (Scoped by user ID)
+      const userKey = user?.id ? `user_${user.id}` : 'guest';
+      await saveDatasetToLocalDB(`${userKey}_savant`, savantFilesCloud);
+      await saveDatasetToLocalDB(`${userKey}_blast`, blastFilesCloud);
+      await saveDatasetToLocalDB(`${userKey}_combined`, combinedFilesCloud);
 
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Synced!' }));
       console.log("Cloud sync complete.");
@@ -510,27 +505,48 @@ function App() {
     }
 
     setter(newFiles);
-    await saveDatasetToLocalDB(type, newFiles);
+    const userKey = user?.id ? `user_${user.id}` : 'guest';
+    await saveDatasetToLocalDB(`${userKey}_${type}`, newFiles);
   };
 
-  // Helper to merge multiple files into one dataset for analysis views
+  // Helper to merge multiple files into one dataset for analysis views with strict data isolation
   const mergeFiles = (files) => {
-    // If it's the new array format
-    if (Array.isArray(files) && files.length > 0) {
-      const allHeaders = new Set();
-      files.forEach(f => {
-        if (f.headers) f.headers.forEach(h => allHeaders.add(h));
-      });
-      return {
-        headers: Array.from(allHeaders),
-        data: files.flatMap(f => f.data)
-      };
-    }
-    // If it's the old single-object format (for backward compatibility)
-    if (files && files.headers && files.data) {
-      return files;
-    }
-    return null;
+    if (!Array.isArray(files) || files.length === 0) return null;
+
+    const isAdmin = profile?.role === 'admin';
+    const userTeam = profile?.team_id;
+    const userId = user?.id;
+
+    const allHeaders = new Set();
+    const safeRows = [];
+
+    files.forEach(f => {
+      if (f.headers) f.headers.forEach(h => allHeaders.add(h));
+      if (Array.isArray(f.data)) {
+        f.data.forEach(row => {
+          if (!isAdmin) {
+            // Strict check 1: If row has a team_id, it must match current user's team_id
+            if (row.team_id && userTeam && String(row.team_id) !== String(userTeam)) {
+              return; // Exclude data belonging to another team!
+            }
+            // Strict check 2: If row has an owner_id and no matching team_id, it must match userId
+            if (row.owner_id && userId && String(row.owner_id) !== String(userId)) {
+              if (!row.team_id || !userTeam || String(row.team_id) !== String(userTeam)) {
+                return; // Exclude data belonging to another owner!
+              }
+            }
+          }
+          safeRows.push(row);
+        });
+      }
+    });
+
+    if (safeRows.length === 0) return null;
+
+    return {
+      headers: Array.from(allHeaders),
+      data: safeRows
+    };
   };
 
   const savantData = useMemo(() => mergeFiles(savantFiles), [savantFiles]);
