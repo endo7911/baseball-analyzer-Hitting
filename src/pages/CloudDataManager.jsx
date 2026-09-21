@@ -21,10 +21,14 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     setError(null);
     const client = getSupabase();
     try {
+      const userTeamName = profile?.team_name;
+      const userTeamId = profile?.team_id;
+      const userId = profile?.id;
+
       // 1. Fetch from unified table (baseball_data)
       const { data: baseballRows, error: bError } = await client
         .from('baseball_data')
-        .select('file_name, upload_id, updated_at, created_at')
+        .select('file_name, upload_id, updated_at, created_at, team_name')
         .limit(5000);
 
       if (bError) {
@@ -49,6 +53,14 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
 
       // Process baseball_data (unified combined table)
       (baseballRows || []).forEach(row => {
+        // Enforce strict privacy check: if team_name or team_id exists, must match user's team
+        if (row.team_name && userTeamName && String(row.team_name) !== String(userTeamName)) {
+          return; // Exclude data belonging to another team!
+        }
+        if (row.team_id && userTeamId && String(row.team_id) !== String(userTeamId)) {
+          return;
+        }
+
         const name = row.file_name || row.upload_id || 'ファイル名なし';
         const key = `baseball-${name}`;
         if (!datasetMap.has(key)) {
@@ -69,6 +81,10 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       // Process savant_data
       const savantFileMap = new Map();
       (savantRows || []).forEach(row => {
+        if (row.team_id && userTeamId && String(row.team_id) !== String(userTeamId)) return;
+        if (row.owner_id && userId && String(row.owner_id) !== String(userId)) {
+          if (!row.team_id || String(row.team_id) !== String(userTeamId)) return;
+        }
         const name = row.file_name || row.upload_id;
         if (!name) return;
         if (!savantFileMap.has(name)) {
@@ -79,6 +95,10 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       // Process blast_data
       const blastFileMap = new Map();
       (blastRows || []).forEach(row => {
+        if (row.team_id && userTeamId && String(row.team_id) !== String(userTeamId)) return;
+        if (row.owner_id && userId && String(row.owner_id) !== String(userId)) {
+          if (!row.team_id || String(row.team_id) !== String(userTeamId)) return;
+        }
         const name = row.file_name || row.upload_id;
         if (!name) return;
         if (!blastFileMap.has(name)) {

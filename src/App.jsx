@@ -10,6 +10,7 @@ import GameStats from './pages/GameStats';
 import CloudDataManager from './pages/CloudDataManager';
 import LoginPage from './pages/LoginPage';
 import AdminPanel from './pages/AdminPanel';
+import GuidePage from './pages/GuidePage';
 import './App.css';
 
 import { supabase, getSupabase } from './lib/supabase';
@@ -605,9 +606,9 @@ function App() {
   const mergeFiles = (files) => {
     if (!Array.isArray(files) || files.length === 0) return null;
 
-    const isAdmin = profile?.role === 'admin';
     const userTeam = profile?.team_id;
-    const userId = user?.id;
+    const userTeamName = profile?.team_name;
+    const userId = user?.id || profile?.id;
 
     const allHeaders = new Set();
     const safeRows = [];
@@ -616,16 +617,18 @@ function App() {
       if (f.headers) f.headers.forEach(h => allHeaders.add(h));
       if (Array.isArray(f.data)) {
         f.data.forEach(row => {
-          if (!isAdmin) {
-            // Strict check 1: If row has a team_id, it must match current user's team_id
-            if (row.team_id && userTeam && String(row.team_id) !== String(userTeam)) {
-              return; // Exclude data belonging to another team!
-            }
-            // Strict check 2: If row has an owner_id and no matching team_id, it must match userId
-            if (row.owner_id && userId && String(row.owner_id) !== String(userId)) {
-              if (!row.team_id || !userTeam || String(row.team_id) !== String(userTeam)) {
-                return; // Exclude data belonging to another owner!
-              }
+          // Strict check 1: If row has a team_id or team_name, it must match current user's team
+          if (row.team_id && userTeam && String(row.team_id) !== String(userTeam)) {
+            return; // Exclude data belonging to another team!
+          }
+          if (row.team_name && userTeamName && String(row.team_name) !== String(userTeamName)) {
+            return; // Exclude data belonging to another team!
+          }
+          // Strict check 2: If row has an owner_id and no matching team, it must match userId
+          if (row.owner_id && userId && String(row.owner_id) !== String(userId)) {
+            if ((!row.team_id || !userTeam || String(row.team_id) !== String(userTeam)) &&
+                (!row.team_name || !userTeamName || String(row.team_name) !== String(userTeamName))) {
+              return; // Exclude data belonging to another owner!
             }
           }
           safeRows.push(row);
@@ -657,6 +660,7 @@ function App() {
       case 'game':     return <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'custom':   return <CustomCharts savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'cloud':    return <CloudDataManager updateDataState={updateDataState} profile={profile} syncState={syncState} fetchFromCloud={fetchFromCloud} />;
+      case 'guide':    return <GuidePage setActiveView={setActiveView} />;
       case 'admin':    return profile?.role === 'admin' ? <AdminPanel /> : null;
       default:         return <UploadPage {...uploadProps} />;
     }
@@ -683,6 +687,7 @@ function App() {
     player: '個人成績',
     game: '試合スタッツ',
     custom: 'カスタムグラフ',
+    guide: '使い方ガイド',
     admin: '管理者パネル'
   };
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X } from 'lucide-react';
+import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X, BookOpen } from 'lucide-react';
 
 function Sidebar({ activeView, setActiveView, savantData, blastData, combinedData, isOpen, setIsOpen, syncState, profile, onLogout }) {
   const isAdmin = profile?.role === 'admin';
@@ -20,6 +20,7 @@ function Sidebar({ activeView, setActiveView, savantData, blastData, combinedDat
     { id: 'player', label: '個人成績', icon: User, disabled: !hasData },
     { id: 'game', label: '試合スタッツ', icon: Trophy, disabled: !hasData },
     { id: 'custom', label: 'カスタムグラフ', icon: LineChart, disabled: !hasData },
+    { id: 'guide', label: '使い方ガイド', icon: BookOpen },
     ...(isAdmin ? [{ id: 'admin', label: '管理者パネル', icon: Shield }] : []),
   ];
 
