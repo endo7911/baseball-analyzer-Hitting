@@ -361,27 +361,33 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
   }, [savantEvents, hitsOnly]);
 
   const summary = useMemo(() => {
-    const avgEV = calculateAverages(filteredData, EV_KEYS);
-    const maxEV = Math.max(...filteredData.map(r => getDataValue(r, EV_KEYS)), 0);
+    const validEvRows = (filteredData || []).filter(r => {
+      const v = getDataValue(r, EV_KEYS);
+      return !isNaN(v) && v > 0;
+    });
+    const hasEvData = validEvRows.length > 0;
+    const avgEV = hasEvData ? calculateAverages(validEvRows, EV_KEYS) : 0;
+    const maxEV = hasEvData ? Math.max(...validEvRows.map(r => getDataValue(r, EV_KEYS)), 0) : 0;
     const avgLA = calculateAverages(filteredData, LA_KEYS);
     const avgBS = calculateAverages(blastEvents, BS_KEYS) || calculateAverages(filteredData, BS_KEYS);
     const maxBS = Math.max(...blastEvents.map(r => getDataValue(r, BS_KEYS)), ...filteredData.map(r => getDataValue(r, BS_KEYS)), 0);
     
     const total = filteredData.length;
     // Thresholds in km/h (Rapsodo data is already km/h)
-    const hardHit = filteredData.filter(r => getDataValue(r, EV_KEYS) >= 153).length; // 95mph = 153km/h
-    const barrel = filteredData.filter(r => getDataValue(r, EV_KEYS) >= 158 && getDataValue(r, LA_KEYS) >= 26 && getDataValue(r, LA_KEYS) <= 30).length; // 98mph = 158km/h
+    const hardHit = validEvRows.filter(r => getDataValue(r, EV_KEYS) >= 153).length; // 95mph = 153km/h
+    const barrel = validEvRows.filter(r => getDataValue(r, EV_KEYS) >= 158 && getDataValue(r, LA_KEYS) >= 26 && getDataValue(r, LA_KEYS) <= 30).length; // 98mph = 158km/h
     const sweetSpot = filteredData.filter(r => getDataValue(r, LA_KEYS) >= 8 && getDataValue(r, LA_KEYS) <= 32).length;
 
     return {
+      hasEvData,
       avgEV, // No conversion - data is already in km/h
       maxEV, // No conversion
       avgLA,
       avgBS, // No conversion
       maxBS,
-      hardHitRate: total > 0 ? (hardHit / total * 100).toFixed(1) : 0,
-      barrelRate: total > 0 ? (barrel / total * 100).toFixed(1) : 0,
-      sweetSpotRate: total > 0 ? (sweetSpot / total * 100).toFixed(1) : 0,
+      hardHitRate: validEvRows.length > 0 ? (hardHit / validEvRows.length * 100).toFixed(1) : '0.0',
+      barrelRate: validEvRows.length > 0 ? (barrel / validEvRows.length * 100).toFixed(1) : '0.0',
+      sweetSpotRate: total > 0 ? (sweetSpot / total * 100).toFixed(1) : '0.0',
       avgPlane: calculateAverages(blastEvents, PLANE_KEYS),
       avgConn: calculateAverages(blastEvents, CONN_KEYS),
       avgRot: calculateAverages(blastEvents, ROT_KEYS),
@@ -439,6 +445,20 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
       </div>
 
       <div className="player-report-body space-y-6 print:space-y-4">
+        {!summary.hasEvData && (
+          <div className="bg-amber-500/10 border-2 border-amber-500/30 p-5 rounded-2xl mb-6 flex flex-col sm:flex-row items-center gap-4 text-amber-300 shadow-xl no-print">
+            <div className="p-3 bg-amber-500/20 border border-amber-500/40 rounded-xl text-amber-400 flex-shrink-0">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <div className="space-y-1 text-center sm:text-left text-xs">
+              <h4 className="font-bold text-white text-sm">打球速度（Exit Velocity）の計測データが含まれていません</h4>
+              <p className="text-slate-300 leading-relaxed">
+                選択された「<strong>{playerName}</strong>」選手のデータには、打球速度（Exit Velocity / launch_speed）の有効な数値が含まれていません。<br/>
+                ※Blast Motion等のスイング分析データが含まれている場合は下部のスイング指標をご確認いただくか、RapsodoデータのCSVファイルを「データ読み込み」画面でアップロードしてください。
+              </p>
+            </div>
+          </div>
+        )}
         {/* Summary Metrics */}
         <div className="player-kpi-grid grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 print:grid-cols-4 print:gap-2 print:mb-4">
           {[
