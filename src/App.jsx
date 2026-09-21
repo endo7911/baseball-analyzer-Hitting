@@ -753,19 +753,44 @@ class ErrorBoundary extends React.Component {
     console.error("App Error Boundary caught an error:", error, errorInfo);
   }
 
+  handleResetCache = async () => {
+    try {
+      localStorage.clear();
+      await clearLocalDB();
+    } catch (e) {
+      console.error(e);
+    }
+    window.location.href = '/';
+  };
+
   render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-          <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl max-w-md shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-2">画面の表示中に問題が発生しました</h3>
-            <p className="text-slate-400 text-sm mb-6">以下のボタンを押して画面を再読み込みしてください。</p>
-            <button 
-              onClick={() => window.location.reload()}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-6 rounded-xl transition-all shadow-lg"
-            >
-              再読み込み
-            </button>
+          <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl max-w-lg shadow-2xl space-y-4">
+            <h3 className="text-xl font-bold text-white">画面の表示中に問題が発生しました</h3>
+            <p className="text-slate-400 text-sm">一時的な状態エラーまたはキャッシュの不整合が発生しました。</p>
+
+            {this.state.error && (
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-left text-xs font-mono text-red-400 overflow-x-auto max-h-32">
+                {this.state.error.message || String(this.state.error)}
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <button 
+                onClick={() => window.location.reload()}
+                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-6 rounded-xl transition-all shadow-lg text-sm"
+              >
+                再読み込み
+              </button>
+              <button 
+                onClick={this.handleResetCache}
+                className="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-6 rounded-xl transition-all border border-slate-700 text-sm"
+              >
+                キャッシュをリセットして初期化
+              </button>
+            </div>
           </div>
         </div>
       );
