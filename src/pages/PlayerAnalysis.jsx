@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { extractTeams, extractPlayersByTeam, getPlayerStats, groupEventsByTeamAndPlayer, EV_KEYS, BS_KEYS, getDataValue } from '../utils/dataHelpers';
+import { extractTeams, extractPlayersByTeam, getPlayerStats, groupEventsByTeamAndPlayer, EV_KEYS, BS_KEYS, LA_KEYS, AA_KEYS, getDataValue } from '../utils/dataHelpers';
 import PlayerProfile from '../components/PlayerProfile';
 import { Users, User, Settings2 } from 'lucide-react';
 
