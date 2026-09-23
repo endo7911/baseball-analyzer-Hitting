@@ -564,6 +564,18 @@ function App() {
       const cRaw = Array.isArray(combinedRaw) ? combinedRaw : [];
       const pRaw = Array.isArray(pitchingRaw) ? pitchingRaw : [];
 
+      // Helper to extract numeric values matching any key alias
+      const extractRowVal = (row, keys) => {
+        if (!row) return null;
+        for (const k of keys) {
+          if (row[k] != null && row[k] !== '' && row[k] !== '-') {
+            const num = typeof row[k] === 'number' ? row[k] : parseFloat(String(row[k]).replace(/[^-0-9.]/g, ''));
+            if (!isNaN(num)) return num;
+          }
+        }
+        return null;
+      };
+
       // Helper to group flat rows into the "Files" format the app expects
       const groupIntoFiles = (rows, type) => {
         if (!Array.isArray(rows)) return [];
@@ -571,6 +583,13 @@ function App() {
         rows.forEach(row => {
           if (!row) return;
           const fileName = row.file_name || row.filename || 'Cloud Data';
+          
+          // Backfill launch_speed if present under alias keys
+          const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
+          if (evVal != null) {
+            row.launch_speed = evVal;
+          }
+
           if (!grouped[fileName]) {
             grouped[fileName] = {
               id: row.upload_id || `cloud-${fileName}`,
@@ -610,18 +629,28 @@ function App() {
         for (let i = 0; i < maxLen; i++) {
           const s = sRows[i] || {};
           const b = bRows[i] || {};
+          
+          const ev = extractRowVal(s, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速']) 
+                ?? extractRowVal(b, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速']);
+          const bs = extractRowVal(s, ['bat_speed', 'BatSpeed', 'Bat Speed', 'スイング速度', 'バットスピード']) 
+                ?? extractRowVal(b, ['bat_speed', 'BatSpeed', 'Bat Speed', 'スイング速度', 'バットスピード']);
+          const la = extractRowVal(s, ['launch_angle', 'LaunchAngle', 'Launch Angle', '打球角度']) 
+                ?? extractRowVal(b, ['launch_angle', 'LaunchAngle', 'Launch Angle', '打球角度']);
+          const aa = extractRowVal(s, ['attack_angle', 'AttackAngle', 'Attack Angle', 'アタックアングル']) 
+                ?? extractRowVal(b, ['attack_angle', 'AttackAngle', 'Attack Angle', 'アタックアングル']);
+
           combinedRawList.push({
             ...b,
             ...s,
-            player_name: s.batter_name || b.player_name || 'Unknown',
-            batter_name: s.batter_name || b.player_name || 'Unknown',
-            bat_speed: s.bat_speed ?? b.bat_speed,
-            launch_speed: s.launch_speed ?? b.launch_speed,
-            attack_angle: s.attack_angle ?? b.attack_angle,
-            launch_angle: s.launch_angle ?? b.launch_angle,
+            player_name: s.batter_name || s.player_name || b.player_name || 'Unknown',
+            batter_name: s.batter_name || s.player_name || b.player_name || 'Unknown',
+            bat_speed: bs,
+            launch_speed: ev,
+            attack_angle: aa,
+            launch_angle: la,
             hit_distance_sc: s.hit_distance_sc ?? b.hit_distance_sc,
-            date: s.game_date || b.date,
-            game_date: s.game_date || b.date,
+            date: s.game_date || s.date || b.date,
+            game_date: s.game_date || s.date || b.date,
             file_name: name
           });
         }
@@ -712,9 +741,26 @@ function App() {
     const safeRows = [];
 
     files.forEach(f => {
-      if (f.headers) f.headers.forEach(h => allHeaders.add(h));
+      if (f.headers && Array.isArray(f.headers)) f.headers.forEach(h => allHeaders.add(h));
       if (Array.isArray(f.data)) {
         f.data.forEach(row => {
+          if (!row) return;
+          
+          // Populate headers from row keys as safety net
+          Object.keys(row).forEach(k => {
+            if (!['id', 'owner_id', 'team_id', 'updated_at', 'upload_id'].includes(k)) {
+              allHeaders.add(k);
+            }
+          });
+
+          // Ensure launch_speed alias backfill
+          if (row.launch_speed == null) {
+            const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
+            if (evVal != null) {
+              row.launch_speed = evVal;
+            }
+          }
+
           // Strict check 1: If row has a team_id or team_name, it must match current user's team
           if (row.team_id && userTeam && String(row.team_id) !== String(userTeam)) {
             return; // Exclude data belonging to another team!
