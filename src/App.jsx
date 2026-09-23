@@ -170,7 +170,8 @@ function App() {
       'date', 'player_name', 'bat_speed', 'attack_angle', 'vertical_bat_angle', 'power', 
       'time_to_contact', 'peak_hand_speed', 'on_plane_efficiency', 'rotation_score', 
       'on_plane_score', 'connection_score', 'rotation_acceleration', 'connection_at_impact', 
-      'connection_at_address', 'bat_angle', 'file_name', 'upload_id'
+      'connection_at_address', 'bat_angle', 'file_name', 'upload_id',
+      'launch_speed', 'launch_angle', 'hit_distance_sc'
     ];
 
     const COMBINED_COLUMNS = [

@@ -82,17 +82,21 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
     reader.onload = (e) => {
       const arrayBuffer = e.target.result;
       
-      // Try UTF-8 first
+      // Try UTF-8 decoding first
       let decoder = new TextDecoder('utf-8');
       let text = decoder.decode(arrayBuffer);
       
-      // If it looks like Shift-JIS, decode with Shift-JIS
-      const hasUtf8Markers = text.includes('©Blast Motion') || text.includes('Date') || text.includes('バットスピード') || text.includes('Pitch Speed');
-      if (!hasUtf8Markers) {
+      // Comprehensive check for UTF-8 Japanese / English headers
+      const utf8Keywords = ['日付', '選手名', '打球速度', 'スイング速度', '打球角度', 'バットスピード', 'アッパー', '飛距離', '球速', '選手', '投手名', 'チーム', 'Date', 'Player', 'Pitch Speed', 'ExitVelocity', 'launch_speed', '©Blast Motion'];
+      const hasUtf8Markers = utf8Keywords.some(kw => text.includes(kw));
+
+      // Only attempt Shift-JIS fallback if UTF-8 markers are absent OR text has replacement character (\ufffd)
+      if (!hasUtf8Markers || text.includes('\ufffd')) {
         try {
-          decoder = new TextDecoder('shift-jis');
-          const sjisText = decoder.decode(arrayBuffer);
-          if (sjisText.includes('©Blast Motion') || sjisText.includes('日付') || sjisText.includes('バットスピード') || sjisText.includes('球速')) {
+          const sjisDecoder = new TextDecoder('shift-jis');
+          const sjisText = sjisDecoder.decode(arrayBuffer);
+          const hasSjisMarkers = utf8Keywords.some(kw => sjisText.includes(kw));
+          if (hasSjisMarkers && (!hasUtf8Markers || sjisText.length > 0)) {
             text = sjisText;
           }
         } catch (err) {
