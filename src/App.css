@@ -333,12 +333,39 @@ h2, h3, h4 {
 /* Print Styles for PDF Export */
 @media print {
   @page {
-    margin: 6mm;
+    size: A4 portrait;
+    margin: 8mm 10mm;
   }
   
+  /* Strip all linear gradients, shadows, and dark backgrounds */
+  *,
+  *::before,
+  *::after {
+    background-image: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
   html,
-  body {
+  body,
+  #root,
+  .main-layout,
+  .content-area,
+  .max-container,
+  div,
+  section,
+  article,
+  main,
+  header,
+  footer,
+  .card,
+  [class*="bg-"],
+  [class*="from-"],
+  [class*="via-"],
+  [class*="to-"] {
     background-color: #ffffff !important;
+    background: #ffffff !important;
+    border-color: #cbd5e1 !important;
     color: #0f172a !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -346,26 +373,35 @@ h2, h3, h4 {
   
   /* Hide EVERY UI element that shouldn't be in the PDF */
   .no-print,
+  .print\:hidden,
   .sidebar-overlay,
   nav,
   aside,
   header,
   button,
   input,
+  select,
   [role="button"],
-  .fixed.top-0, /* Mobile header */
-  .w-64 { /* Sidebar container */
+  .fixed,
+  .w-64,
+  .sidebar-container {
     display: none !important;
     width: 0 !important;
     height: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
   }
   
   .main-layout {
     display: block !important;
     height: auto !important;
     overflow: visible !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
   
   .content-area {
@@ -374,6 +410,7 @@ h2, h3, h4 {
     overflow: visible !important;
     width: 100% !important;
     position: static !important;
+    background: transparent !important;
   }
   
   .max-container {
@@ -382,25 +419,143 @@ h2, h3, h4 {
     padding: 0 !important;
   }
   
-  /* Ensure grids stack nicely or stay together */
-  .grid {
-    gap: inherit;
+  /* High contrast colors for white paper print out */
+  body, p, span, h1, h2, h3, h4, h5, h6, div, label, td, th {
+    color: #0f172a !important;
   }
-  
-  /* Keep printed reports on a white paper surface. */
-  .bg-slate-800, .bg-slate-900, .bg-gray-900 {
+
+  .text-white, .text-slate-100, .text-slate-200, .text-slate-300 {
+    color: #0f172a !important;
+  }
+
+  .text-slate-400, .text-slate-500, .text-slate-600 {
+    color: #475569 !important;
+  }
+
+  .text-amber-300, .text-amber-400, .text-amber-500, .text-yellow-400, .text-yellow-500 {
+    color: #b45309 !important;
+  }
+  .text-emerald-300, .text-emerald-400, .text-emerald-500, .text-green-400, .text-green-500 {
+    color: #047857 !important;
+  }
+  .text-blue-300, .text-blue-400, .text-blue-500, .text-cyan-400, .text-cyan-500 {
+    color: #1d4ed8 !important;
+  }
+  .text-purple-300, .text-purple-400, .text-purple-500 {
+    color: #6b21a8 !important;
+  }
+  .text-rose-300, .text-rose-400, .text-rose-500, .text-red-400, .text-red-500 {
+    color: #be123c !important;
+  }
+  .text-orange-300, .text-orange-400, .text-orange-500 {
+    color: #c2410c !important;
+  }
+
+  /* Summary KPI boxes in print mode */
+  .grid > div.bg-slate-900\/80,
+  div[class*="bg-slate-900/80"],
+  div[class*="bg-slate-900"] {
+    background-color: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+  }
+
+  /* Tables in Print Mode - Strict 100% Width Fit without Horizontal Overflow */
+  .overflow-x-auto,
+  div[class*="overflow-x"],
+  div[class*="max-h-"] {
+    overflow: visible !important;
+    max-height: none !important;
+    width: 100% !important;
+  }
+
+  table {
+    color: #0f172a !important;
     background-color: #ffffff !important;
-    border-color: #e2e8f0 !important;
+    border-collapse: collapse !important;
+    border: 1px solid #cbd5e1 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: auto !important;
+    font-size: 7.5pt !important;
+  }
+
+  thead, tbody, tr, th, td {
+    position: static !important;
+  }
+
+  th, td {
+    min-width: 0 !important;
+    width: auto !important;
+    padding: 3px 2px !important;
+    font-size: 7pt !important;
+    line-height: 1.15 !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+    hyphens: auto !important;
+  }
+
+  th {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    border-bottom: 2px solid #94a3b8 !important;
+    border-top: 1px solid #cbd5e1 !important;
+    border-left: 1px solid #e2e8f0 !important;
+    border-right: 1px solid #e2e8f0 !important;
+    font-weight: 800 !important;
+    text-align: center !important;
+  }
+
+  td {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    border-left: 1px solid #f1f5f9 !important;
+    border-right: 1px solid #f1f5f9 !important;
+  }
+
+  tr:nth-child(even) td {
+    background-color: #f8fafc !important;
+  }
+
+  /* Page Break Control */
+  .print-page-break-before,
+  .print\:break-before-page {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
+  /* Hide progress bars, sort icons, and extra decorative elements in print mode to save horizontal space */
+  .w-12, .w-16, 
+  div[class*="w-12"], 
+  div[class*="w-16"],
+  .lucide-arrow-down-up,
+  .lucide-arrow-up-down {
+    display: none !important;
+  }
+
+  tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  tr:hover td {
+    background-color: transparent !important;
   }
   
-  /* Avoid page breaks inside cards */
-  .grid > div {
-    break-inside: avoid;
-    page-break-inside: avoid;
-    margin-bottom: 0 !important;
+  /* Print layout card spacing for 2-page fit */
+  .space-y-8 > div {
+    margin-bottom: 0.5rem !important;
   }
   
   .recharts-responsive-container {
-    max-height: 350px !important;
+    max-height: 200px !important;
+  }
+
+  .recharts-text, .recharts-cartesian-axis-tick-value {
+    fill: #1e293b !important;
+  }
+
+  .recharts-cartesian-grid line {
+    stroke: #e2e8f0 !important;
   }
 }

@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import UploadPage from './pages/UploadPage';
 import TeamAnalysis from './pages/TeamAnalysis';
 import PlayerAnalysis from './pages/PlayerAnalysis';
+import PitcherAnalysis from './pages/PitcherAnalysis';
 import CustomCharts from './pages/CustomCharts';
 import GameStats from './pages/GameStats';
 import CloudDataManager from './pages/CloudDataManager';
@@ -18,9 +19,11 @@ import { saveDatasetToLocalDB, getDatasetFromLocalDB, clearLocalDB } from './lib
 
 function App() {
   const [savantFiles, setSavantFiles] = useState([]);
+  const [savantPitchingFiles, setSavantPitchingFiles] = useState([]);
   const [blastFiles, setBlastFiles] = useState([]);
   const [combinedFiles, setCombinedFiles] = useState([]);
   const [cloudSavantFiles, setCloudSavantFiles] = useState([]);
+  const [cloudSavantPitchingFiles, setCloudSavantPitchingFiles] = useState([]);
   const [cloudBlastFiles, setCloudBlastFiles] = useState([]);
   const [cloudCombinedFiles, setCloudCombinedFiles] = useState([]);
   const [activeView, setActiveView] = useState('upload');
@@ -146,7 +149,9 @@ function App() {
     setSyncState(prev => ({ ...prev, saving: true, lastError: null }));
     const client = getSupabase();
     
-    const table = type === 'savant' ? 'savant_data' : (type === 'blast' ? 'blast_data' : 'baseball_data');
+    const table = type === 'savant' ? 'savant_data' 
+                : (type === 'blast' ? 'blast_data' 
+                : (type === 'savant_pitching' ? 'pitching_data' : 'baseball_data'));
 
     // Define allowed columns matching exact Supabase schemas
     const SAVANT_COLUMNS = [
@@ -176,11 +181,21 @@ function App() {
       'release_speed', 'file_name', 'upload_id'
     ];
 
-    const allowedColumns = table === 'savant_data' ? SAVANT_COLUMNS : (table === 'blast_data' ? BLAST_COLUMNS : COMBINED_COLUMNS);
+    const PITCHING_COLUMNS = [
+      'date', 'game_date', 'pitcher_name', 'player_name', 'team_name',
+      'pitch_type', 'pitch_name', 'release_speed', 'release_spin_rate',
+      'spin_axis', 'spin_efficiency', 'gyro_angle', 'vb_traj', 'hb_traj',
+      'release_pos_x', 'release_pos_z', 'vaa', 'p_throws',
+      'file_name', 'upload_id'
+    ];
+
+    const allowedColumns = table === 'savant_data' ? SAVANT_COLUMNS 
+      : (table === 'blast_data' ? BLAST_COLUMNS 
+      : (table === 'pitching_data' ? PITCHING_COLUMNS : COMBINED_COLUMNS));
 
     // Mapping for Japanese/Rapsodo keys to DB columns
     const COLUMN_MAP = {
-      // 選手名
+      // 選手名 / 投手名
       '選手名': 'player_name',
       'Player Name': 'player_name',
       'Player': 'player_name',
@@ -188,6 +203,11 @@ function App() {
       'batter_name': 'player_name',
       '氏名': 'player_name',
       '名前': 'player_name',
+      '投手名': 'pitcher_name',
+      'Pitcher Name': 'pitcher_name',
+      'Pitcher': 'pitcher_name',
+      'PitcherName': 'pitcher_name',
+      'pitcher_name': 'pitcher_name',
       // 学年
       '学年': 'grade',
       'grade': 'grade',
@@ -252,6 +272,59 @@ function App() {
       'release_speed': 'release_speed',
       'PitchBallVelo': 'release_speed',
       'pitch_velocity': 'release_speed',
+      'Pitch Speed': 'release_speed',
+      'PitchSpeed': 'release_speed',
+      // 球種
+      '球種': 'pitch_type',
+      'Pitch Type': 'pitch_type',
+      'PitchType': 'pitch_type',
+      'pitch_type': 'pitch_type',
+      'pitch_name': 'pitch_type',
+      // 回転数
+      '回転数': 'release_spin_rate',
+      'Spin Rate': 'release_spin_rate',
+      'SpinRate': 'release_spin_rate',
+      'release_spin_rate': 'release_spin_rate',
+      // 回転軸
+      '回転軸': 'spin_axis',
+      'Spin Axis': 'spin_axis',
+      'SpinAxis': 'spin_axis',
+      'spin_axis': 'spin_axis',
+      // 回転効率
+      '回転効率': 'spin_efficiency',
+      'Spin Efficiency': 'spin_efficiency',
+      'SpinEfficiency': 'spin_efficiency',
+      'spin_efficiency': 'spin_efficiency',
+      // ジャイロ角
+      'ジャイロ角': 'gyro_angle',
+      'Gyro Angle': 'gyro_angle',
+      'GyroAngle': 'gyro_angle',
+      'gyro_angle': 'gyro_angle',
+      // 変化量
+      '縦変化量': 'vb_traj',
+      'VB (trajectory)': 'vb_traj',
+      'VB': 'vb_traj',
+      'vbreak_traj': 'vb_traj',
+      '横変化量': 'hb_traj',
+      'HB (trajectory)': 'hb_traj',
+      'HB': 'hb_traj',
+      'hbreak_traj': 'hb_traj',
+      // リリリース位置
+      'リリース高度': 'release_pos_z',
+      'Release Height': 'release_pos_z',
+      'ReleaseHeight': 'release_pos_z',
+      'release_pos_z': 'release_pos_z',
+      'リリース幅': 'release_pos_x',
+      'Release Side': 'release_pos_x',
+      'ReleaseSide': 'release_pos_x',
+      'release_pos_x': 'release_pos_x',
+      // VAA
+      'VAA': 'vaa',
+      'VerticalApproachAngle': 'vaa',
+      // 利き腕
+      '利き腕': 'p_throws',
+      'Throws': 'p_throws',
+      'p_throws': 'p_throws',
       // 日付
       '日付': 'date',
       'Date': 'game_date',
@@ -291,7 +364,7 @@ function App() {
       const validTeamId = isUUID(profile?.team_id) ? profile.team_id : null;
       const validOwnerId = isUUID(user?.id) ? user.id : null;
 
-      console.log(`Starting cloud save for ${totalRows} rows...`);
+      console.log(`Starting cloud save for ${totalRows} rows to table ${table}...`);
 
       // Date parsing helper - flexible extraction of year/month/day
       const parseJapaneseDate = (dateStr) => {
@@ -351,7 +424,8 @@ function App() {
                 const numericColumns = [
                   'launch_speed', 'launch_angle', 'bat_speed', 'attack_angle', 
                   'release_speed', 'release_spin_rate', 'hit_distance_sc', 
-                  'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle'
+                  'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle',
+                  'spin_efficiency', 'gyro_angle', 'vb_traj', 'hb_traj', 'release_pos_x', 'release_pos_z', 'vaa'
                 ];
 
                 if (numericColumns.includes(targetKey)) {
@@ -376,6 +450,14 @@ function App() {
             if (targetTable === 'savant_data') {
               if (!filteredRow.batter_name) {
                 filteredRow.batter_name = filteredRow.player_name || row['選手名'] || row['名前'] || row['Player Name'] || 'Unknown Player';
+              }
+            }
+            if (targetTable === 'pitching_data') {
+              if (!filteredRow.pitcher_name) {
+                filteredRow.pitcher_name = filteredRow.player_name || row['投手名'] || row['投手'] || row['Pitcher Name'] || row['選手名'] || 'Unknown Pitcher';
+              }
+              if (!filteredRow.player_name) {
+                filteredRow.player_name = filteredRow.pitcher_name;
               }
             }
 
@@ -409,6 +491,8 @@ function App() {
         await insertRowsToTable('savant_data', SAVANT_COLUMNS);
       } else if (type === 'blast') {
         await insertRowsToTable('blast_data', BLAST_COLUMNS);
+      } else if (type === 'savant_pitching') {
+        await insertRowsToTable('pitching_data', PITCHING_COLUMNS);
       } else {
         // combined: Save directly to dedicated baseball_data table in Supabase
         await insertRowsToTable('baseball_data', COMBINED_COLUMNS);
@@ -418,7 +502,7 @@ function App() {
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Saved!' }));
     } catch (err) {
       console.warn("Cloud save unavailable, fallback to local storage:", err);
-      const currentFiles = type === 'savant' ? savantFiles : (type === 'blast' ? blastFiles : combinedFiles);
+      const currentFiles = type === 'savant' ? savantFiles : (type === 'blast' ? blastFiles : (type === 'savant_pitching' ? savantPitchingFiles : combinedFiles));
       const userKey = user?.id ? `user_${user.id}` : 'guest';
       await saveDatasetToLocalDB(`${userKey}_${type}`, currentFiles);
       alert(`「${dataObj.filename}」をクラウドへ保存中にエラーが発生したため、ローカル（ブラウザ）に保存しました。\n詳細: ${err?.message || err?.details || JSON.stringify(err)}`);
@@ -460,15 +544,17 @@ function App() {
         return allRows;
       };
 
-      const [savantRaw, blastRaw, combinedRaw] = await Promise.all([
+      const [savantRaw, blastRaw, combinedRaw, pitchingRaw] = await Promise.all([
         fetchTable('savant_data').catch(() => []),
         fetchTable('blast_data').catch(() => []),
-        fetchTable('baseball_data').catch(() => [])
+        fetchTable('baseball_data').catch(() => []),
+        fetchTable('pitching_data').catch(() => [])
       ]);
 
       const sRaw = Array.isArray(savantRaw) ? savantRaw : [];
       const bRaw = Array.isArray(blastRaw) ? blastRaw : [];
       const cRaw = Array.isArray(combinedRaw) ? combinedRaw : [];
+      const pRaw = Array.isArray(pitchingRaw) ? pitchingRaw : [];
 
       // Helper to group flat rows into the "Files" format the app expects
       const groupIntoFiles = (rows, type) => {
@@ -535,11 +621,13 @@ function App() {
 
       const savantFilesCloud = groupIntoFiles(sRaw.filter(r => r?.file_name && !combinedFileNames.has(r.file_name)), 'savant');
       const blastFilesCloud = groupIntoFiles(bRaw.filter(r => r?.file_name && !combinedFileNames.has(r.file_name)), 'blast');
+      const pitchingFilesCloud = groupIntoFiles(pRaw, 'savant_pitching');
       const combinedFilesCloud = groupIntoFiles(combinedRawList, 'combined');
 
       // Update cloud files for analysis views
       setCloudSavantFiles(savantFilesCloud);
       setCloudBlastFiles(blastFilesCloud);
+      setCloudSavantPitchingFiles(pitchingFilesCloud);
       setCloudCombinedFiles(combinedFilesCloud);
       
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Synced!' }));
@@ -558,9 +646,11 @@ function App() {
 
   const updateDataState = async (type, payload, action = 'set') => {
     let setter, currentFiles;
-    if (type === 'savant') { setter = setSavantFiles; currentFiles = savantFiles; }
-    if (type === 'blast') { setter = setBlastFiles; currentFiles = blastFiles; }
-    if (type === 'combined') { setter = setCombinedFiles; currentFiles = combinedFiles; }
+    if (type === 'savant' || type === 'savant_hitting') { setter = setSavantFiles; currentFiles = savantFiles; }
+    else if (type === 'savant_pitching' || type === 'pitcher') { setter = setSavantPitchingFiles; currentFiles = savantPitchingFiles; }
+    else if (type === 'blast') { setter = setBlastFiles; currentFiles = blastFiles; }
+    else if (type === 'combined') { setter = setCombinedFiles; currentFiles = combinedFiles; }
+    else { setter = setSavantFiles; currentFiles = savantFiles; }
     
     let newFiles = [...currentFiles];
 
@@ -645,18 +735,20 @@ function App() {
   };
 
   const savantData = useMemo(() => mergeFiles([...savantFiles, ...cloudSavantFiles]), [savantFiles, cloudSavantFiles]);
+  const savantPitchingData = useMemo(() => mergeFiles([...savantPitchingFiles, ...cloudSavantPitchingFiles]), [savantPitchingFiles, cloudSavantPitchingFiles]);
   const blastData = useMemo(() => mergeFiles([...blastFiles, ...cloudBlastFiles]), [blastFiles, cloudBlastFiles]);
   const combinedData = useMemo(() => mergeFiles([...combinedFiles, ...cloudCombinedFiles]), [combinedFiles, cloudCombinedFiles]);
 
   const renderActiveView = () => {
     const uploadProps = {
-      savantFiles, blastFiles, combinedFiles, updateDataState,
+      savantFiles, savantPitchingFiles, blastFiles, combinedFiles, updateDataState,
       setActiveView, saveToCloud, syncState, profile, fetchFromCloud
     };
     switch (activeView) {
       case 'upload':   return <UploadPage {...uploadProps} />;
       case 'team':     return <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
-      case 'player':   return <PlayerAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} />;
+      case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} />;
+      case 'pitcher':  return <PitcherAnalysis savantData={savantPitchingData || savantData} blastData={blastData} combinedData={combinedData} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
       case 'game':     return <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'custom':   return <CustomCharts savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'cloud':    return <CloudDataManager updateDataState={updateDataState} profile={profile} syncState={syncState} fetchFromCloud={fetchFromCloud} />;
@@ -683,8 +775,9 @@ function App() {
   const viewLabels = {
     upload: 'データ読み込み',
     cloud: 'クラウド管理',
-    team: 'チーム分析',
-    player: '個人成績',
+    team: '打撃分析',
+    pitcher: '投手分析',
+    player: '個人分析',
     game: '試合スタッツ',
     custom: 'カスタムグラフ',
     guide: '使い方ガイド',
@@ -721,8 +814,13 @@ function App() {
         activeView={activeView}
         setActiveView={handleViewChange}
         savantData={savantData}
+        savantPitchingData={savantPitchingData}
         blastData={blastData}
         combinedData={combinedData}
+        savantFiles={savantFiles}
+        savantPitchingFiles={savantPitchingFiles}
+        blastFiles={blastFiles}
+        combinedFiles={combinedFiles}
         isOpen={isMenuOpen}
         setIsOpen={setIsMenuOpen}
         syncState={syncState}

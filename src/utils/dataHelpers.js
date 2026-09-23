@@ -98,21 +98,135 @@ export const calculateStats = (events) => {
   return { ba, slg, totalBases, ab: abEvents.length };
 };
 
-export const BS_KEYS = ['bat_speed', 'BatSpeed', 'バットスピード', 'バット速度', 'バットスピー', 'スイング速度', 'スイングスピード', 'Bat Speed (mph)', 'スイング'];
+export const BS_KEYS = [
+  'バット速度', 'バットスピード', 'スイング速度', 'スイングスピード', 'バットスピー', 'スイング',
+  'bat_speed', 'BatSpeed', 'Bat Speed', 'Bat_Speed', 'Bat Speed (mph)', 'Bat Speed (km/h)',
+  'BatSpeed (km/h)', 'BatSpeed (mph)', 'バット速度(km/h)', 'バット速度（km/h）', 'スイング速度(km/h)'
+];
+
 export const PLANE_KEYS = ['on_plane_efficiency', 'OnPlaneEfficiency', 'オンプレーン効率', 'オンプレーン%', 'オンプレーン', 'On Plane Efficiency (%)'];
 export const CONN_KEYS = ['connection_score', 'ConnectionScore', 'コネクション', '体とバットの'];
 export const ROT_KEYS = ['rotation_score', 'RotationScore', 'ローテーション', '体の回転によ', '体の回転による加速スコア'];
 export const TIME_KEYS = ['time_to_contact', 'TimeToContact', 'スイング時間', 'Time to Contact (sec)'];
-export const EV_KEYS = ['ExitVelocity', 'launch_speed', 'exit_velocity', 'EV', '打球速度', '打球スピード', '打球速', '打球'];
-export const LA_KEYS = ['LaunchAngle', 'launch_angle', 'LA', '打球角度', '角度'];
+
+export const EV_KEYS = [
+  '打球速度', '打球初速', '打球スピード', '打球速', '打球', 
+  'ExitVelocity', 'Exit Velocity', 'launch_speed', 'exit_velocity', 
+  'Exit Speed', 'ExitSpeed', 'Ball Speed', 'BallSpeed', 
+  'Exit Velocity (mph)', 'Exit Velocity (km/h)', 'Exit Speed (mph)', 'Exit Speed (km/h)',
+  'BallSpeed (km/h)', 'Ball Speed (km/h)', 'BallSpeed (mph)', 'Ball Speed (mph)',
+  '打球速度(km/h)', '打球速度（km/h）', '打球速度 [km/h]', '打球速度(mph)', '打球速度（mph）',
+  '打球初速(km/h)', '打球初速（km/h）', '初速', 'ExitVelo', 'exit_velo', 'Exit Velo', 'EV'
+];
+
+export const LA_KEYS = [
+  '打球角度', '角度', '打球角', '打ち出し角', '打ち出し角度',
+  'LaunchAngle', 'Launch Angle', 'launch_angle', 'Launch Angle (deg)', 'LaunchAngle (deg)',
+  '打球角度(°)', '打球角度（°）', 'LA'
+];
+
 export const DIST_KEYS = ['Distance', 'hit_distance_sc', 'distance', '飛距離', '推定飛距離'];
 export const ROTATION_ACCEL_KEYS = ['rotation_acceleration', 'Rotation Acceleration', '回転加速', '体の回転による'];
-export const AA_KEYS = ['attack_angle', 'アタックアングル', 'AttackAngle', 'AA', 'アッパースイング度', 'アッパー', 'アッパースイング', 'アッパースイング角度', 'アッパー角度'];
-export const PITCH_VELO_KEYS = ['PitchBallVelo', 'release_speed', 'pitch_velocity', '球速', '球速（投球）', '投球速度', 'Pitch Speed'];
+
+export const AA_KEYS = [
+  'アッパースイング度', 'アタックアングル', 'アッパー', 'アッパースイング', 'アッパースイング角度', 'アッパー角度',
+  'attack_angle', 'Attack Angle', 'AttackAngle', 'Attack Angle (deg)', 'アタックアングル(°)', 'アタックアングル（°）', 'AA'
+];
+
+export const PITCH_VELO_KEYS = ['PitchBallVelo', 'release_speed', 'pitch_velocity', '球速', '球速（投球）', '投球速度', 'Pitch Speed', 'PitchSpeed', 'Velo', 'Speed'];
 export const HS_KEYS = ['peak_hand_speed', 'PeakHandSpeed', '手の最大速度', '手の最大スピード', 'Hand Speed'];
 export const ON_PLANE_SCORE_KEYS = ['on_plane_score', 'OnPlaneScore', 'オンプレーンスコア', 'オンプレーンのスコア'];
 export const GRADE_KEYS = ['grade', 'Grade', '学年', '年次', '学年・年次'];
 export const NAME_KEYS = ['player_name', 'Player Name', 'Player', 'PlayerName', '選手名', '氏名', '名前', '名前・氏名', 'batter_name'];
+
+// Pitcher Specific Keys (Prioritizing trajectory for VB and HB as requested)
+export const VB_TRAJ_KEYS = ['VB (trajectory)', 'VB(trajectory)', 'vbreak_traj', 'traj_vb', 'VB', 'vbreak', 'VerticalBreak', '縦変化量', '縦変化量(cm)', 'iVB'];
+export const HB_TRAJ_KEYS = ['HB (trajectory)', 'HB(trajectory)', 'hbreak_traj', 'traj_hb', 'HB', 'hbreak', 'HorizontalBreak', '横変化量', '横変化量(cm)'];
+export const SPIN_RATE_KEYS = ['Spin Rate', 'SpinRate', 'spin_rate', 'release_spin_rate', '回転数', '回転数(rpm)', 'Spin'];
+export const SPIN_AXIS_KEYS = ['Spin Direction', 'SpinDirection', 'spin_direction', 'Spin Axis', 'SpinAxis', 'spin_axis', '回転軸', '回転方向', 'Axis', 'True Spin Axis', '回転軸(時:分)'];
+export const SPIN_EFFICIENCY_KEYS = ['Spin Efficiency', 'SpinEfficiency', 'spin_efficiency', '回転効率', '回転効率(%)', 'Spin Efficiency (%)', 'True Spin %', 'Efficiency', 'EFF'];
+export const GYRO_ANGLE_KEYS = ['Gyro Angle', 'GyroAngle', 'gyro_angle', 'ジャイロ角度', 'ジャイロ角', 'Gyro Angle (deg)', 'Gyro'];
+export const VAA_KEYS = ['VAA', 'VerticalApproachAngle', 'vertical_approach_angle', 'VAA (deg)', '垂直アプローチ角度', '垂直アプローチ角', 'アプローチ角度'];
+export const PITCH_TYPE_KEYS = ['Pitch Type', 'PitchType', 'pitch_type', 'pitch_name', '球種', 'Pitch', 'Type'];
+export const RELEASE_HEIGHT_KEYS = ['Release Height', 'ReleaseHeight', 'release_pos_z', 'リリース高度', 'リリース高', 'Release Height (m)', 'Release Height (ft)'];
+export const RELEASE_SIDE_KEYS = ['Release Side', 'ReleaseSide', 'release_pos_x', 'リリース横', 'リリース幅', 'Release Side (m)', 'Release Side (ft)'];
+export const PITCHER_NAME_KEYS = ['pitcher_name', 'Pitcher Name', 'Pitcher', 'PitcherName', '投手名', '投手', 'player_name', 'Player Name', 'Player'];
+export const PITCHER_THROWS_KEYS = ['p_throws', 'PitcherThrows', 'Throws', 'pitcher_hand', 'PitcherHand', '投球アーム', '利き腕', '投球腕', 'Pitcher Hand', 'Hand', 'Arm', '投手利き腕'];
+
+export const getPitcherHand = (rowOrEvents) => {
+  const events = Array.isArray(rowOrEvents) ? rowOrEvents : [rowOrEvents];
+  for (const row of events) {
+    if (!row) continue;
+    for (const k of PITCHER_THROWS_KEYS) {
+      if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+        const v = String(row[k]).trim().toUpperCase();
+        if (v === 'R' || v === 'RIGHT' || v === '右' || v.includes('右')) return 'R';
+        if (v === 'L' || v === 'LEFT' || v === '左' || v.includes('左')) return 'L';
+      }
+    }
+  }
+  return 'R';
+};
+
+// Raw string value extractor that does NOT strip colons (useful for clock strings like "0:38" or "12:15")
+export const getRawDataValue = (row, keyOrKeys) => {
+  if (!row) return null;
+  const targetKeys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+  
+  for (const k of targetKeys) {
+    if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+      return String(row[k]).trim();
+    }
+  }
+
+  const rowKeys = Object.keys(row);
+  for (const k of targetKeys) {
+    const lowerK = k.toLowerCase();
+    const foundKey = rowKeys.find(ak => ak.toLowerCase() === lowerK || ak.toLowerCase().includes(lowerK));
+    if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && String(row[foundKey]).trim() !== '') {
+      return String(row[foundKey]).trim();
+    }
+  }
+
+  return null;
+};
+
+export function getSpinDirectionClock(spinAxis) {
+  if (spinAxis === null || spinAxis === undefined || spinAxis === '') return '-';
+  const strVal = String(spinAxis).trim();
+  if (!strVal || strVal === '-') return '-';
+
+  // 1. If it's already a clock string like "0:38", "12:15", "1:30"
+  if (strVal.includes(':')) {
+    const parts = strVal.split(':');
+    let hour = parseInt(parts[0], 10);
+    const minute = (parts[1] || '00').padStart(2, '0');
+    if (isNaN(hour)) return strVal;
+    if (hour === 0) hour = 12; // Rapsodo 0:38 -> convert to 12:38 12-hour clock
+    return `${hour}:${minute}`;
+  }
+
+  // 2. If it's a numeric degree (e.g. 45° -> 1:30, 180° -> 6:00, 330° -> 11:00)
+  let num = Number(strVal);
+  if (isNaN(num)) return strVal;
+
+  // Normalize angle to [0, 360)
+  // Standard Rapsodo/Trackman clock angle: 0° = 12:00, 90° = 3:00, 180° = 6:00, 270° = 9:00
+  num = ((num % 360) + 360) % 360;
+
+  let hour = Math.floor((num / 30) % 12);
+  if (hour === 0) hour = 12;
+
+  let minute = Math.round(((num % 30) / 30) * 60);
+  if (minute === 60) {
+    minute = 0;
+    hour = hour === 12 ? 1 : hour + 1;
+  }
+
+  const minuteStr = String(minute).padStart(2, '0');
+  return `${hour}:${minuteStr}`;
+}
+
 
 export const getPlayerGrade = (events) => {
   if (!events || events.length === 0) return '';
@@ -136,31 +250,40 @@ export const getDataValue = (row, keyOrKeys) => {
   if (!row) return 0;
   const targetKeys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
   
-  // 1. Try direct match first (Rapsodo case-sensitive headers)
+  // 1. Try exact match first (also stripping BOM)
+  const rowKeys = Object.keys(row);
   for (const k of targetKeys) {
+    // Check direct key
     if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
       if (typeof row[k] === 'number') return row[k];
       const val = parseFloat(String(row[k]).replace(/[^-0-9.]/g, ''));
       if (!isNaN(val)) return val;
     }
+    // Check BOM key match (e.g. \ufeff打球速度)
+    const bomKey = rowKeys.find(ak => ak.replace(/^\ufeff/, '').trim() === k);
+    if (bomKey && row[bomKey] !== undefined && row[bomKey] !== null && row[bomKey] !== '') {
+      if (typeof row[bomKey] === 'number') return row[bomKey];
+      const val = parseFloat(String(row[bomKey]).replace(/[^-0-9.]/g, ''));
+      if (!isNaN(val)) return val;
+    }
   }
 
-  // 2. Fuzzy match for truncated headers (Excel exports like 'SerialNumbe')
+  // 2. Case-insensitive / fuzzy match for header variations
   for (const k of targetKeys) {
-    const rowKeys = Object.keys(row);
-    const schemaSignature = rowKeys[0] || '';
-    const cacheKey = `${schemaSignature}:${k}`;
+    const lowerK = k.toLowerCase().trim();
     
-    let actualKey = keyResolutionCache.get(cacheKey);
-    if (actualKey === undefined) {
-      const lowerK = k.toLowerCase();
-      actualKey = rowKeys.find(ak => ak.toLowerCase().startsWith(lowerK)) || null;
-      keyResolutionCache.set(cacheKey, actualKey);
-    }
-    
-    if (actualKey && row[actualKey] !== undefined && row[actualKey] !== null && row[actualKey] !== '') {
-      if (typeof row[actualKey] === 'number') return row[actualKey];
-      const val = parseFloat(String(row[actualKey]).replace(/[^-0-9.]/g, ''));
+    // Prevent short acronyms (<=2 chars like "EV", "LA", "AA") from falsely matching words like "events"
+    const foundKey = rowKeys.find(ak => {
+      const lowerAk = ak.replace(/^\ufeff/, '').toLowerCase().trim();
+      if (lowerK.length <= 2) {
+        return lowerAk === lowerK;
+      }
+      return lowerAk === lowerK || lowerAk.startsWith(lowerK) || lowerAk.includes(lowerK);
+    });
+
+    if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && row[foundKey] !== '') {
+      if (typeof row[foundKey] === 'number') return row[foundKey];
+      const val = parseFloat(String(row[foundKey]).replace(/[^-0-9.]/g, ''));
       if (!isNaN(val)) return val;
     }
   }
@@ -174,7 +297,7 @@ export const calculateAverages = (events, keys) => {
   let count = 0;
   for (let i = 0; i < events.length; i++) {
     const val = getDataValue(events[i], keys);
-    if (val !== null && val !== undefined && !isNaN(val)) {
+    if (val !== null && val !== undefined && !isNaN(val) && val !== 0) {
       sum += val;
       count++;
     }

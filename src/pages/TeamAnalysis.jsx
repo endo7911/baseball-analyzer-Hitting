@@ -272,7 +272,16 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
   const [selectedTeam, setSelectedTeam] = useState('');
   const [nameKey, setNameKey] = useState('player_name');
 
-  const headers = activeData ? activeData.headers : [];
+  const headers = useMemo(() => {
+    const set = new Set(activeData?.headers || []);
+    if (activeData?.data && activeData.data.length > 0) {
+      const limit = Math.min(activeData.data.length, 20);
+      for (let i = 0; i < limit; i++) {
+        if (activeData.data[i]) Object.keys(activeData.data[i]).forEach(k => set.add(k));
+      }
+    }
+    return Array.from(set);
+  }, [activeData]);
   
   // Detect what data is available to show only relevant stats
   const hasBatData = headers.some(h => BS_KEYS.some(k => h.toLowerCase().includes(k.toLowerCase())));
@@ -411,8 +420,8 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
   return (
     <div className="animate-in fade-in duration-300">
       <header className="mb-8">
-        <h2 className="text-3xl font-extrabold text-white mb-2">チーム分析</h2>
-        <p className="text-slate-400">チーム全体の傾向や、選手同士の比較を行います。</p>
+        <h2 className="text-3xl font-extrabold text-white mb-2">打撃分析</h2>
+        <p className="text-slate-400">打撃データ全体の傾向や、選手同士の打撃比較を行います。</p>
       </header>
 
       <div className="bg-blue-900/10 border-2 border-blue-500/30 p-8 rounded-3xl mb-10 shadow-2xl backdrop-blur-sm">

@@ -1,9 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X, BookOpen } from 'lucide-react';
+import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X, BookOpen, Target } from 'lucide-react';
+import { SHOW_PITCHER_MODULE } from '../config';
 
-function Sidebar({ activeView, setActiveView, savantData, blastData, combinedData, isOpen, setIsOpen, syncState, profile, onLogout }) {
+function Sidebar({ 
+  activeView, setActiveView, 
+  savantData, savantPitchingData, blastData, combinedData, 
+  savantFiles = [], savantPitchingFiles = [], blastFiles = [], combinedFiles = [],
+  isOpen, setIsOpen, syncState, profile, onLogout 
+}) {
   const isAdmin = profile?.role === 'admin';
-  const hasData = (savantData?.data?.length > 0) || (blastData?.data?.length > 0) || (combinedData?.data?.length > 0);
+  const hasData = 
+    (savantData?.data?.length > 0) || 
+    (savantPitchingData?.data?.length > 0) || 
+    (blastData?.data?.length > 0) || 
+    (combinedData?.data?.length > 0) ||
+    (savantFiles.length > 0) ||
+    (savantPitchingFiles.length > 0) ||
+    (blastFiles.length > 0) ||
+    (combinedFiles.length > 0);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
 
@@ -16,8 +30,9 @@ function Sidebar({ activeView, setActiveView, savantData, blastData, combinedDat
   const allMenuItems = [
     { id: 'upload', label: 'データ読み込み', icon: UploadCloud, mobileHidden: true },
     { id: 'cloud', label: 'クラウド管理', icon: HardDrive, mobileHidden: true },
-    { id: 'team', label: 'チーム分析', icon: Users, disabled: !hasData },
-    { id: 'player', label: '個人成績', icon: User, disabled: !hasData },
+    { id: 'team', label: '打撃分析', icon: Users, disabled: !hasData },
+    ...(SHOW_PITCHER_MODULE ? [{ id: 'pitcher', label: '投手分析', icon: Target, disabled: !hasData }] : []),
+    { id: 'player', label: '個人分析', icon: User, disabled: !hasData },
     { id: 'game', label: '試合スタッツ', icon: Trophy, disabled: !hasData },
     { id: 'custom', label: 'カスタムグラフ', icon: LineChart, disabled: !hasData },
     { id: 'guide', label: '使い方ガイド', icon: BookOpen },

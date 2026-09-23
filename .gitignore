@@ -34,3 +34,8 @@ dist-ssr
 *.key
 *.py
 
+# Scratch scripts
+scratch/
+scratch
+
+
