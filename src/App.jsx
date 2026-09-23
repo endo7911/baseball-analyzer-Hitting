@@ -16,6 +16,7 @@ import './App.css';
 
 import { supabase, getSupabase } from './lib/supabase';
 import { saveDatasetToLocalDB, getDatasetFromLocalDB, clearLocalDB } from './lib/db';
+import { extractRowVal } from './utils/dataHelpers';
 
 function App() {
   const [savantFiles, setSavantFiles] = useState([]);
@@ -563,18 +564,6 @@ function App() {
       const bRaw = Array.isArray(blastRaw) ? blastRaw : [];
       const cRaw = Array.isArray(combinedRaw) ? combinedRaw : [];
       const pRaw = Array.isArray(pitchingRaw) ? pitchingRaw : [];
-
-      // Helper to extract numeric values matching any key alias
-      const extractRowVal = (row, keys) => {
-        if (!row) return null;
-        for (const k of keys) {
-          if (row[k] != null && row[k] !== '' && row[k] !== '-') {
-            const num = typeof row[k] === 'number' ? row[k] : parseFloat(String(row[k]).replace(/[^-0-9.]/g, ''));
-            if (!isNaN(num)) return num;
-          }
-        }
-        return null;
-      };
 
       // Helper to group flat rows into the "Files" format the app expects
       const groupIntoFiles = (rows, type) => {

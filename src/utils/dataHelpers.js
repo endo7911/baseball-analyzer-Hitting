@@ -246,6 +246,18 @@ export const clearKeyResolutionCache = () => {
   keyResolutionCache.clear();
 };
 
+export const extractRowVal = (row, keys) => {
+  if (!row) return null;
+  const keyList = Array.isArray(keys) ? keys : [keys];
+  for (const k of keyList) {
+    if (row[k] != null && row[k] !== '' && row[k] !== '-') {
+      const num = typeof row[k] === 'number' ? row[k] : parseFloat(String(row[k]).replace(/[^-0-9.]/g, ''));
+      if (!isNaN(num)) return num;
+    }
+  }
+  return null;
+};
+
 export const getDataValue = (row, keyOrKeys) => {
   if (!row) return 0;
   const targetKeys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
