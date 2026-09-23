@@ -245,16 +245,16 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
 
     if (type === 'combined') {
       filename = '打撃データ入力フォーマット_統合データ.csv';
-      content = '日付,選手名,学年,スイング速度,打球速度,打球角度,打球方向,推定飛距離,アタックアングル,スイング時間,オンプレーン効率,手の最大速度,球速\n2026-09-01,山田 太郎,3年,142.5,155.0,24.0,-12.5,110,12.5,0.15,78.5,35.0,138.0\n';
+      content = 'Date,Player Name,Team,Grade,Bat Speed,Exit Velocity,Launch Angle,Direction,Distance,Attack Angle,Time to Contact,On Plane Efficiency,Peak Hand Speed,Pitch Speed\n2026-09-01,山田 太郎,Aチーム,3年,142.5,155.0,24.0,-12.5,110,12.5,0.15,78.5,35.0,138.0\n';
     } else if (type === 'blast') {
       filename = '打撃データ入力フォーマット_Blast.csv';
-      content = '日付,選手名,バットスピード,アッパースイング,オンプレーン効率,体とバットの角度スコア,体の回転による加速スコア,スイング時間,手の最大,パワー,垂直バット角度\n2026-09-01,山田 太郎,142.5,12.5,78.5,60,65,0.15,35.0,4.2,30.0\n';
+      content = 'Date,Player Name,Bat Speed,Attack Angle,On Plane Efficiency,Connection Score,Rotation Score,Time to Contact,Peak Hand Speed,Power,Vertical Bat Angle\n2026-09-01,山田 太郎,142.5,12.5,78.5,60,65,0.15,35.0,4.2,30.0\n';
     } else if (type === 'savant') {
       filename = '打撃データ入力フォーマット_Rapsodo打撃.csv';
-      content = 'Date,Player Name,Team,ExitVelocity,LaunchAngle,Distance,HitDirection\n2026-09-01,山田 太郎,Aチーム,155.0,24.0,110,-12.5\n';
+      content = 'Date,Player Name,Team,Exit Velocity,Launch Angle,Distance,Direction\n2026-09-01,山田 太郎,Aチーム,155.0,24.0,110,-12.5\n';
     } else if (type === 'savant_pitching') {
       filename = '投球データ入力フォーマット_Rapsodo投球.csv';
-      content = 'Date,Pitcher Name,Team,Pitch Type,Pitch Speed,Spin Rate,Spin Axis,VB (trajectory),HB (trajectory),Release Height,Release Side\n2026-09-01,鈴木 翔太,Aチーム,ストレート,145.0,2250,1:15,42.5,15.2,1.80,0.45\n';
+      content = 'Date,Pitcher Name,Team,Pitch Type,Pitch Speed,Spin Rate,Spin Axis,VB (trajectory),HB (trajectory),Release Height,Release Side\n2026-09-01,鈴木 翔太,Aチーム,Fastball,145.0,2250,1:15,42.5,15.2,1.80,0.45\n';
     }
 
     const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
