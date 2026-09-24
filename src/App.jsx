@@ -110,10 +110,22 @@ function App() {
   useEffect(() => {
     if (!authLoading) {
       const loadCachedData = async () => {
-        // Keep UploadPage cards empty on fresh reload so user isn't confused by auto-populated cards
-        setSavantFiles([]);
-        setBlastFiles([]);
-        setCombinedFiles([]);
+        const userKey = user?.id ? `user_${user.id}` : 'guest';
+        try {
+          const [cCombined, cSavant, cBlast, cPitching] = await Promise.all([
+            getDatasetFromLocalDB(`${userKey}_combined`),
+            getDatasetFromLocalDB(`${userKey}_savant`),
+            getDatasetFromLocalDB(`${userKey}_blast`),
+            getDatasetFromLocalDB(`${userKey}_savant_pitching`)
+          ]);
+          
+          if (Array.isArray(cCombined) && cCombined.length > 0) setCombinedFiles(cCombined);
+          if (Array.isArray(cSavant) && cSavant.length > 0) setSavantFiles(cSavant);
+          if (Array.isArray(cBlast) && cBlast.length > 0) setBlastFiles(cBlast);
+          if (Array.isArray(cPitching) && cPitching.length > 0) setSavantPitchingFiles(cPitching);
+        } catch (e) {
+          console.warn("Local DB restore failed:", e);
+        }
         
         // Fetch cloud data for analysis views if user is logged in
         if (user) {
@@ -439,17 +451,42 @@ function App() {
 
                 if (numericColumns.includes(targetKey)) {
                   if (val === '-' || val === '' || val === null || val === undefined) {
-                    filteredRow[targetKey] = null;
+                    if (filteredRow[targetKey] === undefined) {
+                      filteredRow[targetKey] = null;
+                    }
                   } else {
-                    const cleaned = String(val).replace(/[^-0-9.]/g, '');
+                    const ascii = toAsciiNumbers(val);
+                    const cleaned = String(ascii).replace(/[^-0-9.]/g, '');
                     const num = parseFloat(cleaned);
-                    filteredRow[targetKey] = isNaN(num) ? null : num;
+                    if (!isNaN(num)) {
+                      filteredRow[targetKey] = num;
+                    } else if (filteredRow[targetKey] === undefined) {
+                      filteredRow[targetKey] = null;
+                    }
                   }
                 } else {
-                  filteredRow[targetKey] = val;
+                  if (val != null && val !== '') {
+                    filteredRow[targetKey] = val;
+                  } else if (filteredRow[targetKey] === undefined) {
+                    filteredRow[targetKey] = null;
+                  }
                 }
               }
             });
+
+            // Backfill numeric fields from aliases if missing
+            if (filteredRow.launch_speed == null) {
+              filteredRow.launch_speed = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
+            }
+            if (filteredRow.bat_speed == null) {
+              filteredRow.bat_speed = extractRowVal(row, ['bat_speed', 'BatSpeed', 'Bat Speed', 'スイング速度', 'バットスピード']);
+            }
+            if (filteredRow.launch_angle == null) {
+              filteredRow.launch_angle = extractRowVal(row, ['launch_angle', 'LaunchAngle', 'Launch Angle', '打球角度']);
+            }
+            if (filteredRow.attack_angle == null) {
+              filteredRow.attack_angle = extractRowVal(row, ['attack_angle', 'AttackAngle', 'Attack Angle', 'アタックアングル']);
+            }
 
             if (targetTable === 'blast_data') {
               if (!filteredRow.player_name) {
