@@ -45,11 +45,19 @@ export const getPlayerStats = (savantData, blastData, playerName, nameKey = 'pla
   };
 };
 
+export const toAsciiNumbers = (str) => {
+  if (str == null) return '';
+  return String(str)
+    .replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xfee0))
+    .replace(/．/g, '.')
+    .replace(/－/g, '-');
+};
+
 export const parseNumeric = (val) => {
   if (val === null || val === undefined || val === '') return NaN;
   if (typeof val === 'number') return val;
-  // Handle strings with units like "100.5 mph"
-  const cleaned = String(val).replace(/[^0-9.-]/g, '');
+  const ascii = toAsciiNumbers(val);
+  const cleaned = String(ascii).replace(/[^0-9.-]/g, '');
   const parsed = parseFloat(cleaned);
   return isNaN(parsed) ? 0 : parsed;
 };
@@ -251,7 +259,9 @@ export const extractRowVal = (row, keys) => {
   const keyList = Array.isArray(keys) ? keys : [keys];
   for (const k of keyList) {
     if (row[k] != null && row[k] !== '' && row[k] !== '-') {
-      const num = typeof row[k] === 'number' ? row[k] : parseFloat(String(row[k]).replace(/[^-0-9.]/g, ''));
+      if (typeof row[k] === 'number') return row[k];
+      const ascii = toAsciiNumbers(row[k]);
+      const num = parseFloat(ascii.replace(/[^-0-9.]/g, ''));
       if (!isNaN(num)) return num;
     }
   }
@@ -268,14 +278,16 @@ export const getDataValue = (row, keyOrKeys) => {
     // Check direct key
     if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
       if (typeof row[k] === 'number') return row[k];
-      const val = parseFloat(String(row[k]).replace(/[^-0-9.]/g, ''));
+      const ascii = toAsciiNumbers(row[k]);
+      const val = parseFloat(ascii.replace(/[^-0-9.]/g, ''));
       if (!isNaN(val)) return val;
     }
     // Check BOM key match (e.g. \ufeff打球速度)
     const bomKey = rowKeys.find(ak => ak.replace(/^\ufeff/, '').trim() === k);
     if (bomKey && row[bomKey] !== undefined && row[bomKey] !== null && row[bomKey] !== '') {
       if (typeof row[bomKey] === 'number') return row[bomKey];
-      const val = parseFloat(String(row[bomKey]).replace(/[^-0-9.]/g, ''));
+      const ascii = toAsciiNumbers(row[bomKey]);
+      const val = parseFloat(ascii.replace(/[^-0-9.]/g, ''));
       if (!isNaN(val)) return val;
     }
   }
@@ -295,7 +307,8 @@ export const getDataValue = (row, keyOrKeys) => {
 
     if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && row[foundKey] !== '') {
       if (typeof row[foundKey] === 'number') return row[foundKey];
-      const val = parseFloat(String(row[foundKey]).replace(/[^-0-9.]/g, ''));
+      const ascii = toAsciiNumbers(row[foundKey]);
+      const val = parseFloat(ascii.replace(/[^-0-9.]/g, ''));
       if (!isNaN(val)) return val;
     }
   }
