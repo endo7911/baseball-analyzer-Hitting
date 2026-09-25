@@ -17,7 +17,7 @@ import './App.css';
 import { supabase, getSupabase } from './lib/supabase';
 import { getGlobalUsers } from './lib/userSync';
 import { saveDatasetToLocalDB, getDatasetFromLocalDB, clearLocalDB } from './lib/db';
-import { extractRowVal, toAsciiNumbers } from './utils/dataHelpers';
+import { extractRowVal, toAsciiNumbers, parseAnyDate } from './utils/dataHelpers';
 
 function App() {
   const [savantFiles, setSavantFiles] = useState([]);
@@ -512,8 +512,14 @@ function App() {
             }
 
             let finalRow = { ...filteredRow };
-            if (finalRow.game_date) finalRow.game_date = parseJapaneseDate(finalRow.game_date);
-            if (finalRow.date) finalRow.date = parseJapaneseDate(finalRow.date);
+            const rawDateVal = finalRow.game_date || finalRow.date || row['日付'] || row['Date'] || row['gameDate'];
+            if (rawDateVal) {
+              const normD = parseAnyDate(rawDateVal);
+              if (normD) {
+                finalRow.date = normD;
+                finalRow.game_date = normD;
+              }
+            }
 
             const rowPayload = {
               ...finalRow,
@@ -645,6 +651,15 @@ function App() {
           const fileName = row.file_name || row.filename || 'Cloud Data';
           if (fileName.startsWith('__')) return;
           
+          const rawDateVal = row.game_date || row.date || row['日付'] || row['Date'] || row['gameDate'];
+          if (rawDateVal) {
+            const normD = parseAnyDate(rawDateVal);
+            if (normD) {
+              row.date = normD;
+              row.game_date = normD;
+            }
+          }
+
           // Backfill launch_speed if present under alias keys
           const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
           if (evVal != null) {

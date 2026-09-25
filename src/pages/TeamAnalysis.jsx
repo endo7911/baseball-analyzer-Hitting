@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { extractTeams, extractPlayersByTeam, getPlayerStats, calculateAverages, calculateMax, groupEventsByTeamAndPlayer, parseNumeric, getDataValue, EV_KEYS, BS_KEYS, LA_KEYS, AA_KEYS } from '../utils/dataHelpers';
+import { extractTeams, extractPlayersByTeam, getPlayerStats, calculateAverages, calculateMax, groupEventsByTeamAndPlayer, parseNumeric, getDataValue, parseAnyDate, parseDateToTimestamp, EV_KEYS, BS_KEYS, LA_KEYS, AA_KEYS } from '../utils/dataHelpers';
 import { ScatterChart, Scatter, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, LabelList } from 'recharts';
 import { Users, TrendingUp, Zap, BarChart3, Eye } from 'lucide-react';
 
@@ -33,7 +33,8 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
         const rawDate = e.game_date || e.date || e['日付'] || e['Date'] || e['gameDate'] || '';
         if (!rawDate) return;
 
-        const dateStr = String(rawDate).trim().split('T')[0].split(' ')[0];
+        const dateStr = parseAnyDate(rawDate);
+        if (!dateStr) return;
         if (startDate && dateStr < startDate) return;
         if (endDate && dateStr > endDate) return;
 
@@ -53,13 +54,7 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
         const avg = Number((sum / vals.length).toFixed(1));
         const max = Number(Math.max(...vals).toFixed(1));
 
-        const parts = dateStr.split('-');
-        let timeMs = 0;
-        if (parts.length === 3) {
-          timeMs = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
-        } else {
-          timeMs = new Date(dateStr).getTime();
-        }
+        const timeMs = parseDateToTimestamp(dateStr);
 
         if (!isNaN(timeMs) && timeMs > 0) {
           if (statFilter === 'all' || statFilter === 'avg') {

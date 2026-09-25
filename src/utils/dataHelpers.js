@@ -375,3 +375,80 @@ export const groupEventsByTeamAndPlayer = (data, teamKey = 'team_name', nameKey 
   
   return groups;
 };
+
+export const parseAnyDate = (dateStr) => {
+  if (!dateStr || (typeof dateStr !== 'string' && typeof dateStr !== 'number')) return '';
+  const str = String(dateStr).trim();
+  if (!str || str === '-' || str === 'null' || str === 'undefined') return '';
+
+  // 1. Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  // 2. YYYY/M/D or YYYY.M.D or YYYY-M-D (e.g. 2026/9/14 or 2026.09.14)
+  const ymdMatch = str.match(/^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = ymdMatch[2].padStart(2, '0');
+    const day = ymdMatch[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // 3. Japanese YYYY年M月D日 (e.g. 2026年9月14日)
+  const jpMatch = str.match(/^(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日?/);
+  if (jpMatch) {
+    const year = jpMatch[1];
+    const month = jpMatch[2].padStart(2, '0');
+    const day = jpMatch[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // 4. M/D/YYYY (e.g. 9/14/2026)
+  const mdyMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/);
+  if (mdyMatch) {
+    const month = mdyMatch[1].padStart(2, '0');
+    const day = mdyMatch[2].padStart(2, '0');
+    const year = mdyMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  // 5. English Month (e.g. Sep 14 2026)
+  const enMonthMap = {'jan':'01','feb':'02','mar':'03','apr':'04','may':'05','jun':'06','jul':'07','aug':'08','sep':'09','oct':'10','nov':'11','dec':'12'};
+  const yearMatch = str.match(/\b(20\d{2})\b/);
+  const monMatch = str.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i);
+  if (yearMatch && monMatch) {
+    const year = yearMatch[1];
+    const month = enMonthMap[monMatch[1].toLowerCase()];
+    const dayMatch = str.match(/\b(\d{1,2})\b/);
+    const day = dayMatch ? dayMatch[1].padStart(2, '0') : '01';
+    return `${year}-${month}-${day}`;
+  }
+
+  try {
+    const cleaned = str.replace(/\//g, '-').replace(/\./g, '-');
+    const parsed = new Date(cleaned);
+    if (!isNaN(parsed.getTime())) {
+      const year = parsed.getFullYear();
+      const month = String(parsed.getMonth() + 1).padStart(2, '0');
+      const day = String(parsed.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+  } catch (e) {}
+
+  return str.split('T')[0].split(' ')[0];
+};
+
+export const parseDateToTimestamp = (dateStr) => {
+  const norm = parseAnyDate(dateStr);
+  if (!norm) return 0;
+  const parts = norm.split('-');
+  if (parts.length === 3) {
+    const y = Number(parts[0]);
+    const m = Number(parts[1]) - 1;
+    const d = Number(parts[2]);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      return new Date(y, m, d).getTime();
+    }
+  }
+  const t = new Date(norm).getTime();
+  return isNaN(t) ? 0 : t;
+};

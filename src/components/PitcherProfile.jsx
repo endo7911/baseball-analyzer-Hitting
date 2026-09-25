@@ -7,6 +7,7 @@ import {
   getDataValue, 
   getRawDataValue,
   getSpinDirectionClock,
+  parseAnyDate,
   PITCH_VELO_KEYS, 
   SPIN_RATE_KEYS, 
   SPIN_AXIS_KEYS, 
@@ -136,9 +137,11 @@ function PitcherProfile({ pitcherName, events = [] }) {
       let dateStr = '日付なし';
       for (const dk of DATE_KEYS) {
         if (row[dk] !== undefined && row[dk] !== null && String(row[dk]).trim() !== '') {
-          const rawVal = String(row[dk]).trim();
-          dateStr = rawVal.split('T')[0].split(' ')[0];
-          break;
+          const parsed = parseAnyDate(row[dk]);
+          if (parsed) {
+            dateStr = parsed;
+            break;
+          }
         }
       }
 

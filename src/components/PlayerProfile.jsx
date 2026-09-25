@@ -14,6 +14,8 @@ import {
   parseNumeric, 
   getDataValue, 
   calculateAverages,
+  parseAnyDate,
+  parseDateToTimestamp,
   BS_KEYS,
   PLANE_KEYS,
   CONN_KEYS,
@@ -172,7 +174,8 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
       const rawDate = e.game_date || e.date || e['日付'] || e['Date'] || e['gameDate'] || '';
       if (!rawDate) return;
 
-      const dateStr = String(rawDate).trim().split('T')[0].split(' ')[0];
+      const dateStr = parseAnyDate(rawDate);
+      if (!dateStr) return;
       if (startDate && dateStr < startDate) return;
       if (endDate && dateStr > endDate) return;
 
@@ -192,13 +195,7 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
       const avg = Number((sum / vals.length).toFixed(1));
       const max = Number(Math.max(...vals).toFixed(1));
 
-      const parts = dateStr.split('-');
-      let timeMs = 0;
-      if (parts.length === 3) {
-        timeMs = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
-      } else {
-        timeMs = new Date(dateStr).getTime();
-      }
+      const timeMs = parseDateToTimestamp(dateStr);
 
       if (!isNaN(timeMs) && timeMs > 0) {
         list.push({
