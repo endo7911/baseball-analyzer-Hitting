@@ -7,12 +7,13 @@ import {
 } from 'recharts';
 import { 
   Activity, Zap, Target, Gauge, TrendingUp, BarChart3, 
-  Printer, ShieldAlert, ShieldCheck, List, Layout, ChevronDown, ChevronUp, MousePointer2, Users
+  Printer, ShieldAlert, ShieldCheck, List, Layout, ChevronDown, ChevronUp, MousePointer2, Users, RefreshCw
 } from 'lucide-react';
 
 import { 
   parseNumeric, 
   getDataValue, 
+  getRawDataValue,
   calculateAverages,
   parseAnyDate,
   parseDateToTimestamp,
@@ -168,10 +169,31 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
     return [...(savantEvents || []), ...(blastEvents || [])];
   }, [savantEvents, blastEvents]);
 
+  // Auto-switch metric if the selected metric has 0 data points but another metric has data
+  useEffect(() => {
+    if (!allEvents || allEvents.length === 0) return;
+    const hasCurrent = allEvents.some(e => {
+      const v = parseNumeric(getDataValue(e, currentMeta.keys));
+      return v !== 0 && !isNaN(v);
+    });
+
+    if (!hasCurrent) {
+      if (allEvents.some(e => parseNumeric(getDataValue(e, BS_KEYS)) > 0)) {
+        setMetric('bs');
+      } else if (allEvents.some(e => parseNumeric(getDataValue(e, EV_KEYS)) > 0)) {
+        setMetric('ev');
+      } else if (allEvents.some(e => parseNumeric(getDataValue(e, LA_KEYS)) !== 0)) {
+        setMetric('la');
+      } else if (allEvents.some(e => parseNumeric(getDataValue(e, AA_KEYS)) !== 0)) {
+        setMetric('aa');
+      }
+    }
+  }, [allEvents, currentMeta.keys]);
+
   const trendData = useMemo(() => {
     const dateMap = {};
     allEvents.forEach(e => {
-      const rawDate = e.game_date || e.date || e['日付'] || e['Date'] || e['gameDate'] || '';
+      const rawDate = getRawDataValue(e, ['game_date', 'date', '日付', 'Date', 'gameDate', 'Date/Time', 'Pitch Date', '日時', '記録日時', 'Timestamp', 'Created Date']) || e.game_date || e.date || e['日付'] || e['Date'] || '';
       if (!rawDate) return;
 
       const dateStr = parseAnyDate(rawDate);
@@ -238,7 +260,7 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
             {(startDate || endDate) && (
               <button 
                 onClick={() => { setStartDate(''); setEndDate(''); }}
-                className="text-[10px] text-purple-400 hover:text-purple-300 font-bold underline"
+                className="text-[11px] text-purple-400 hover:text-purple-300 font-bold underline cursor-pointer"
               >
                 全期間
               </button>
@@ -263,8 +285,20 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
 
       <div className="w-full h-[340px] print:h-[200px]">
         {trendData.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-slate-500 text-xs italic">
-            選択された期間・指標のデータが見つかりません
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs p-4">
+            <p className="font-bold text-slate-300 mb-2">選択された期間・指標のデータが見つかりません</p>
+            {(startDate || endDate) && (
+              <div className="flex flex-col items-center gap-2 mt-2 bg-slate-900/60 p-3 rounded-xl border border-purple-500/30">
+                <p className="text-xs text-amber-400 font-bold">※ 日付範囲（{startDate || '最初'} 〜 {endDate || '最新'}）によりデータが絞り込まれています</p>
+                <button 
+                  onClick={() => { setStartDate(''); setEndDate(''); }}
+                  className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-1.5 rounded-lg text-xs transition-all shadow-md cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  すべての期間のデータを表示する
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
