@@ -2,30 +2,30 @@ import { supabase } from './supabase';
 
 const SYSTEM_USER_FILE_NAME = '__app_user_profiles_v1__';
 
-// Simple hash for password storage (not cryptographic, but prevents plain text)
-// Format: hash:<sha-like digest>
-async function hashPassword(password) {
-  const msgBuffer = new TextEncoder().encode(password);
+// SHA-256 hash for password storage (one-way, safe to store in cloud)
+export async function hashPassword(password) {
+  const msgBuffer = new TextEncoder().encode(String(password));
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return 'hash:' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return 'sha256:' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function verifyPassword(password, stored) {
-  if (!stored) return false;
-  if (stored.startsWith('hash:')) {
-    const hashed = await hashPassword(password);
+// Verify a login attempt against stored value (supports both hash and legacy plain text)
+export async function verifyPassword(inputPassword, stored) {
+  if (!stored || !inputPassword) return false;
+  if (stored.startsWith('sha256:')) {
+    const hashed = await hashPassword(inputPassword);
     return hashed === stored;
   }
-  // Legacy plain-text fallback (for migration only)
-  return stored === password;
+  // Legacy plain-text fallback (only for migrating old accounts)
+  return stored === String(inputPassword).trim();
 }
 
 export const DEFAULT_MOCK_USERS = [
   {
     id: 'admin-id',
     email: 'admin@example.com',
-    password: 'baseball2024', // will be hashed on first save
+    password: 'baseball2024',
     display_name: '管理者アカウント',
     role: 'admin',
     team_id: '管理者',
@@ -42,12 +42,16 @@ export const DEFAULT_MOCK_USERS = [
   }
 ];
 
-// Strip passwords before saving to cloud
-function stripPasswords(users) {
-  return users.map(u => {
-    const { password, ...safe } = u;
-    return safe;
-  });
+// Hash passwords in the user list before cloud storage
+async function hashUsersForCloud(users) {
+  return Promise.all(users.map(async (u) => {
+    if (!u.password) return u;
+    // Already hashed → keep as-is
+    if (String(u.password).startsWith('sha256:')) return u;
+    // Hash the plain-text password
+    const hashed = await hashPassword(u.password);
+    return { ...u, password: hashed };
+  }));
 }
 
 // Fetch all registered users from Supabase Cloud (falling back to localStorage)
@@ -71,14 +75,12 @@ export async function getGlobalUsers() {
   }
 
   const localUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
-  
-  // Merge cloud users, local users, and default preset users
+
+  // Merge: defaults → local → cloud
   const userMap = new Map();
 
-  // Add default users first (keep passwords locally for auth)
-  DEFAULT_MOCK_USERS.forEach(u => userMap.set(u.email.toLowerCase(), u));
+  DEFAULT_MOCK_USERS.forEach(u => userMap.set(u.email.toLowerCase(), { ...u }));
 
-  // Add local users (may have passwords for login)
   if (Array.isArray(localUsers)) {
     localUsers.forEach(u => {
       if (u && u.email) {
@@ -88,21 +90,20 @@ export async function getGlobalUsers() {
     });
   }
 
-  // Override with cloud users (cloud is authoritative, but cloud has NO passwords)
+  // Cloud is authoritative for all fields including hashed password
   if (Array.isArray(cloudUsers)) {
     cloudUsers.forEach(u => {
       if (u && u.email) {
         const key = u.email.toLowerCase();
         const existing = userMap.get(key) || {};
-        // Keep local password, override other fields from cloud
-        userMap.set(key, { ...existing, ...u, password: existing.password });
+        userMap.set(key, { ...existing, ...u });
       }
     });
   }
 
   const merged = Array.from(userMap.values());
 
-  // If there are local users missing from cloud, auto-sync them (without passwords)
+  // Auto-sync any local users missing from cloud
   const cloudEmailSet = new Set((cloudUsers || []).map(u => (u?.email || '').toLowerCase()));
   const hasUnsyncedLocalUser = merged.some(u => !cloudEmailSet.has((u?.email || '').toLowerCase()));
 
@@ -111,7 +112,7 @@ export async function getGlobalUsers() {
     saveGlobalUsers(merged).catch(err => console.warn("Auto-migration error:", err));
   }
 
-  // Update local cache (with passwords, local only)
+  // Update local cache
   try {
     localStorage.setItem('mockUsersList', JSON.stringify(merged));
   } catch {}
@@ -119,27 +120,22 @@ export async function getGlobalUsers() {
   return merged;
 }
 
-// Verify a login attempt
-export async function verifyUserPassword(user, inputPassword) {
-  if (!user || !inputPassword) return false;
-  return verifyPassword(inputPassword, user.password);
-}
-
-// Save all registered users to Supabase Cloud (passwords stripped) and localStorage (with passwords)
+// Save all registered users to Supabase Cloud (hashed passwords) and localStorage (hashed passwords)
 export async function saveGlobalUsers(usersList) {
   if (!Array.isArray(usersList)) return false;
 
-  // 1. Update localStorage cache (keep passwords locally)
+  // Hash passwords before saving anywhere
+  const hashedList = await hashUsersForCloud(usersList);
+
+  // 1. Update localStorage cache (hashed)
   try {
-    localStorage.setItem('mockUsersList', JSON.stringify(usersList));
+    localStorage.setItem('mockUsersList', JSON.stringify(hashedList));
   } catch {}
 
-  // 2. Persist to Supabase Cloud — NO PASSWORDS
+  // 2. Persist to Supabase Cloud (hashed passwords - safe to store)
   try {
-    const safeList = stripPasswords(usersList);
-    const jsonStr = JSON.stringify(safeList);
-    
-    // Check if row already exists
+    const jsonStr = JSON.stringify(hashedList);
+
     const { data } = await supabase
       .from('baseball_data')
       .select('id')

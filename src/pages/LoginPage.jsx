@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { getGlobalUsers } from '../lib/userSync';
+import { getGlobalUsers, verifyPassword } from '../lib/userSync';
 import { LogIn, Shield, Eye, EyeOff } from 'lucide-react';
 
 // ソルト付きSHA-256ハッシュ生成関数 (WebCrypto API)
@@ -66,7 +66,7 @@ function LoginPage({ onLogin }) {
           return;
         }
 
-        if (foundGlobalUser.password === password.trim()) {
+        if (await verifyPassword(password.trim(), foundGlobalUser.password)) {
           const userObj = { id: foundGlobalUser.id, email: foundGlobalUser.email };
           const profileObj = { 
             id: foundGlobalUser.id,
