@@ -814,7 +814,8 @@ function App() {
   const mergeFiles = (files) => {
     if (!Array.isArray(files) || files.length === 0) return null;
 
-    const userEmail = (user?.email || profile?.email || profile?.display_name || '').trim().toLowerCase();
+    const rawEmail = (user?.email || profile?.email || '').trim().toLowerCase();
+    const userEmail = rawEmail.includes('@') ? rawEmail : 'guest';
 
     const allHeaders = new Set();
     const safeRows = [];
@@ -855,10 +856,15 @@ function App() {
 
           if (uId.includes('::')) {
             const uploader = uId.split('::')[0];
-            if (uploader !== userEmail && userEmail !== 'admin@example.com') {
-              return; // Exclude data uploaded by another user email!
+            if (
+              uploader !== userEmail &&
+              uploader !== 'guest' &&
+              userEmail !== 'guest' &&
+              userEmail !== 'admin@example.com'
+            ) {
+              return; // Exclude data uploaded by another specific user email!
             }
-          } else if (tName && tName.includes('@') && tName !== userEmail && userEmail !== 'admin@example.com') {
+          } else if (tName && tName.includes('@') && tName !== userEmail && userEmail !== 'admin@example.com' && userEmail !== 'guest') {
             return; // Exclude data tagged with another user email!
           }
 
