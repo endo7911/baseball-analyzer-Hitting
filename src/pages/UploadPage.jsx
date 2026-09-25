@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import Papa from 'papaparse';
 import { UploadCloud, FileText, Database, Cloud, Save, RefreshCw, X, Sparkles, Zap, Target, Activity } from 'lucide-react';
+import { parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS, extractRowVal } from '../utils/dataHelpers';
 import { getSupabase } from '../lib/supabase';
 import { SHOW_PITCHER_MODULE } from '../config';
 
@@ -138,7 +139,7 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
             if (!row) return row;
             
             // Normalize Date & backfill from filename if missing
-            const rawDateVal = row.game_date || row.date || row['日付'] || row['Date'] || row['gameDate'] || row['Date/Time'] || row['Pitch Date'] || row['日時'];
+            const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS);
             let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
             if (!normD && fileDate) normD = fileDate;
 

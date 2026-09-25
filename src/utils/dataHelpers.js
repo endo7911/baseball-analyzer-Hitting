@@ -385,16 +385,28 @@ export const groupEventsByTeamAndPlayer = (data, teamKey = 'team_name', nameKey 
   return groups;
 };
 
+export const DEFAULT_DATE_KEYS = [
+  'game_date', 'date', '日付', 'Date', 'gameDate', 'Date/Time', 'Pitch Date',
+  '日時', '年月日', '測定日', '計測日', '実施日', '試合日', '練習日', '日程',
+  '月日', '月/日', '記録日時', '打撃日時', '投球日時', 'スイング日時', '計測日時',
+  'Timestamp', 'Time Stamp', 'Time', 'Created Date', 'Created At', 'date_time',
+  'PitchDate', 'DATE', 'DATETIME'
+];
+
 export const parseAnyDate = (dateStr) => {
   if (!dateStr || (typeof dateStr !== 'string' && typeof dateStr !== 'number')) return '';
-  const str = String(dateStr).trim();
+  let str = String(dateStr).trim();
   if (!str || str === '-' || str === 'null' || str === 'undefined') return '';
+
+  // 0. Normalize full-width characters & punctuation
+  str = str.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xfee0))
+           .replace(/／/g, '/').replace(/．/g, '.').replace(/－/g, '-').replace(/：/g, ':');
 
   // 1. Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
 
-  // 2. YYYY/M/D or YYYY.M.D or YYYY-M-D (e.g. 2026/9/14 or 2026.09.14) anywhere in string
-  const ymdMatch = str.match(/(20\d{2})[\/\.-](\d{1,2})[\/\.-](\d{1,2})/);
+  // 2. YYYY/M/D or YYYY.M.D or YYYY-M-D or YYYY:M:D (4-digit year start)
+  const ymdMatch = str.match(/(20\d{2})[\/\.\-:](\d{1,2})[\/\.\-:](\d{1,2})/);
   if (ymdMatch) {
     const year = ymdMatch[1];
     const month = ymdMatch[2].padStart(2, '0');
@@ -402,7 +414,7 @@ export const parseAnyDate = (dateStr) => {
     return `${year}-${month}-${day}`;
   }
 
-  // 3. Japanese YYYY年M月D日 (e.g. 2026年9月14日) anywhere in string
+  // 3. Japanese YYYY年M月D日
   const jpMatch = str.match(/(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日?/);
   if (jpMatch) {
     const year = jpMatch[1];
@@ -411,8 +423,16 @@ export const parseAnyDate = (dateStr) => {
     return `${year}-${month}-${day}`;
   }
 
-  // 4. M/D/YYYY (e.g. 9/14/2026) anywhere in string
-  const mdyMatch = str.match(/(\d{1,2})[\/\.-](\d{1,2})[\/\.-](20\d{2})/);
+  // 4. Japanese YYYY年M月 (Day omitted) or YYYY/M or YYYY-M
+  const ymMatch = str.match(/(20\d{2})[年\/\.\-:](\d{1,2})月?/);
+  if (ymMatch) {
+    const year = ymMatch[1];
+    const month = ymMatch[2].padStart(2, '0');
+    return `${year}-${month}-01`;
+  }
+
+  // 5. M/D/YYYY (4-digit year end)
+  const mdyMatch = str.match(/(\d{1,2})[\/\.\-:](\d{1,2})[\/\.\-:](20\d{2})/);
   if (mdyMatch) {
     const month = mdyMatch[1].padStart(2, '0');
     const day = mdyMatch[2].padStart(2, '0');
@@ -420,7 +440,32 @@ export const parseAnyDate = (dateStr) => {
     return `${year}-${month}-${day}`;
   }
 
-  // 5. English Month (e.g. Sep 14 2026)
+  // 6. YYYYMMDD (8-digit compact)
+  const compact8 = str.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+  if (compact8) {
+    return `${compact8[1]}-${compact8[2]}-${compact8[3]}`;
+  }
+
+  // 7. 2-digit year: YY/M/D or YY.M.D or YY-M-D (e.g. 24/5/4 or 24/05/04)
+  const yyMatch = str.match(/\b(2[0-9])[\/\.\-:](\d{1,2})[\/\.\-:](\d{1,2})\b/);
+  if (yyMatch) {
+    const year = '20' + yyMatch[1];
+    const month = yyMatch[2].padStart(2, '0');
+    const day = yyMatch[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  const currentYear = new Date().getFullYear();
+
+  // 8. Japanese M月D日 (Year omitted -> default to currentYear)
+  const jpMonthDayMatch = str.match(/(\d{1,2})月\s*(\d{1,2})日?/);
+  if (jpMonthDayMatch) {
+    const month = jpMonthDayMatch[1].padStart(2, '0');
+    const day = jpMonthDayMatch[2].padStart(2, '0');
+    return `${currentYear}-${month}-${day}`;
+  }
+
+  // 9. English Month (e.g. Sep 14 2026 or May 4 2024)
   const enMonthMap = {'jan':'01','feb':'02','mar':'03','apr':'04','may':'05','jun':'06','jul':'07','aug':'08','sep':'09','oct':'10','nov':'11','dec':'12'};
   const yearMatch = str.match(/\b(20\d{2})\b/);
   const monMatch = str.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i);
@@ -432,6 +477,14 @@ export const parseAnyDate = (dateStr) => {
     return `${year}-${month}-${day}`;
   }
 
+  // 10. M/D or M-D or M:D without year (e.g. 5/4, 05/04, 5:4)
+  const mdMatch = str.match(/\b(0?[1-9]|1[0-2])[\/\.\-:](0?[1-9]|[12]\d|3[01])\b/);
+  if (mdMatch) {
+    const month = mdMatch[1].padStart(2, '0');
+    const day = mdMatch[2].padStart(2, '0');
+    return `${currentYear}-${month}-${day}`;
+  }
+
   try {
     const cleaned = str.replace(/\//g, '-').replace(/\./g, '-');
     const parsed = new Date(cleaned);
@@ -439,7 +492,10 @@ export const parseAnyDate = (dateStr) => {
       const year = parsed.getFullYear();
       const month = String(parsed.getMonth() + 1).padStart(2, '0');
       const day = String(parsed.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
+      // Only accept if year looks valid (> 2000)
+      if (year >= 2000 && year <= 2100) {
+        return `${year}-${month}-${day}`;
+      }
     }
   } catch (e) {}
 

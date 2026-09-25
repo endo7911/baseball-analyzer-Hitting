@@ -17,6 +17,7 @@ import {
   calculateAverages,
   parseAnyDate,
   parseDateToTimestamp,
+  DEFAULT_DATE_KEYS,
   BS_KEYS,
   PLANE_KEYS,
   CONN_KEYS,
@@ -193,7 +194,7 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
   const trendData = useMemo(() => {
     const dateMap = {};
     allEvents.forEach(e => {
-      const rawDate = getRawDataValue(e, ['game_date', 'date', '日付', 'Date', 'gameDate', 'Date/Time', 'Pitch Date', '日時', '記録日時', 'Timestamp', 'Created Date']) || e.game_date || e.date || e['日付'] || e['Date'] || '';
+      const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS);
       if (!rawDate) return;
 
       const dateStr = parseAnyDate(rawDate);

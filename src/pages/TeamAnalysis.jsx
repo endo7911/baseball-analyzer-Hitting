@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { extractTeams, extractPlayersByTeam, getPlayerStats, calculateAverages, calculateMax, groupEventsByTeamAndPlayer, parseNumeric, getDataValue, getRawDataValue, parseAnyDate, parseDateToTimestamp, EV_KEYS, BS_KEYS, LA_KEYS, AA_KEYS } from '../utils/dataHelpers';
+import { extractTeams, extractPlayersByTeam, getPlayerStats, calculateAverages, calculateMax, groupEventsByTeamAndPlayer, parseNumeric, getDataValue, getRawDataValue, parseAnyDate, parseDateToTimestamp, EV_KEYS, BS_KEYS, LA_KEYS, AA_KEYS, DEFAULT_DATE_KEYS } from '../utils/dataHelpers';
 import { ScatterChart, Scatter, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, LabelList } from 'recharts';
 import { Users, TrendingUp, Zap, BarChart3, Eye, RefreshCw } from 'lucide-react';
 
@@ -30,7 +30,7 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
       // Group events for each player by date
       const dateMap = {};
       events.forEach(e => {
-        const rawDate = getRawDataValue(e, ['game_date', 'date', '日付', 'Date', 'gameDate', 'Date/Time', 'Pitch Date', '日時']) || e.game_date || e.date || e['日付'] || e['Date'] || '';
+        const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS);
         if (!rawDate) return;
 
         const dateStr = parseAnyDate(rawDate);

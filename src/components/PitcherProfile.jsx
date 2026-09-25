@@ -8,6 +8,7 @@ import {
   getRawDataValue,
   getSpinDirectionClock,
   parseAnyDate,
+  DEFAULT_DATE_KEYS,
   PITCH_VELO_KEYS, 
   SPIN_RATE_KEYS, 
   SPIN_AXIS_KEYS, 
@@ -132,18 +133,8 @@ function PitcherProfile({ pitcherName, events = [] }) {
       const releaseZ = getDataValue(row, RELEASE_HEIGHT_KEYS);
       const releaseX = getDataValue(row, RELEASE_SIDE_KEYS);
 
-      // Comprehensive Date parsing
-      const DATE_KEYS = ['Date', 'date', 'game_date', '日付', 'Date/Time', 'Pitch Date', 'Created Date', 'Timestamp', '日時', '投球日時', 'PitchDate', 'date_time', 'time', 'Time'];
-      let dateStr = '日付なし';
-      for (const dk of DATE_KEYS) {
-        if (row[dk] !== undefined && row[dk] !== null && String(row[dk]).trim() !== '') {
-          const parsed = parseAnyDate(row[dk]);
-          if (parsed) {
-            dateStr = parsed;
-            break;
-          }
-        }
-      }
+      const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS);
+      const dateStr = rawDateVal ? (parseAnyDate(rawDateVal) || rawDateVal) : '日付なし';
 
       return {
         id: idx + 1,

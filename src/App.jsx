@@ -17,7 +17,7 @@ import './App.css';
 import { supabase, getSupabase } from './lib/supabase';
 import { getGlobalUsers } from './lib/userSync';
 import { saveDatasetToLocalDB, getDatasetFromLocalDB, clearLocalDB } from './lib/db';
-import { extractRowVal, toAsciiNumbers, parseAnyDate, getRawDataValue } from './utils/dataHelpers';
+import { extractRowVal, toAsciiNumbers, parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS } from './utils/dataHelpers';
 
 function App() {
   const [savantFiles, setSavantFiles] = useState([]);
@@ -510,7 +510,7 @@ function App() {
             }
 
             let finalRow = { ...filteredRow };
-            const rawDateVal = finalRow.game_date || finalRow.date || row['日付'] || row['Date'] || row['gameDate'];
+            const rawDateVal = getRawDataValue(finalRow, DEFAULT_DATE_KEYS) || getRawDataValue(row, DEFAULT_DATE_KEYS);
             if (rawDateVal) {
               const normD = parseAnyDate(rawDateVal);
               if (normD) {
@@ -657,7 +657,7 @@ function App() {
           const fileName = row.file_name || row.filename || 'Cloud Data';
           if (fileName.startsWith('__')) return;
           
-          const rawDateVal = getRawDataValue(row, ['game_date', 'date', '日付', 'Date', 'gameDate', 'Date/Time', 'Pitch Date', '日時']);
+          const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS);
           let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
           if (!normD && fileName) normD = parseAnyDate(fileName);
           if (normD) {
@@ -840,7 +840,7 @@ function App() {
           });
 
           // Normalize Date & backfill from filename if missing
-          const rawDateVal = getRawDataValue(row, ['game_date', 'date', '日付', 'Date', 'gameDate', 'Date/Time', 'Pitch Date', '日時']);
+          const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS);
           let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
           if (!normD && f.filename) normD = parseAnyDate(f.filename);
           if (normD) {
