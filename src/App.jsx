@@ -809,9 +809,7 @@ function App() {
   const mergeFiles = (files) => {
     if (!Array.isArray(files) || files.length === 0) return null;
 
-    const userTeam = profile?.team_id;
-    const userTeamName = profile?.team_name;
-    const userId = user?.id || profile?.id;
+    const userEmail = (user?.email || profile?.email || profile?.display_name || '').trim().toLowerCase();
 
     const allHeaders = new Set();
     const safeRows = [];
@@ -837,20 +835,19 @@ function App() {
             }
           }
 
-          // Strict check 1: If row has a team_id or team_name, it must match current user's team
-          if (row.team_id && userTeam && String(row.team_id) !== String(userTeam)) {
-            return; // Exclude data belonging to another team!
-          }
-          if (row.team_name && userTeamName && String(row.team_name) !== String(userTeamName)) {
-            return; // Exclude data belonging to another team!
-          }
-          // Strict check 2: If row has an owner_id and no matching team, it must match userId
-          if (row.owner_id && userId && String(row.owner_id) !== String(userId)) {
-            if ((!row.team_id || !userTeam || String(row.team_id) !== String(userTeam)) &&
-                (!row.team_name || !userTeamName || String(row.team_name) !== String(userTeamName))) {
-              return; // Exclude data belonging to another owner!
+          // Per-email isolation check:
+          const uId = String(row.upload_id || '').toLowerCase();
+          const tName = String(row.team_name || '').toLowerCase();
+
+          if (uId.includes('::')) {
+            const uploader = uId.split('::')[0];
+            if (uploader !== userEmail && userEmail !== 'admin@example.com') {
+              return; // Exclude data uploaded by another user email!
             }
+          } else if (tName && tName.includes('@') && tName !== userEmail && userEmail !== 'admin@example.com') {
+            return; // Exclude data tagged with another user email!
           }
+
           safeRows.push(row);
         });
       }
