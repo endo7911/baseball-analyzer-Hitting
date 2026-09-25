@@ -4,7 +4,23 @@ import { Trophy, TrendingUp, Users } from 'lucide-react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 
 function GameStats({ savantData, blastData, combinedData }) {
-  const [sourceType, setSourceType] = useState('savant');
+  const defaultSource = useMemo(() => {
+    const sLen = savantData?.data?.length || 0;
+    const bLen = blastData?.data?.length || 0;
+    const cLen = combinedData?.data?.length || 0;
+
+    if (cLen >= sLen && cLen >= bLen && cLen > 0) return 'combined';
+    if (sLen >= bLen && sLen > 0) return 'savant';
+    if (bLen > 0) return 'blast';
+    return 'combined';
+  }, [savantData, blastData, combinedData]);
+
+  const [sourceType, setSourceType] = useState(defaultSource);
+
+  useEffect(() => {
+    setSourceType(defaultSource);
+  }, [defaultSource]);
+
   const activeData = sourceType === 'savant' ? savantData : sourceType === 'blast' ? blastData : combinedData;
 
   const [teams, setTeams] = useState([]);
@@ -17,9 +33,9 @@ function GameStats({ savantData, blastData, combinedData }) {
 
   // Group data once when data or key changes
   useEffect(() => {
-    if (activeData && activeData.data) {
+    if (activeData && activeData.data && activeData.data.length > 0) {
       // Determine best teamKey - Prioritize 'Team' as requested
-      const teamCandidates = ['チーム名', 'チーム', 'Team', 'team_name', 'home_team', 'away_team'];
+      const teamCandidates = ['チーム名', 'チーム', 'Team', 'team_name', 'home_team', 'away_team', 'Unknown Team'];
       const teamKey = headers.find(h => teamCandidates.includes(h)) || 'Unknown Team';
       
       // Rank candidates for Player Name
@@ -41,8 +57,15 @@ function GameStats({ savantData, blastData, combinedData }) {
         setNameKey(bestNameKey);
       }
 
-      setTeams(extractTeams(activeData.data, teamKey));
+      const extracted = extractTeams(activeData.data, teamKey);
+      setTeams(extracted);
       setGroupedData(groupEventsByTeamAndPlayer(activeData.data, teamKey, bestNameKey));
+      if ((!selectedTeam || !extracted.includes(selectedTeam)) && extracted.length > 0) {
+        setSelectedTeam(extracted[0]);
+      }
+    } else {
+      setTeams([]);
+      setGroupedData({});
     }
   }, [activeData, nameKey, headers]);
 

@@ -17,7 +17,23 @@ const fmtVal = (v, key = '') => {
 };
 
 function CustomCharts({ savantData, blastData, combinedData }) {
-  const [source, setSource] = useState('savant');
+  const defaultSource = useMemo(() => {
+    const sLen = savantData?.data?.length || 0;
+    const bLen = blastData?.data?.length || 0;
+    const cLen = combinedData?.data?.length || 0;
+
+    if (cLen >= sLen && cLen >= bLen && cLen > 0) return 'combined';
+    if (sLen >= bLen && sLen > 0) return 'savant';
+    if (bLen > 0) return 'blast';
+    return 'combined';
+  }, [savantData, blastData, combinedData]);
+
+  const [source, setSource] = useState(defaultSource);
+
+  useEffect(() => {
+    setSource(defaultSource);
+  }, [defaultSource]);
+
   const [xAxis, setXAxis] = useState('');
   const [yAxis, setYAxis] = useState('');
   const [viewMode, setViewMode] = useState('chart'); // 'chart' or 'table'
