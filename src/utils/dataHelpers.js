@@ -176,6 +176,9 @@ export const getPitcherHand = (rowOrEvents) => {
   return 'R';
 };
 
+// System metadata keys to ignore during key lookups
+const SYSTEM_KEYS = ['updated_at', 'created_at', 'upload_id', 'owner_id', 'team_id', 'id', 'file_name', 'filename'];
+
 // Raw string value extractor that does NOT strip colons (useful for clock strings like "0:38" or "12:15")
 export const getRawDataValue = (row, keyOrKeys) => {
   if (!row) return null;
@@ -187,10 +190,15 @@ export const getRawDataValue = (row, keyOrKeys) => {
     }
   }
 
-  const rowKeys = Object.keys(row);
+  const rowKeys = Object.keys(row).filter(ak => !SYSTEM_KEYS.includes(ak));
   for (const k of targetKeys) {
     const lowerK = k.toLowerCase();
-    const foundKey = rowKeys.find(ak => ak.toLowerCase() === lowerK || ak.toLowerCase().includes(lowerK));
+    const foundKey = rowKeys.find(ak => {
+      const lowerAk = ak.toLowerCase();
+      if (lowerK.length <= 3) return lowerAk === lowerK;
+      return lowerAk === lowerK || lowerAk.startsWith(lowerK) || lowerAk.includes(lowerK);
+    });
+
     if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && String(row[foundKey]).trim() !== '') {
       return String(row[foundKey]).trim();
     }
@@ -273,7 +281,7 @@ export const getDataValue = (row, keyOrKeys) => {
   const targetKeys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
   
   // 1. Try exact match first (also stripping BOM)
-  const rowKeys = Object.keys(row);
+  const rawRowKeys = Object.keys(row);
   for (const k of targetKeys) {
     // Check direct key
     if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
@@ -283,7 +291,7 @@ export const getDataValue = (row, keyOrKeys) => {
       if (!isNaN(val)) return val;
     }
     // Check BOM key match (e.g. \ufeff打球速度)
-    const bomKey = rowKeys.find(ak => ak.replace(/^\ufeff/, '').trim() === k);
+    const bomKey = rawRowKeys.find(ak => ak.replace(/^\ufeff/, '').trim() === k);
     if (bomKey && row[bomKey] !== undefined && row[bomKey] !== null && row[bomKey] !== '') {
       if (typeof row[bomKey] === 'number') return row[bomKey];
       const ascii = toAsciiNumbers(row[bomKey]);
@@ -292,7 +300,8 @@ export const getDataValue = (row, keyOrKeys) => {
     }
   }
 
-  // 2. Case-insensitive / fuzzy match for header variations
+  // 2. Case-insensitive / fuzzy match for header variations, excluding system metadata keys
+  const rowKeys = rawRowKeys.filter(ak => !SYSTEM_KEYS.includes(ak.replace(/^\ufeff/, '').trim()));
   for (const k of targetKeys) {
     const lowerK = k.toLowerCase().trim();
     
@@ -384,8 +393,8 @@ export const parseAnyDate = (dateStr) => {
   // 1. Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
 
-  // 2. YYYY/M/D or YYYY.M.D or YYYY-M-D (e.g. 2026/9/14 or 2026.09.14)
-  const ymdMatch = str.match(/^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})/);
+  // 2. YYYY/M/D or YYYY.M.D or YYYY-M-D (e.g. 2026/9/14 or 2026.09.14) anywhere in string
+  const ymdMatch = str.match(/(20\d{2})[\/\.-](\d{1,2})[\/\.-](\d{1,2})/);
   if (ymdMatch) {
     const year = ymdMatch[1];
     const month = ymdMatch[2].padStart(2, '0');
@@ -393,8 +402,8 @@ export const parseAnyDate = (dateStr) => {
     return `${year}-${month}-${day}`;
   }
 
-  // 3. Japanese YYYY年M月D日 (e.g. 2026年9月14日)
-  const jpMatch = str.match(/^(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日?/);
+  // 3. Japanese YYYY年M月D日 (e.g. 2026年9月14日) anywhere in string
+  const jpMatch = str.match(/(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日?/);
   if (jpMatch) {
     const year = jpMatch[1];
     const month = jpMatch[2].padStart(2, '0');
@@ -402,8 +411,8 @@ export const parseAnyDate = (dateStr) => {
     return `${year}-${month}-${day}`;
   }
 
-  // 4. M/D/YYYY (e.g. 9/14/2026)
-  const mdyMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/);
+  // 4. M/D/YYYY (e.g. 9/14/2026) anywhere in string
+  const mdyMatch = str.match(/(\d{1,2})[\/\.-](\d{1,2})[\/\.-](20\d{2})/);
   if (mdyMatch) {
     const month = mdyMatch[1].padStart(2, '0');
     const day = mdyMatch[2].padStart(2, '0');

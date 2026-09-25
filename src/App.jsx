@@ -651,13 +651,12 @@ function App() {
           const fileName = row.file_name || row.filename || 'Cloud Data';
           if (fileName.startsWith('__')) return;
           
-          const rawDateVal = row.game_date || row.date || row['日付'] || row['Date'] || row['gameDate'];
-          if (rawDateVal) {
-            const normD = parseAnyDate(rawDateVal);
-            if (normD) {
-              row.date = normD;
-              row.game_date = normD;
-            }
+          const rawDateVal = getRawDataValue(row, ['game_date', 'date', '日付', 'Date', 'gameDate', 'Date/Time', 'Pitch Date', '日時']);
+          let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
+          if (!normD && fileName) normD = parseAnyDate(fileName);
+          if (normD) {
+            row.date = normD;
+            row.game_date = normD;
           }
 
           // Backfill launch_speed if present under alias keys
@@ -826,6 +825,15 @@ function App() {
               allHeaders.add(k);
             }
           });
+
+          // Normalize Date & backfill from filename if missing
+          const rawDateVal = getRawDataValue(row, ['game_date', 'date', '日付', 'Date', 'gameDate', 'Date/Time', 'Pitch Date', '日時']);
+          let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
+          if (!normD && f.filename) normD = parseAnyDate(f.filename);
+          if (normD) {
+            row.date = normD;
+            row.game_date = normD;
+          }
 
           // Ensure launch_speed alias backfill
           if (row.launch_speed == null) {

@@ -104,23 +104,25 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         }
       }
 
+      // Universal Header Row Detection for all CSV files (Blast, Rapsodo, Excel CSV exports)
+      const lines = text.split(/\r?\n/);
+      const headerKeywords = ['Date', '日付', 'Player', '選手名', '名前', 'Bat Speed', 'スイング', 'バットスピード', 'ExitVelocity', '打球', '球速', 'Pitch Speed', 'Pitch Type', 'Grade', '学年', 'Team', 'チーム', 'Exit Velocity', 'Launch Angle'];
+      
+      let headerIndex = -1;
+      for (let i = 0; i < Math.min(lines.length, 50); i++) {
+        const line = lines[i];
+        if (!line || line.trim() === '') continue;
+        const matches = headerKeywords.filter(kw => line.includes(kw)).length;
+        if (matches >= 2 || (i > 0 && matches >= 1 && (line.includes('Date') || line.includes('日付')))) {
+          headerIndex = i;
+          break;
+        }
+      }
+
       let csvText = text;
-      if (type === 'blast' || text.includes('©Blast Motion') || text.includes('Blast Motion')) {
-        const lines = text.split(/\r?\n/);
-        let headerIndex = -1;
-        for (let i = 0; i < Math.min(lines.length, 30); i++) {
-          const line = lines[i];
-          if ((line.includes('Date') || line.includes('日付')) &&
-              (line.includes('Bat Speed') || line.includes('スイング') || line.includes('バットスピード') || line.includes('スピード'))) {
-            headerIndex = i;
-            break;
-          }
-        }
-        
-        if (headerIndex !== -1) {
-          csvText = lines.slice(headerIndex).join('\n');
-          console.log(`Blast Header found at line ${headerIndex + 1}`);
-        }
+      if (headerIndex > 0) {
+        csvText = lines.slice(headerIndex).join('\n');
+        console.log(`Header found at line ${headerIndex + 1}`);
       }
 
       Papa.parse(csvText, {
@@ -129,7 +131,31 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         skipEmptyLines: true,
         complete: (results) => {
           const headers = results.meta.fields || [];
-          
+          const fileDate = parseAnyDate(file.name);
+
+          // Process and normalize rows
+          const rows = (results.data || []).map(row => {
+            if (!row) return row;
+            
+            // Normalize Date & backfill from filename if missing
+            const rawDateVal = row.game_date || row.date || row['日付'] || row['Date'] || row['gameDate'] || row['Date/Time'] || row['Pitch Date'] || row['日時'];
+            let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
+            if (!normD && fileDate) normD = fileDate;
+
+            if (normD) {
+              row.date = normD;
+              row.game_date = normD;
+            }
+
+            // Ensure launch_speed alias backfill
+            const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
+            if (evVal != null) {
+              row.launch_speed = evVal;
+            }
+
+            return row;
+          });
+
           const isPitching = headers.some(h => ['Pitch Speed', 'PitchBallVelo', 'Spin Rate', 'Pitch Type', 'VB (trajectory)', 'HB (trajectory)', '球速', '回転数', '縦変化量'].includes(h));
           const isHitting = headers.some(h => ['launch_speed', 'ExitVelocity', 'LaunchAngle', '打球速度', '打球角度'].includes(h));
 
@@ -142,7 +168,7 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
           updateDataState(type, {
             filename: file.name,
             headers: headers,
-            data: results.data
+            data: rows
           }, 'add');
 
           if (fileInputRefs.current[type]) {
