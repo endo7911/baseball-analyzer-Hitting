@@ -130,10 +130,8 @@ function App() {
           console.warn("Local DB restore failed:", e);
         }
         
-        // Fetch cloud data for analysis views if user is logged in
-        if (user) {
-          fetchFromCloud();
-        }
+        // Always fetch cloud data for analysis views
+        fetchFromCloud();
       };
       loadCachedData();
     }
@@ -572,7 +570,6 @@ function App() {
   };
 
   const fetchFromCloud = async () => {
-    if (!user) return;
     setSyncState(prev => ({ ...prev, saving: true, lastError: null }));
     const client = getSupabase();
     
@@ -745,7 +742,7 @@ function App() {
       setCloudSavantPitchingFiles(pitchingFilesCloud);
       setCloudCombinedFiles(combinedFilesCloud);
       
-      setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Synced!' }));
+      setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Synced!', cloudConnected: true, lastError: null }));
       console.log("Cloud sync complete.");
     } catch (err) {
       /*

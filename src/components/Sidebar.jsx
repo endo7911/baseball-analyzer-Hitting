@@ -115,13 +115,13 @@ function Sidebar({
             <span>クラウドへ同期中...</span>
           </div>
         )}
-        {!syncState.saving && syncState.lastSuccess && (
+        {!syncState.saving && (syncState.lastSuccess || syncState.cloudConnected) && (
           <div className="flex items-center justify-center gap-2 text-emerald-400 text-xs font-bold p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
             <CheckCircle2 className="w-3.5 h-3.5" />
             <span>クラウド同期完了</span>
           </div>
         )}
-        {!syncState.saving && !syncState.lastSuccess && (
+        {!syncState.saving && !syncState.lastSuccess && !syncState.cloudConnected && (
           <div className="flex items-center justify-center gap-2 text-slate-300 text-xs font-bold p-2 bg-slate-800 rounded-lg border border-slate-700">
             <HardDrive className="w-3.5 h-3.5 text-blue-400" />
             <span>ローカルモード (保存中)</span>
