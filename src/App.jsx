@@ -716,6 +716,10 @@ function App() {
       const pitchingFilesCloud = groupIntoFiles(pRaw, 'savant_pitching');
       const combinedFilesCloud = groupIntoFiles(combinedRawList, 'combined');
 
+      console.log('[fetchFromCloud] sRaw:', sRaw.length, 'bRaw:', bRaw.length, 'cRaw:', cRaw.length, 'pRaw:', pRaw.length);
+      console.log('[fetchFromCloud] combinedRawList:', combinedRawList.length, 'combinedFilesCloud:', combinedFilesCloud.length);
+      console.log('[fetchFromCloud] savantFilesCloud:', savantFilesCloud.length, 'blastFilesCloud:', blastFilesCloud.length);
+
       // Update cloud files for analysis views
       setCloudSavantFiles(savantFilesCloud);
       setCloudBlastFiles(blastFilesCloud);
