@@ -17,7 +17,7 @@ import './App.css';
 import { supabase, getSupabase } from './lib/supabase';
 import { getGlobalUsers } from './lib/userSync';
 import { saveDatasetToLocalDB, getDatasetFromLocalDB, clearLocalDB } from './lib/db';
-import { extractRowVal, toAsciiNumbers, parseAnyDate } from './utils/dataHelpers';
+import { extractRowVal, toAsciiNumbers, parseAnyDate, getRawDataValue } from './utils/dataHelpers';
 
 function App() {
   const [savantFiles, setSavantFiles] = useState([]);
