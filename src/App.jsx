@@ -521,12 +521,16 @@ function App() {
               }
             }
 
-            const rowPayload = {
-              ...finalRow,
-              file_name: dataObj.filename,
-              upload_id: uploadId,
-              team_name: finalRow.team_name || uploaderEmail
-            };
+            const rowPayload = {};
+            targetColumns.forEach(col => {
+              if (finalRow[col] !== undefined && finalRow[col] !== null) {
+                rowPayload[col] = finalRow[col];
+              }
+            });
+
+            if (targetColumns.includes('file_name')) rowPayload.file_name = dataObj.filename;
+            if (targetColumns.includes('upload_id')) rowPayload.upload_id = uploadId;
+            if (targetColumns.includes('team_name')) rowPayload.team_name = finalRow.team_name || uploaderEmail;
             if (targetColumns.includes('team_id') && validTeamId) rowPayload.team_id = validTeamId;
             if (targetColumns.includes('owner_id') && validOwnerId) rowPayload.owner_id = validOwnerId;
             if (targetColumns.includes('updated_at')) rowPayload.updated_at = new Date().toISOString();
