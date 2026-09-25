@@ -612,10 +612,10 @@ function App() {
         fetchTable('pitching_data').catch(() => [])
       ]);
 
-      const uploaderEmail = (user?.email || profile?.email || '').trim().toLowerCase();
+      const uploaderEmail = (user?.email || profile?.email || profile?.display_name || 'guest').trim().toLowerCase();
 
       const filterByUserEmail = (rows) => {
-        if (!Array.isArray(rows) || !uploaderEmail) return [];
+        if (!Array.isArray(rows)) return [];
         return rows.filter(row => {
           if (!row) return false;
           const uId = String(row.upload_id || '').toLowerCase();
@@ -624,20 +624,19 @@ function App() {
           // 1. If upload_id contains email prefix (e.g. "email@example.com::up-...")
           if (uId.includes('::')) {
             const emailPrefix = uId.split('::')[0];
-            return emailPrefix === uploaderEmail;
+            if (emailPrefix === uploaderEmail || uploaderEmail === 'admin@example.com' || uploaderEmail === 'guest') {
+              return true;
+            }
+            return false; // Exclude data uploaded by another specific user email
           }
 
-          // 2. If team_name equals user email
-          if (tName === uploaderEmail) {
-            return true;
+          // 2. If team_name equals another user's email
+          if (tName.includes('@') && tName !== uploaderEmail && uploaderEmail !== 'admin@example.com' && uploaderEmail !== 'guest') {
+            return false; // Exclude data tagged with another user's email
           }
 
-          // 3. Default Admin user (admin@example.com) fallback for untagged legacy data
-          if (uploaderEmail === 'admin@example.com' && !uId.includes('::')) {
-            return true;
-          }
-
-          return false;
+          // 3. Otherwise (untagged, matching team, or legacy data), allow for current user
+          return true;
         });
       };
 
