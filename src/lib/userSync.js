@@ -73,6 +73,15 @@ export async function getGlobalUsers() {
 
   const merged = Array.from(userMap.values());
 
+  // If there are local users missing from cloud, auto-sync them to Supabase Cloud
+  const cloudEmailSet = new Set((cloudUsers || []).map(u => (u?.email || '').toLowerCase()));
+  const hasUnsyncedLocalUser = merged.some(u => !cloudEmailSet.has((u?.email || '').toLowerCase()));
+
+  if (hasUnsyncedLocalUser && Array.isArray(cloudUsers)) {
+    console.log("Auto-migrating pre-existing local accounts to Supabase Cloud...");
+    saveGlobalUsers(merged).catch(err => console.warn("Auto-migration error:", err));
+  }
+
   // Update local cache
   try {
     localStorage.setItem('mockUsersList', JSON.stringify(merged));
