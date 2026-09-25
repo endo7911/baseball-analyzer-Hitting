@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { extractTeams, extractPlayersByTeam, getPlayerStats, calculateAverages, calculateMax, groupEventsByTeamAndPlayer, parseNumeric, getDataValue, parseAnyDate, parseDateToTimestamp, EV_KEYS, BS_KEYS, LA_KEYS, AA_KEYS } from '../utils/dataHelpers';
+import { extractTeams, extractPlayersByTeam, getPlayerStats, calculateAverages, calculateMax, groupEventsByTeamAndPlayer, parseNumeric, getDataValue, getRawDataValue, parseAnyDate, parseDateToTimestamp, EV_KEYS, BS_KEYS, LA_KEYS, AA_KEYS } from '../utils/dataHelpers';
 import { ScatterChart, Scatter, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, LabelList } from 'recharts';
-import { Users, TrendingUp, Zap, BarChart3, Eye } from 'lucide-react';
+import { Users, TrendingUp, Zap, BarChart3, Eye, RefreshCw } from 'lucide-react';
 
 function TeamTrendScatterChart({ groupedData, selectedTeam }) {
   const [metric, setMetric] = useState('ev');
@@ -30,7 +30,7 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
       // Group events for each player by date
       const dateMap = {};
       events.forEach(e => {
-        const rawDate = e.game_date || e.date || e['日付'] || e['Date'] || e['gameDate'] || '';
+        const rawDate = getRawDataValue(e, ['game_date', 'date', '日付', 'Date', 'gameDate', 'Date/Time', 'Pitch Date', '日時']) || e.game_date || e.date || e['日付'] || e['Date'] || '';
         if (!rawDate) return;
 
         const dateStr = parseAnyDate(rawDate);
@@ -168,8 +168,20 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
 
       <div style={{ height: '380px' }} className="w-full">
         {trendData.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-slate-500 text-sm italic">
-            選択された期間・指標のデータが見つかりません
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 text-sm p-4">
+            <p className="font-bold text-slate-300 mb-2">選択された期間・指標のデータが見つかりません</p>
+            {(startDate || endDate) && (
+              <div className="flex flex-col items-center gap-2 mt-2 bg-slate-900/60 p-3 rounded-xl border border-purple-500/30">
+                <p className="text-xs text-amber-400 font-bold">※ 日付範囲（{startDate || '最初'} 〜 {endDate || '最新'}）によりデータが絞り込まれています</p>
+                <button 
+                  onClick={() => { setStartDate(''); setEndDate(''); }}
+                  className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-1.5 rounded-lg text-xs transition-all shadow-md cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  すべての期間のデータを表示する
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
@@ -258,8 +270,12 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
     const blastCount = blastData?.data?.length || 0;
     const combinedCount = combinedData?.data?.length || 0;
 
-    if (savantCount === 0 && blastCount === 0 && combinedCount > 0 && sourceType !== 'combined') {
+    if (combinedCount > 0 && savantCount === 0 && blastCount === 0) {
       setSourceType('combined');
+    } else if (savantCount > 0 && combinedCount === 0 && blastCount === 0) {
+      setSourceType('savant');
+    } else if (blastCount > 0 && savantCount === 0 && combinedCount === 0) {
+      setSourceType('blast');
     }
   }, [savantData, blastData, combinedData]);
   
