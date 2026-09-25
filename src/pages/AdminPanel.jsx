@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { getGlobalUsers, saveGlobalUsers } from '../lib/userSync';
 import { Users, Plus, Trash2, Shield, RefreshCw, CheckCircle2, XCircle, Ban, PlayCircle } from 'lucide-react';
 
 function AdminPanel() {
@@ -10,75 +11,19 @@ function AdminPanel() {
   const [message, setMessage] = useState(null);
 
   useEffect(() => { 
-    initDefaultUsers();
     fetchUsers(); 
   }, []);
 
-  const initDefaultUsers = () => {
-    let mockUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
-    let modified = false;
-
-    if (!mockUsers.some(u => u.email === 'admin@example.com')) {
-      mockUsers.push({
-        id: 'admin-id',
-        email: 'admin@example.com',
-        password: 'baseball2024',
-        display_name: '管理者アカウント',
-        role: 'admin',
-        team_id: '管理者',
-        is_disabled: false
-      });
-      modified = true;
-    }
-
-    if (!mockUsers.some(u => u.email === 'user@example.com')) {
-      mockUsers.push({
-        id: 'user-default-id',
-        email: 'user@example.com',
-        password: 'user123',
-        display_name: '一般利用者',
-        role: 'user',
-        team_id: 'Team A',
-        is_disabled: false
-      });
-      modified = true;
-    }
-
-    if (modified) {
-      localStorage.setItem('mockUsersList', JSON.stringify(mockUsers));
-    }
-  };
-
   const fetchUsers = async () => {
     setLoading(true);
-    let supabaseUsers = [];
-    
     try {
-      const { data, error } = await supabase.from('profiles').select('*').order('created_at');
-      if (!error && data) {
-        supabaseUsers = data;
-      }
+      const globalUsers = await getGlobalUsers();
+      setUsers(globalUsers);
     } catch (e) {
-      console.warn("Supabase profile fetch warning:", e);
+      console.error("Fetch users error:", e);
+    } finally {
+      setLoading(false);
     }
-
-    // Merge with local mock users
-    const mockUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
-    
-    // Merge list, prioritizing mockUsers if duplicate emails or combining
-    const combined = [...mockUsers];
-
-    supabaseUsers.forEach(spUser => {
-      const existingIdx = combined.findIndex(u => u.id === spUser.id || u.email === spUser.email);
-      if (existingIdx >= 0) {
-        combined[existingIdx] = { ...combined[existingIdx], ...spUser };
-      } else {
-        combined.push(spUser);
-      }
-    });
-
-    setUsers(combined);
-    setLoading(false);
   };
 
   const addUser = async (e) => {
@@ -86,49 +31,43 @@ function AdminPanel() {
     if (!newUser.email || !newUser.password) return;
     setLoading(true);
     
-    const newId = `user-${Date.now()}`;
-    const userObj = {
-      id: newId,
-      email: newUser.email.trim().toLowerCase(),
-      password: newUser.password.trim(),
-      display_name: newUser.display_name.trim() || newUser.email.trim(),
-      role: newUser.role,
-      team_id: newUser.team_id.trim() || 'Team A',
-      is_disabled: false,
-      created_at: new Date().toISOString()
-    };
-
-    // 1. Save to mockUsersList
-    const mockUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
-    mockUsers.push(userObj);
-    localStorage.setItem('mockUsersList', JSON.stringify(mockUsers));
-
-    // 2. Try Supabase Auth if service role or standard flow available
     try {
-      const { data, error } = await supabase.auth.admin.createUser({
-        email: newUser.email,
-        password: newUser.password,
-        email_confirm: true,
-      });
+      const currentUsers = await getGlobalUsers();
+      const cleanEmail = newUser.email.trim().toLowerCase();
 
-      if (!error && data?.user) {
-        await supabase.from('profiles').update({
-          team_id: newUser.team_id,
-          role: newUser.role,
-          display_name: newUser.display_name || newUser.email,
-          is_disabled: false
-        }).eq('id', data.user.id);
+      if (currentUsers.some(u => u.email.toLowerCase() === cleanEmail)) {
+        setMessage({ type: 'error', text: `アカウント「${cleanEmail}」は既に登録されています。` });
+        setLoading(false);
+        setTimeout(() => setMessage(null), 4000);
+        return;
       }
-    } catch (err) {
-      console.log("Supabase Auth admin create bypassed (using local mock user):", err);
-    }
 
-    setMessage({ type: 'success', text: `アカウント「${newUser.email}」を追加しました。` });
-    setShowAdd(false);
-    setNewUser({ email: '', password: '', team_id: '', role: 'user', display_name: '' });
-    fetchUsers();
-    setLoading(false);
-    setTimeout(() => setMessage(null), 4000);
+      const newId = `user-${Date.now()}`;
+      const userObj = {
+        id: newId,
+        email: cleanEmail,
+        password: newUser.password.trim(),
+        display_name: newUser.display_name.trim() || cleanEmail,
+        role: newUser.role,
+        team_id: newUser.team_id.trim() || 'Team A',
+        is_disabled: false,
+        created_at: new Date().toISOString()
+      };
+
+      const updatedUsers = [...currentUsers, userObj];
+      await saveGlobalUsers(updatedUsers);
+
+      setMessage({ type: 'success', text: `アカウント「${cleanEmail}」を追加しました。` });
+      setShowAdd(false);
+      setNewUser({ email: '', password: '', team_id: '', role: 'user', display_name: '' });
+      setUsers(updatedUsers);
+    } catch (err) {
+      console.error("Add user error:", err);
+      setMessage({ type: 'error', text: 'ユーザーの追加に失敗しました。' });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMessage(null), 4000);
+    }
   };
 
   const toggleUserStatus = async (user) => {
@@ -139,48 +78,40 @@ function AdminPanel() {
 
     setLoading(true);
 
-    // 1. Update local storage
-    const mockUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
-    const updatedMocks = mockUsers.map(u => {
-      if (u.id === user.id || u.email === user.email) {
-        return { ...u, is_disabled: newStatus };
-      }
-      return u;
-    });
-    localStorage.setItem('mockUsersList', JSON.stringify(updatedMocks));
-
-    // 2. Update Supabase
     try {
-      await supabase.from('profiles').update({ is_disabled: newStatus }).eq('id', user.id);
-    } catch (e) {
-      console.warn("Supabase update error:", e);
-    }
+      const currentUsers = await getGlobalUsers();
+      const updatedUsers = currentUsers.map(u => {
+        if (u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase()) {
+          return { ...u, is_disabled: newStatus };
+        }
+        return u;
+      });
 
-    setMessage({ type: 'success', text: `「${user.display_name || user.email}」を${actionName}しました。` });
-    fetchUsers();
-    setLoading(false);
-    setTimeout(() => setMessage(null), 4000);
+      await saveGlobalUsers(updatedUsers);
+      setUsers(updatedUsers);
+      setMessage({ type: 'success', text: `「${user.display_name || user.email}」を${actionName}しました。` });
+    } catch (e) {
+      console.error("Toggle user error:", e);
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMessage(null), 4000);
+    }
   };
 
   const updateTeam = async (userId, email, team_id) => {
-    // Local update
-    const mockUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
-    const updatedMocks = mockUsers.map(u => {
-      if (u.id === userId || u.email === email) {
-        return { ...u, team_id };
-      }
-      return u;
-    });
-    localStorage.setItem('mockUsersList', JSON.stringify(updatedMocks));
-
-    // Supabase update
     try {
-      await supabase.from('profiles').update({ team_id }).eq('id', userId);
+      const currentUsers = await getGlobalUsers();
+      const updatedUsers = currentUsers.map(u => {
+        if (u.id === userId || u.email.toLowerCase() === email.toLowerCase()) {
+          return { ...u, team_id };
+        }
+        return u;
+      });
+      await saveGlobalUsers(updatedUsers);
+      setUsers(updatedUsers);
     } catch (e) {
-      console.warn(e);
+      console.error("Update team error:", e);
     }
-
-    fetchUsers();
   };
 
   const deleteUser = async (userId, email) => {
@@ -188,23 +119,19 @@ function AdminPanel() {
     
     setLoading(true);
 
-    // Local remove
-    const mockUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
-    const updatedMocks = mockUsers.filter(u => u.id !== userId && u.email !== email);
-    localStorage.setItem('mockUsersList', JSON.stringify(updatedMocks));
-
-    // Supabase remove
     try {
-      await supabase.auth.admin.deleteUser(userId);
-      await supabase.from('profiles').delete().eq('id', userId);
-    } catch (err) {
-      console.warn("Supabase delete notice:", err);
-    }
+      const currentUsers = await getGlobalUsers();
+      const updatedUsers = currentUsers.filter(u => u.id !== userId && u.email.toLowerCase() !== email.toLowerCase());
 
-    setMessage({ type: 'success', text: `「${email}」を削除しました。` });
-    fetchUsers();
-    setLoading(false);
-    setTimeout(() => setMessage(null), 4000);
+      await saveGlobalUsers(updatedUsers);
+      setUsers(updatedUsers);
+      setMessage({ type: 'success', text: `「${email}」を削除しました。` });
+    } catch (err) {
+      console.error("Delete user error:", err);
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMessage(null), 4000);
+    }
   };
 
   const existingTeams = [...new Set(users.map(u => u.team_id).filter(Boolean))];

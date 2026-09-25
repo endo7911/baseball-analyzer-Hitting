@@ -15,6 +15,7 @@ import GuidePage from './pages/GuidePage';
 import './App.css';
 
 import { supabase, getSupabase } from './lib/supabase';
+import { getGlobalUsers } from './lib/userSync';
 import { saveDatasetToLocalDB, getDatasetFromLocalDB, clearLocalDB } from './lib/db';
 import { extractRowVal } from './utils/dataHelpers';
 
@@ -50,23 +51,25 @@ function App() {
         const u = JSON.parse(savedUser);
         const p = JSON.parse(savedProfile);
         
-        // Check if user is disabled in mockUsersList
-        const mockUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
-        const latestMock = mockUsers.find(m => m.id === u.id || m.email === u.email);
-        
-        if (latestMock?.is_disabled || p?.is_disabled) {
-          localStorage.removeItem('mockUser');
-          localStorage.removeItem('mockProfile');
-          setUser(null);
-          setProfile(null);
+        getGlobalUsers().then(globalUsers => {
+          const latest = globalUsers.find(m => m.id === u.id || m.email.toLowerCase() === (u.email || '').toLowerCase());
+          if (latest?.is_disabled || p?.is_disabled) {
+            localStorage.removeItem('mockUser');
+            localStorage.removeItem('mockProfile');
+            setUser(null);
+            setProfile(null);
+            setAuthLoading(false);
+            alert('このアカウントは停止されています。');
+          } else {
+            setUser(u);
+            setProfile(latest ? { ...p, ...latest } : p);
+            setAuthLoading(false);
+          }
+        }).catch(() => {
+          setUser(u);
+          setProfile(p);
           setAuthLoading(false);
-          alert('このアカウントは停止されています。');
-          return;
-        }
-
-        setUser(u);
-        setProfile(p);
-        setAuthLoading(false);
+        });
         return;
       } catch (e) {
         console.warn("Mock session parse error:", e);
@@ -609,6 +612,7 @@ function App() {
         rows.forEach(row => {
           if (!row) return;
           const fileName = row.file_name || row.filename || 'Cloud Data';
+          if (fileName.startsWith('__')) return;
           
           // Backfill launch_speed if present under alias keys
           const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);

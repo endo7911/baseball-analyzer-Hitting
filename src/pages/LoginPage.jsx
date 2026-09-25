@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getGlobalUsers } from '../lib/userSync';
 import { LogIn, Shield, Eye, EyeOff } from 'lucide-react';
 
 // ソルト付きSHA-256ハッシュ生成関数 (WebCrypto API)
@@ -54,59 +55,30 @@ function LoginPage({ onLogin }) {
     const targetEmail = email.trim().toLowerCase();
 
     try {
-      // 1. まずSupabaseによる正式認証を試行
-      try {
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: targetEmail,
-          password: password.trim(),
-        });
+      // 1. クラウド同期された全登録済みアカウント（スマホ・PC共通）を取得
+      const globalUsers = await getGlobalUsers();
+      const foundGlobalUser = globalUsers.find(u => u.email.toLowerCase() === targetEmail);
 
-        if (!authError && authData?.user) {
-          const { data: userProfile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', authData.user.id)
-            .single();
-
-          if (userProfile?.is_disabled) {
-            await supabase.auth.signOut();
-            setError('このアカウントは現在停止されています。管理者にお問い合わせください。');
-            setLoading(false);
-            return;
-          }
-
-          onLogin(authData.user, userProfile || { role: 'user', display_name: authData.user.email });
-          setLoading(false);
-          return;
-        }
-      } catch {
-        // Supabase認証エラー時はローカル / 管理者ハッシュ判定へ
-      }
-
-      // 2. ローカルストレージ内の登録済みアカウント（mockUsers / mockProfiles）を検索
-      const mockUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
-      const foundMockUser = mockUsers.find(u => u.email.toLowerCase() === targetEmail);
-
-      if (foundMockUser) {
-        if (foundMockUser.is_disabled) {
+      if (foundGlobalUser) {
+        if (foundGlobalUser.is_disabled) {
           setError('このアカウントは現在停止されています。管理者にお問い合わせください。');
           setLoading(false);
           return;
         }
 
-        if (foundMockUser.password === password.trim()) {
-          const mockUser = { id: foundMockUser.id, email: foundMockUser.email };
-          const mockProfile = { 
-            id: foundMockUser.id,
-            role: foundMockUser.role || 'user', 
-            team_id: foundMockUser.team_id || 'Team A', 
-            display_name: foundMockUser.display_name || foundMockUser.email,
+        if (foundGlobalUser.password === password.trim()) {
+          const userObj = { id: foundGlobalUser.id, email: foundGlobalUser.email };
+          const profileObj = { 
+            id: foundGlobalUser.id,
+            role: foundGlobalUser.role || 'user', 
+            team_id: foundGlobalUser.team_id || 'Team A', 
+            display_name: foundGlobalUser.display_name || foundGlobalUser.email,
             is_disabled: false
           };
 
-          localStorage.setItem('mockUser', JSON.stringify(mockUser));
-          localStorage.setItem('mockProfile', JSON.stringify(mockProfile));
-          onLogin(mockUser, mockProfile);
+          localStorage.setItem('mockUser', JSON.stringify(userObj));
+          localStorage.setItem('mockProfile', JSON.stringify(profileObj));
+          onLogin(userObj, profileObj);
           setLoading(false);
           return;
         }

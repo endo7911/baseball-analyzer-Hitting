@@ -68,6 +68,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         }
 
         const name = row.file_name || row.upload_id || 'ファイル名なし';
+        if (name.startsWith('__')) return;
         const key = `baseball-${name}`;
         if (!datasetMap.has(key)) {
           datasetMap.set(key, {
