@@ -30,11 +30,11 @@ function Sidebar({
   const allMenuItems = [
     { id: 'upload', label: 'データ読み込み', icon: UploadCloud, mobileHidden: true },
     { id: 'cloud', label: 'クラウド管理', icon: HardDrive, mobileHidden: true },
-    { id: 'team', label: '打撃分析', icon: Users },
-    ...(SHOW_PITCHER_MODULE ? [{ id: 'pitcher', label: '投手分析', icon: Target }] : []),
-    { id: 'player', label: '個人分析', icon: User },
-    { id: 'game', label: '試合スタッツ', icon: Trophy },
-    { id: 'custom', label: 'カスタムグラフ', icon: LineChart },
+    { id: 'team', label: '打撃分析', icon: Users, disabled: !hasData },
+    ...(SHOW_PITCHER_MODULE ? [{ id: 'pitcher', label: '投手分析', icon: Target, disabled: !hasData }] : []),
+    { id: 'player', label: '個人分析', icon: User, disabled: !hasData },
+    { id: 'game', label: '試合スタッツ', icon: Trophy, disabled: !hasData },
+    { id: 'custom', label: 'カスタムグラフ', icon: LineChart, disabled: !hasData },
     { id: 'guide', label: '使い方ガイド', icon: BookOpen },
     ...(isAdmin ? [{ id: 'admin', label: '管理者パネル', icon: Shield }] : []),
   ];
