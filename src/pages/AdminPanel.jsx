@@ -5,6 +5,7 @@ import { Users, Plus, Trash2, Shield, RefreshCw, CheckCircle2, XCircle, Ban, Pla
 
 function AdminPanel() {
   const [users, setUsers] = useState([]);
+  const [teamInputs, setTeamInputs] = useState({});
   const [loading, setLoading] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', password: '', team_id: '', role: 'user', display_name: '' });
@@ -19,6 +20,11 @@ function AdminPanel() {
     try {
       const globalUsers = await getGlobalUsers();
       setUsers(globalUsers);
+      const initialInputs = {};
+      globalUsers.forEach(u => {
+        initialInputs[u.id || u.email] = u.team_id || '';
+      });
+      setTeamInputs(initialInputs);
     } catch (e) {
       console.error("Fetch users error:", e);
     } finally {
@@ -287,10 +293,16 @@ function AdminPanel() {
                   <div className="relative">
                     <input
                       list="team-list"
-                      value={user.team_id || ''}
-                      onChange={e => updateTeam(user.id, user.email, e.target.value)}
+                      value={teamInputs[user.id || user.email] ?? (user.team_id || '')}
+                      onChange={e => setTeamInputs({ ...teamInputs, [user.id || user.email]: e.target.value })}
+                      onBlur={e => updateTeam(user.id, user.email, e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.target.blur();
+                        }
+                      }}
                       placeholder="チーム未割当"
-                      className="bg-slate-900 border border-slate-700 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-purple-500 w-32"
+                      className="bg-slate-900 border border-slate-700 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-purple-500 w-32 transition-all"
                     />
                   </div>
 
