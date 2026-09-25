@@ -614,7 +614,33 @@ function App() {
 
       const filterByUserEmail = (rows) => {
         if (!Array.isArray(rows)) return [];
-        return rows.filter(row => Boolean(row));
+        return rows.filter(row => {
+          if (!row) return false;
+          const uId = String(row.upload_id || '').toLowerCase();
+          const tName = String(row.team_name || '').toLowerCase();
+
+          // Skip system rows
+          const fName = String(row.file_name || '').toLowerCase();
+          if (fName.startsWith('__')) return false;
+
+          if (uId.includes('::')) {
+            const uploader = uId.split('::')[0];
+            // Allow: own data, guest-uploaded, admin view
+            if (
+              uploader === uploaderEmail ||
+              uploader === 'guest' ||
+              uploaderEmail === 'admin@example.com'
+            ) return true;
+            return false; // belongs to a different real user
+          }
+
+          // Rows tagged with another user's email in team_name
+          if (tName.includes('@') && tName !== uploaderEmail && uploaderEmail !== 'admin@example.com') {
+            return false;
+          }
+
+          return true;
+        });
       };
 
       const sRaw = filterByUserEmail(savantRaw);
@@ -828,6 +854,25 @@ function App() {
             if (evVal != null) {
               row.launch_speed = evVal;
             }
+          }
+
+          // Data isolation: only include rows belonging to the logged-in user
+          const uId = String(row.upload_id || '').toLowerCase();
+          const tName = String(row.team_name || '').toLowerCase();
+
+          if (uId.includes('::')) {
+            const uploader = uId.split('::')[0];
+            if (
+              uploader !== userEmail &&
+              uploader !== 'guest' &&
+              userEmail !== 'admin@example.com'
+            ) return; // belongs to another user
+          } else if (
+            tName.includes('@') &&
+            tName !== userEmail &&
+            userEmail !== 'admin@example.com'
+          ) {
+            return; // team_name contains another user's email
           }
 
           safeRows.push(row);
