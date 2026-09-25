@@ -148,15 +148,6 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
           if (fileInputRefs.current[type]) {
             fileInputRefs.current[type].value = '';
           }
-
-          // 即時分析画面へ遷移
-          if (type === 'savant_pitching') {
-            setActiveView('pitcher');
-          } else if (type === 'savant' || type === 'blast') {
-            setActiveView('player');
-          } else if (type === 'combined') {
-            setActiveView('team');
-          }
         },
         error: (err) => {
           console.error("Error parsing CSV:", err);
