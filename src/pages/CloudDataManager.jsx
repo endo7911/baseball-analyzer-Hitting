@@ -55,17 +55,26 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       if (blError) console.warn("blast_data fetch error:", blError);
       if (pError) console.warn("pitching_data fetch error:", pError);
 
+      const userEmail = (profile?.email || profile?.display_name || '').trim().toLowerCase();
+
+      const isRowForUser = (row) => {
+        if (!row) return false;
+        const uId = String(row.upload_id || '').toLowerCase();
+        const tName = String(row.team_name || '').toLowerCase();
+        if (uId.includes('::')) {
+          const emailPrefix = uId.split('::')[0];
+          return emailPrefix === userEmail;
+        }
+        if (tName === userEmail) return true;
+        if (userEmail === 'admin@example.com' && !uId.includes('::')) return true;
+        return false;
+      };
+
       const datasetMap = new Map();
 
       // Process baseball_data (unified combined table)
       (baseballRows || []).forEach(row => {
-        // Enforce strict privacy check: if team_name or team_id exists, must match user's team
-        if (row.team_name && userTeamName && String(row.team_name) !== String(userTeamName)) {
-          return; // Exclude data belonging to another team!
-        }
-        if (row.team_id && userTeamId && String(row.team_id) !== String(userTeamId)) {
-          return;
-        }
+        if (!isRowForUser(row)) return;
 
         const name = row.file_name || row.upload_id || 'ファイル名なし';
         if (name.startsWith('__')) return;
@@ -88,10 +97,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       // Process pitching_data
       const pitchingFileMap = new Map();
       (pitchingRows || []).forEach(row => {
-        if (row.team_id && userTeamId && String(row.team_id) !== String(userTeamId)) return;
-        if (row.owner_id && userId && String(row.owner_id) !== String(userId)) {
-          if (!row.team_id || String(row.team_id) !== String(userTeamId)) return;
-        }
+        if (!isRowForUser(row)) return;
         const name = row.file_name || row.upload_id;
         if (!name) return;
         const key = `pitching-${name}`;
@@ -113,10 +119,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       // Process savant_data
       const savantFileMap = new Map();
       (savantRows || []).forEach(row => {
-        if (row.team_id && userTeamId && String(row.team_id) !== String(userTeamId)) return;
-        if (row.owner_id && userId && String(row.owner_id) !== String(userId)) {
-          if (!row.team_id || String(row.team_id) !== String(userTeamId)) return;
-        }
+        if (!isRowForUser(row)) return;
         const name = row.file_name || row.upload_id;
         if (!name) return;
         if (!savantFileMap.has(name)) {
@@ -127,10 +130,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       // Process blast_data
       const blastFileMap = new Map();
       (blastRows || []).forEach(row => {
-        if (row.team_id && userTeamId && String(row.team_id) !== String(userTeamId)) return;
-        if (row.owner_id && userId && String(row.owner_id) !== String(userId)) {
-          if (!row.team_id || String(row.team_id) !== String(userTeamId)) return;
-        }
+        if (!isRowForUser(row)) return;
         const name = row.file_name || row.upload_id;
         if (!name) return;
         if (!blastFileMap.has(name)) {

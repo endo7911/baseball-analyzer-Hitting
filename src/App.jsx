@@ -376,7 +376,8 @@ function App() {
       const dataArray = Array.isArray(dataObj.data) ? dataObj.data : [];
       const totalRows = dataArray.length;
       const batchSize = 500;
-      const uploadId = dataObj.id || `up-${Date.now()}`;
+      const uploaderEmail = (user?.email || profile?.email || 'guest').trim().toLowerCase();
+      const uploadId = `${uploaderEmail}::up-${Date.now()}`;
 
       // UUID validation helper for Postgres uuid column compatibility
       const isUUID = (str) => {
@@ -517,7 +518,8 @@ function App() {
             const rowPayload = {
               ...finalRow,
               file_name: dataObj.filename,
-              upload_id: uploadId
+              upload_id: uploadId,
+              team_name: finalRow.team_name || uploaderEmail
             };
             if (targetColumns.includes('team_id') && validTeamId) rowPayload.team_id = validTeamId;
             if (targetColumns.includes('owner_id') && validOwnerId) rowPayload.owner_id = validOwnerId;
@@ -600,10 +602,39 @@ function App() {
         fetchTable('pitching_data').catch(() => [])
       ]);
 
-      const sRaw = Array.isArray(savantRaw) ? savantRaw : [];
-      const bRaw = Array.isArray(blastRaw) ? blastRaw : [];
-      const cRaw = Array.isArray(combinedRaw) ? combinedRaw : [];
-      const pRaw = Array.isArray(pitchingRaw) ? pitchingRaw : [];
+      const uploaderEmail = (user?.email || profile?.email || '').trim().toLowerCase();
+
+      const filterByUserEmail = (rows) => {
+        if (!Array.isArray(rows) || !uploaderEmail) return [];
+        return rows.filter(row => {
+          if (!row) return false;
+          const uId = String(row.upload_id || '').toLowerCase();
+          const tName = String(row.team_name || '').toLowerCase();
+
+          // 1. If upload_id contains email prefix (e.g. "email@example.com::up-...")
+          if (uId.includes('::')) {
+            const emailPrefix = uId.split('::')[0];
+            return emailPrefix === uploaderEmail;
+          }
+
+          // 2. If team_name equals user email
+          if (tName === uploaderEmail) {
+            return true;
+          }
+
+          // 3. Default Admin user (admin@example.com) fallback for untagged legacy data
+          if (uploaderEmail === 'admin@example.com' && !uId.includes('::')) {
+            return true;
+          }
+
+          return false;
+        });
+      };
+
+      const sRaw = filterByUserEmail(savantRaw);
+      const bRaw = filterByUserEmail(blastRaw);
+      const cRaw = filterByUserEmail(combinedRaw);
+      const pRaw = filterByUserEmail(pitchingRaw);
 
       // Helper to group flat rows into the "Files" format the app expects
       const groupIntoFiles = (rows, type) => {
