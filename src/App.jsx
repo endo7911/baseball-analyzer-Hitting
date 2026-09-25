@@ -728,8 +728,7 @@ function App() {
       
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Synced!', cloudConnected: true, lastError: null }));
       console.log("Cloud sync complete.");
-      // DEBUG: show row counts on screen
-      alert(`[デバッグ] クラウド同期完了\ncRaw(baseball_data): ${cRaw.length}件\nsRaw(savant_data): ${sRaw.length}件\nbRaw(blast_data): ${bRaw.length}件\ncombinedFilesCloud: ${combinedFilesCloud.length}ファイル\ncloudCombinedFilesに設定しました`);
+      // DEBUG (有効化するには下行のコメントを解除): alert(`[デバッグ] クラウド同期完了\ncRaw(baseball_data): ${cRaw.length}件\nsRaw(savant_data): ${sRaw.length}件\nbRaw(blast_data): ${bRaw.length}件\ncombinedFilesCloud: ${combinedFilesCloud.length}ファイル\ncloudCombinedFilesに設定しました`);
     } catch (err) {
       /*
        * =========================================================================
@@ -738,7 +737,7 @@ function App() {
        * =========================================================================
        */
       console.warn("Cloud sync skipped (using local cached data):", err);
-      alert(`[デバッグ] クラウド同期失敗\nエラー: ${err?.message || JSON.stringify(err)}`);
+      // DEBUG (有効化するには下行のコメントを解除): alert(`[デバッグ] クラウド同期失敗\nエラー: ${err?.message || JSON.stringify(err)}`);
       setSyncState(prev => ({ ...prev, saving: false, lastError: "ローカルモード動作中" }));
     }
   };
