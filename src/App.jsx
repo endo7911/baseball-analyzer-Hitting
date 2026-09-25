@@ -37,8 +37,8 @@ function App() {
   const [profile, setProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // Global saving state
-  const [syncState, setSyncState] = useState({ saving: false, lastError: null, lastSuccess: null });
+  // Global saving state (default to cloud connected)
+  const [syncState, setSyncState] = useState({ saving: false, lastError: null, lastSuccess: 'Cloud Active', cloudConnected: true });
 
   // Check auth on mount
   useEffect(() => {
@@ -609,7 +609,8 @@ function App() {
         fetchTable('pitching_data').catch(() => [])
       ]);
 
-      const uploaderEmail = (user?.email || profile?.email || profile?.display_name || 'guest').trim().toLowerCase();
+      const rawEmail = (user?.email || profile?.email || '').trim().toLowerCase();
+      const uploaderEmail = rawEmail.includes('@') ? rawEmail : 'guest';
 
       const filterByUserEmail = (rows) => {
         if (!Array.isArray(rows)) return [];
@@ -618,10 +619,15 @@ function App() {
           const uId = String(row.upload_id || '').toLowerCase();
           const tName = String(row.team_name || '').toLowerCase();
 
-          // 1. If upload_id contains email prefix (e.g. "email@example.com::up-...")
+          // 1. If upload_id contains email prefix (e.g. "email@example.com::up-..." or "guest::up-...")
           if (uId.includes('::')) {
             const emailPrefix = uId.split('::')[0];
-            if (emailPrefix === uploaderEmail || uploaderEmail === 'admin@example.com' || uploaderEmail === 'guest') {
+            if (
+              emailPrefix === uploaderEmail || 
+              emailPrefix === 'guest' || 
+              uploaderEmail === 'guest' || 
+              uploaderEmail === 'admin@example.com'
+            ) {
               return true;
             }
             return false; // Exclude data uploaded by another specific user email

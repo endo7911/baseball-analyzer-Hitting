@@ -55,7 +55,8 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       if (blError) console.warn("blast_data fetch error:", blError);
       if (pError) console.warn("pitching_data fetch error:", pError);
 
-      const userEmail = (profile?.email || profile?.display_name || 'guest').trim().toLowerCase();
+      const rawEmail = (profile?.email || profile?.display_name || '').trim().toLowerCase();
+      const userEmail = rawEmail.includes('@') ? rawEmail : 'guest';
 
       const isRowForUser = (row) => {
         if (!row) return false;
@@ -63,7 +64,12 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         const tName = String(row.team_name || '').toLowerCase();
         if (uId.includes('::')) {
           const emailPrefix = uId.split('::')[0];
-          return emailPrefix === userEmail || userEmail === 'admin@example.com' || userEmail === 'guest';
+          return (
+            emailPrefix === userEmail || 
+            emailPrefix === 'guest' || 
+            userEmail === 'guest' || 
+            userEmail === 'admin@example.com'
+          );
         }
         if (tName.includes('@') && tName !== userEmail && userEmail !== 'admin@example.com' && userEmail !== 'guest') {
           return false;
