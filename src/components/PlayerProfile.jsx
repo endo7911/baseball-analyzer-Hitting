@@ -194,7 +194,7 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
   const trendData = useMemo(() => {
     const dateMap = {};
     allEvents.forEach(e => {
-      const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS);
+      const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || e.file_name || e.filename || '';
       if (!rawDate) return;
 
       const dateStr = parseAnyDate(rawDate);

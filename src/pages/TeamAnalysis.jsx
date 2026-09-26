@@ -30,7 +30,7 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
       // Group events for each player by date
       const dateMap = {};
       events.forEach(e => {
-        const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS);
+        const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || e.file_name || e.filename || '';
         if (!rawDate) return;
 
         const dateStr = parseAnyDate(rawDate);

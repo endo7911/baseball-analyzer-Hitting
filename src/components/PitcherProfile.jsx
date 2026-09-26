@@ -133,7 +133,7 @@ function PitcherProfile({ pitcherName, events = [] }) {
       const releaseZ = getDataValue(row, RELEASE_HEIGHT_KEYS);
       const releaseX = getDataValue(row, RELEASE_SIDE_KEYS);
 
-      const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS);
+      const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS) || row.date || row.game_date || row.file_name || row.filename;
       const dateStr = rawDateVal ? (parseAnyDate(rawDateVal) || rawDateVal) : '日付なし';
 
       return {

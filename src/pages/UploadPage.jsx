@@ -232,21 +232,56 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         </div>
         
         <div className="text-xs text-slate-300 mb-2 flex-1 overflow-y-auto pr-2 space-y-1">
-          {files.map((f, idx) => (
-            <div key={idx} className="bg-slate-800/50 px-2 py-1.5 rounded truncate border border-slate-700/50 flex justify-between items-center group">
-              <span className="truncate mr-2">{f.filename}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 text-[10px]">{f.data?.length || 0}行</span>
-                <button 
-                  onClick={() => updateDataState(typeLabel.toLowerCase(), idx, 'remove')}
-                  className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
-                  title="このファイルを削除"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+          {files.map((f, idx) => {
+            const dates = Array.from(new Set(
+              (f.data || [])
+                .map(r => r.date || r.game_date || parseAnyDate(getRawDataValue(r, DEFAULT_DATE_KEYS)) || parseAnyDate(f.filename))
+                .filter(Boolean)
+            )).sort();
+
+            const dateDisplay = dates.length === 1 
+              ? dates[0] 
+              : (dates.length > 1 ? `${dates[0]} ~ ${dates[dates.length - 1]}` : null);
+
+            return (
+              <div key={idx} className="bg-slate-800/50 px-2.5 py-1.5 rounded border border-slate-700/50 flex flex-wrap justify-between items-center gap-1 group">
+                <div className="flex items-center min-w-0 mr-1 max-w-[65%]">
+                  <span className="truncate text-slate-200 font-medium">{f.filename}</span>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {dateDisplay ? (
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono">
+                      📅 {dateDisplay}
+                    </span>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[10px] font-mono">
+                        ⚠️ 日付未設定
+                      </span>
+                      <input 
+                        type="date"
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            updateDataState(typeLabel.toLowerCase(), { index: idx, date: e.target.value }, 'update_file_date');
+                          }
+                        }}
+                        className="bg-slate-900 border border-amber-500/50 text-white text-[10px] rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer"
+                        title="このファイルの日付を設定"
+                      />
+                    </div>
+                  )}
+                  <span className="text-slate-500 text-[10px] whitespace-nowrap">{f.data?.length || 0}行</span>
+                  <button 
+                    onClick={() => updateDataState(typeLabel.toLowerCase(), idx, 'remove')}
+                    className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
+                    title="このファイルを削除"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         
         <div className="text-xs text-slate-400 mt-auto font-bold bg-slate-900/50 p-2 rounded-lg border border-slate-700 flex justify-between items-center">

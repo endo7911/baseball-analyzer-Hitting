@@ -12,6 +12,7 @@ import CloudDataManager from './pages/CloudDataManager';
 import LoginPage from './pages/LoginPage';
 import AdminPanel from './pages/AdminPanel';
 import GuidePage from './pages/GuidePage';
+import { SHOW_PITCHER_MODULE } from './config';
 import './App.css';
 
 import { supabase, getSupabase } from './lib/supabase';
@@ -657,9 +658,11 @@ function App() {
           const fileName = row.file_name || row.filename || 'Cloud Data';
           if (fileName.startsWith('__')) return;
           
-          const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS);
+          const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS) || row.date || row.game_date;
           let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
-          if (!normD && fileName) normD = parseAnyDate(fileName);
+          if (!normD && (row.file_name || row.filename || fileName)) {
+            normD = parseAnyDate(row.file_name || row.filename || fileName);
+          }
           if (normD) {
             row.date = normD;
             row.game_date = normD;
@@ -809,6 +812,21 @@ function App() {
       } else {
         newFiles = newFiles.filter(f => f.id !== payload);
       }
+    } else if (action === 'update_file_date') {
+      const { index, date } = payload;
+      if (newFiles[index]) {
+        const normD = parseAnyDate(date);
+        const updatedData = (newFiles[index].data || []).map(r => ({
+          ...r,
+          date: normD,
+          game_date: normD
+        }));
+        newFiles[index] = {
+          ...newFiles[index],
+          data: updatedData,
+          date: normD
+        };
+      }
     }
 
     setter(newFiles);
@@ -840,9 +858,11 @@ function App() {
           });
 
           // Normalize Date & backfill from filename if missing
-          const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS);
+          const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS) || row.date || row.game_date;
           let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
-          if (!normD && f.filename) normD = parseAnyDate(f.filename);
+          if (!normD && (row.file_name || row.filename || f?.filename)) {
+            normD = parseAnyDate(row.file_name || row.filename || f?.filename);
+          }
           if (normD) {
             row.date = normD;
             row.game_date = normD;
@@ -902,7 +922,7 @@ function App() {
       case 'upload':   return <UploadPage {...uploadProps} />;
       case 'team':     return <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
       case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} />;
-      case 'pitcher':  return <PitcherAnalysis savantData={savantPitchingData || savantData} blastData={blastData} combinedData={combinedData} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
+      case 'pitcher':  return SHOW_PITCHER_MODULE ? <PitcherAnalysis savantData={savantPitchingData || savantData} blastData={blastData} combinedData={combinedData} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} /> : <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
       case 'game':     return <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'custom':   return <CustomCharts savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'cloud':    return <CloudDataManager updateDataState={updateDataState} profile={profile} syncState={syncState} fetchFromCloud={fetchFromCloud} />;
