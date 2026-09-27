@@ -529,7 +529,7 @@ function App() {
 
             if (targetColumns.includes('file_name')) rowPayload.file_name = dataObj.filename;
             if (targetColumns.includes('upload_id')) rowPayload.upload_id = uploadId;
-            if (targetColumns.includes('team_name')) rowPayload.team_name = finalRow.team_name || uploaderEmail;
+            if (targetColumns.includes('team_name')) rowPayload.team_name = finalRow.team_name || null;
             if (targetColumns.includes('team_id') && validTeamId) rowPayload.team_id = validTeamId;
             if (targetColumns.includes('owner_id') && validOwnerId) rowPayload.owner_id = validOwnerId;
             if (targetColumns.includes('updated_at')) rowPayload.updated_at = new Date().toISOString();

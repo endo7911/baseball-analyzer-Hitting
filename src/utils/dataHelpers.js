@@ -368,6 +368,8 @@ export const groupEventsByTeamAndPlayer = (data, teamKey = 'team_name', nameKey 
     }
     tName = tName.toString().trim();
     if (tName === '' || tName === 'null' || tName === 'undefined') tName = 'Unknown Team';
+    // メールアドレスがチーム名に誤保存されていた場合は Unknown Team 扱い
+    if (tName.includes('@') && tName.includes('.')) tName = 'Unknown Team';
     
     // Determine Player Name with robust fallback
     let pName = row[nameKey];
