@@ -326,6 +326,8 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
 
   const [hitsOnly, setHitsOnly] = useState(false);
   const [laRange, setLaRange] = useState([-90, 90]);
+  const [listStartDate, setListStartDate] = useState('');
+  const [listEndDate, setListEndDate] = useState('');
   const [groupedData, setGroupedData] = useState({});
   const [activePlayers, setActivePlayers] = useState([]);
 
@@ -384,7 +386,21 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
         const la = getDataValue(e, LA_KEYS);
         const passHits = hitsOnly ? isHitEvent : true;
         const passLa = !isNaN(la) ? (la >= laRange[0] && la <= laRange[1]) : true;
-        return passHits && passLa;
+
+        // Date filter
+        let passDate = true;
+        if (listStartDate || listEndDate) {
+          const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || '';
+          const dateStr = parseAnyDate(rawDate);
+          if (!dateStr) {
+            passDate = false;
+          } else {
+            if (listStartDate && dateStr < listStartDate) passDate = false;
+            if (listEndDate && dateStr > listEndDate) passDate = false;
+          }
+        }
+
+        return passHits && passLa && passDate;
       });
 
       if (filteredEvents.length === 0) return null;
@@ -403,7 +419,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
 
     list.sort((a, b) => (b.avgBatSpeed || 0) - (a.avgBatSpeed || 0));
     return list;
-  }, [selectedTeam, groupedData, hitsOnly, laRange]);
+  }, [selectedTeam, groupedData, hitsOnly, laRange, listStartDate, listEndDate]);
 
   const teamStats = useMemo(() => {
     if (!selectedTeam || !groupedData[selectedTeam] || statsList.length === 0) return null;
@@ -525,8 +541,43 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
           </div>
         </div>
 
-        {/* LA Range Filter (Added) */}
-        <div className="mt-8 pt-8 border-t border-blue-500/20">
+        {/* Filters: Date / LA Range / Hits */}
+        <div className="mt-8 pt-8 border-t border-blue-500/20 space-y-5">
+
+          {/* Date filter row */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="text-xs font-bold text-blue-300 uppercase tracking-widest whitespace-nowrap">📅 日付範囲:</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                type="date"
+                value={listStartDate}
+                onChange={e => setListStartDate(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-blue-500 w-[140px] sm:w-auto"
+              />
+              <span className="text-xs text-slate-500">〜</span>
+              <input
+                type="date"
+                value={listEndDate}
+                onChange={e => setListEndDate(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-blue-500 w-[140px] sm:w-auto"
+              />
+              {(listStartDate || listEndDate) && (
+                <button
+                  onClick={() => { setListStartDate(''); setListEndDate(''); }}
+                  className="text-[11px] text-blue-400 hover:text-blue-300 font-bold underline"
+                >
+                  全期間
+                </button>
+              )}
+            </div>
+            {(listStartDate || listEndDate) && (
+              <span className="text-[11px] text-amber-400 font-bold w-full sm:w-auto">
+                ※ {listStartDate || '最初'} 〜 {listEndDate || '最新'} のデータで集計
+              </span>
+            )}
+          </div>
+
+          {/* LA Range + Hits filter row */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex-1">
               <div className="flex items-center justify-between mb-4">

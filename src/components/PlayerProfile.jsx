@@ -152,10 +152,8 @@ const VelocityAngleChart = ({ data, xKeys, yKeys, xDomain = ['auto', 'auto'], yD
 };
 
 
-const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
+const PlayerTrendScatterChart = ({ savantEvents, blastEvents, startDate = '', endDate = '' }) => {
   const [metric, setMetric] = useState('ev');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
 
   const metricMeta = {
     ev: { label: '打球速度', unit: 'km/h', color: '#10b981', keys: EV_KEYS },
@@ -244,31 +242,6 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
 
         <div className="flex flex-wrap items-center gap-3 no-print">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-slate-400 font-bold whitespace-nowrap">範囲:</span>
-            <input 
-              type="date" 
-              value={startDate} 
-              onChange={e => setStartDate(e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-purple-500"
-            />
-            <span className="text-xs text-slate-500">~</span>
-            <input 
-              type="date" 
-              value={endDate} 
-              onChange={e => setEndDate(e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-purple-500"
-            />
-            {(startDate || endDate) && (
-              <button 
-                onClick={() => { setStartDate(''); setEndDate(''); }}
-                className="text-[11px] text-purple-400 hover:text-purple-300 font-bold underline cursor-pointer"
-              >
-                全期間
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
             <span className="text-[11px] text-slate-400 font-bold whitespace-nowrap">Y軸:</span>
             <select
               value={metric}
@@ -288,18 +261,6 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
         {trendData.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs p-4">
             <p className="font-bold text-slate-300 mb-2">選択された期間・指標のデータが見つかりません</p>
-            {(startDate || endDate) && (
-              <div className="flex flex-col items-center gap-2 mt-2 bg-slate-900/60 p-3 rounded-xl border border-purple-500/30">
-                <p className="text-xs text-amber-400 font-bold">※ 日付範囲（{startDate || '最初'} 〜 {endDate || '最新'}）によりデータが絞り込まれています</p>
-                <button 
-                  onClick={() => { setStartDate(''); setEndDate(''); }}
-                  className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-1.5 rounded-lg text-xs transition-all shadow-md cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  すべての期間のデータを表示する
-                </button>
-              </div>
-            )}
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
@@ -376,13 +337,29 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents }) => {
 
 // --- Main Component ---
 
-const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
-  const savantEvents = stats?.savantEvents || [];
-  const blastEvents = stats?.blastEvents || [];
+const PlayerProfile = ({ playerName, stats, isCombined = false, startDate = '', endDate = '' }) => {
+  const rawSavantEvents = stats?.savantEvents || [];
+  const rawBlastEvents = stats?.blastEvents || [];
   const [forceMode, setForceMode] = useState(null); 
   const [hitsOnly] = useState(false);
 
   const mode = forceMode || (isCombined ? 'classic' : 'pro');
+
+  // Apply date filter to both event sets
+  const applyDateFilter = (events) => {
+    if (!startDate && !endDate) return events;
+    return events.filter(e => {
+      const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || '';
+      const dateStr = parseAnyDate(rawDate);
+      if (!dateStr) return false;
+      if (startDate && dateStr < startDate) return false;
+      if (endDate && dateStr > endDate) return false;
+      return true;
+    });
+  };
+
+  const savantEvents = applyDateFilter(rawSavantEvents);
+  const blastEvents = applyDateFilter(rawBlastEvents);
 
   const filteredData = useMemo(() => {
     let data = savantEvents;
@@ -519,7 +496,7 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
         </div>
 
         {/* 日付推移散布図 */}
-        <PlayerTrendScatterChart savantEvents={savantEvents} blastEvents={blastEvents} />
+        <PlayerTrendScatterChart savantEvents={savantEvents} blastEvents={blastEvents} startDate={startDate} endDate={endDate} />
       </div>
     </div>
   );
@@ -574,7 +551,7 @@ const PlayerProfile = ({ playerName, stats, isCombined = false }) => {
         )}
 
         {/* 日付推移散布図 */}
-        <PlayerTrendScatterChart savantEvents={savantEvents} blastEvents={blastEvents} />
+        <PlayerTrendScatterChart savantEvents={savantEvents} blastEvents={blastEvents} startDate={startDate} endDate={endDate} />
       </div>
     </div>
   );

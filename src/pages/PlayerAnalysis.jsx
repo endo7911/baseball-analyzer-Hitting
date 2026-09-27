@@ -63,6 +63,8 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
   const [rawPlayerEvents, setRawPlayerEvents] = useState([]);
   const [nameKey, setNameKey] = useState('player_name');
   const [groupedData, setGroupedData] = useState({});
+  const [profileStartDate, setProfileStartDate] = useState('');
+  const [profileEndDate, setProfileEndDate] = useState('');
   const headers = useMemo(() => {
     const set = new Set(activeData?.headers || []);
     if (activeData?.data && activeData.data.length > 0) {
@@ -318,6 +320,40 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
             <span>CSVにチーム列が含まれていないため、自動的に全データをまとめて表示しています。</span>
           </div>
         )}
+
+        <div className="mt-6 pt-5 border-t border-blue-500/20">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="text-xs font-bold text-blue-300 uppercase tracking-widest whitespace-nowrap">📅 日付範囲:</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                type="date"
+                value={profileStartDate}
+                onChange={e => setProfileStartDate(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-blue-500 w-[140px] sm:w-auto"
+              />
+              <span className="text-xs text-slate-500">〜</span>
+              <input
+                type="date"
+                value={profileEndDate}
+                onChange={e => setProfileEndDate(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-blue-500 w-[140px] sm:w-auto"
+              />
+              {(profileStartDate || profileEndDate) && (
+                <button
+                  onClick={() => { setProfileStartDate(''); setProfileEndDate(''); }}
+                  className="text-[11px] text-blue-400 hover:text-blue-300 font-bold underline"
+                >
+                  全期間
+                </button>
+              )}
+            </div>
+            {(profileStartDate || profileEndDate) && (
+              <span className="text-[11px] text-amber-400 font-bold w-full sm:w-auto">
+                ※ {profileStartDate || '最初'} 〜 {profileEndDate || '最新'} のデータを表示中
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Selected Player Report Area */}
@@ -356,9 +392,9 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
           )}
 
           {SHOW_PITCHER_MODULE && analysisMode === 'pitching' ? (
-            <PitcherProfile pitcherName={selectedPlayer} events={rawPlayerEvents} />
+            <PitcherProfile pitcherName={selectedPlayer} events={rawPlayerEvents} startDate={profileStartDate} endDate={profileEndDate} />
           ) : (
-            <PlayerProfile playerName={selectedPlayer} stats={playerStats} isCombined={sourceType === 'combined'} />
+            <PlayerProfile playerName={selectedPlayer} stats={playerStats} isCombined={sourceType === 'combined'} startDate={profileStartDate} endDate={profileEndDate} />
           )}
         </div>
       ) : (
