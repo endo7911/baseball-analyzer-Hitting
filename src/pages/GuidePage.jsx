@@ -43,7 +43,7 @@ function GuidePage({ setActiveView }) {
         <div className="relative z-10 max-w-3xl space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-bold">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Baseball Analyzer 公式ガイド</span>
+            <span>Baseball Analyzer 公式ガイド (ver 1.0.1)</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
             アプリの使い方 & 機能ガイド
@@ -342,10 +342,13 @@ function GuidePage({ setActiveView }) {
                   <Sparkles className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-extrabold text-white">主な更新内容</h3>
+                  <h3 className="text-xl font-extrabold text-white">主な更新内容（ver 1.0.1）</h3>
                   <p className="text-xs text-slate-400">打撃分析機能・ソート順・クラウド同期画面の改善</p>
                 </div>
               </div>
+              <span className="px-3 py-1 bg-purple-600/20 border border-purple-500/40 text-purple-300 text-xs font-black rounded-full">
+                ver 1.0.1
+              </span>
             </div>
 
             <div className="space-y-4">
