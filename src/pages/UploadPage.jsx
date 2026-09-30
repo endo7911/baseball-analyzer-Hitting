@@ -218,15 +218,30 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
               分析を見る →
             </button>
             <button 
-              onClick={() => files.forEach(f => saveToCloud(typeLabel.toLowerCase(), f))}
+              onClick={async () => {
+                const fileType = typeLabel.toLowerCase().includes('pitching') ? 'savant_pitching' : (typeLabel.toLowerCase().includes('savant') ? 'savant' : (typeLabel.toLowerCase().includes('blast') ? 'blast' : 'combined'));
+                for (const f of [...files]) {
+                  await saveToCloud(fileType, f);
+                }
+              }}
               disabled={syncState.saving}
-              title="クラウドへ同期保存"
+              title="クラウドへ同期保存して枠をクリア"
               className={`flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                 syncState.saving ? 'bg-slate-700 text-slate-500 cursor-wait' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
               }`}
             >
               <Save className={`w-3.5 h-3.5 ${syncState.saving ? 'animate-pulse' : ''}`} />
               クラウド同期
+            </button>
+            <button 
+              onClick={() => {
+                const fileType = typeLabel.toLowerCase().includes('pitching') ? 'savant_pitching' : (typeLabel.toLowerCase().includes('savant') ? 'savant' : (typeLabel.toLowerCase().includes('blast') ? 'blast' : 'combined'));
+                updateDataState(fileType, null, 'clear');
+              }}
+              title="この枠の読み込みファイルをクリア"
+              className="px-2 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-rose-900/50 hover:text-rose-300 text-slate-400 border border-slate-700 transition-all"
+            >
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>

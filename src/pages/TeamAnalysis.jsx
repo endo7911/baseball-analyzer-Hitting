@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { extractTeams, extractPlayersByTeam, getPlayerStats, calculateAverages, calculateMax, groupEventsByTeamAndPlayer, parseNumeric, getDataValue, getRawDataValue, parseAnyDate, parseDateToTimestamp, EV_KEYS, BS_KEYS, LA_KEYS, AA_KEYS, DEFAULT_DATE_KEYS } from '../utils/dataHelpers';
 import { ScatterChart, Scatter, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, LabelList } from 'recharts';
-import { Users, TrendingUp, Zap, BarChart3, Eye, RefreshCw } from 'lucide-react';
+import { Users, TrendingUp, Zap, BarChart3, Eye, RefreshCw, Settings2 } from 'lucide-react';
 
 function TeamTrendScatterChart({ groupedData, selectedTeam }) {
   const [metric, setMetric] = useState('ev');
@@ -284,6 +284,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState('');
   const [nameKey, setNameKey] = useState('player_name');
+  const [showNameKeyConfig, setShowNameKeyConfig] = useState(false);
 
   const headers = useMemo(() => {
     const set = new Set(activeData?.headers || []);
@@ -342,6 +343,19 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
   const [rightXMax, setRightXMax] = useState('');
   const [rightYMin, setRightYMin] = useState('');
   const [rightYMax, setRightYMax] = useState('');
+
+  // Table sorting controls for Player Comparison Table
+  const [tableSortKey, setTableSortKey] = useState('avgExitVelo');
+  const [tableSortDir, setTableSortDir] = useState('desc');
+
+  const handleSort = (key) => {
+    if (tableSortKey === key) {
+      setTableSortDir(tableSortDir === 'desc' ? 'asc' : 'desc');
+    } else {
+      setTableSortKey(key);
+      setTableSortDir('desc');
+    }
+  };
 
   useEffect(() => {
     if (activeData && activeData.data && activeData.data.length > 0) {
@@ -443,6 +457,24 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
     };
   }, [selectedTeam, groupedData, statsList, activePlayers]);
 
+  const sortedPlayers = useMemo(() => {
+    if (!teamStats?.players) return [];
+    const list = [...teamStats.players];
+    list.sort((a, b) => {
+      let valA = a[tableSortKey];
+      let valB = b[tableSortKey];
+      if (valA === undefined || valA === null) valA = 0;
+      if (valB === undefined || valB === null) valB = 0;
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return tableSortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      const numA = Number(valA) || 0;
+      const numB = Number(valB) || 0;
+      return tableSortDir === 'asc' ? numA - numB : numB - numA;
+    });
+    return list;
+  }, [teamStats, tableSortKey, tableSortDir]);
+
   // Generate colors for scatter plot points
   const COLORS = [
     '#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', 
@@ -458,33 +490,89 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
         <p className="text-slate-400">打撃データ全体の傾向や、選手同士の打撃比較を行います。</p>
       </header>
 
-      <div className="bg-blue-900/10 border-2 border-blue-500/30 p-8 rounded-3xl mb-10 shadow-2xl backdrop-blur-sm">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
-          <div>
-            <label className="block text-sm font-bold text-emerald-400 mb-2 uppercase tracking-widest">
-              0. 分析に使用するデータ
-            </label>
+      {/* Unified Analysis Settings Card */}
+      <div className="bg-blue-900/10 border-2 border-blue-500/30 p-8 rounded-3xl mb-10 shadow-2xl backdrop-blur-sm print:hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center text-blue-300">
+            <Settings2 className="w-6 h-6 mr-2 text-blue-400" />
+            <h3 className="text-xl font-bold text-white">打撃分析 設定</h3>
+          </div>
+          <div className="flex items-center gap-2 bg-slate-900/80 px-3.5 py-1.5 rounded-full border border-blue-500/30">
+            <span className="text-xs font-bold text-blue-300">対象データ:</span>
             <select
               value={sourceType}
               onChange={(e) => setSourceType(e.target.value)}
-              className="w-full bg-slate-900 border-2 border-emerald-500/20 text-white rounded-xl p-4 focus:ring-4 focus:ring-emerald-500/20 outline-none transition-all font-bold"
+              className="bg-slate-900 text-white text-xs font-bold rounded-lg px-2 py-1 outline-none border border-slate-700"
             >
-              <option value="savant">Rapsodo Data</option>
+              <option value="savant">Rapsodo 打撃データ</option>
               <option value="blast">Blast Data</option>
               <option value="combined">Combined Data</option>
             </select>
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* 1. チーム選択 */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-bold text-blue-400 uppercase tracking-widest">
+                1. チーム選択
+              </label>
+              <button 
+                onClick={() => setShowNameKeyConfig(!showNameKeyConfig)} 
+                className="text-[11px] text-slate-500 hover:text-blue-400 transition-colors cursor-pointer"
+              >
+                ⚙️ {showNameKeyConfig ? '名前列設定を閉じる' : '名前の列を変更'}
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mb-3">分析対象のチームを選択してください</p>
+            <select
+              value={selectedTeam}
+              onChange={(e) => setSelectedTeam(e.target.value)}
+              className="w-full bg-slate-900 border-2 border-blue-500/20 hover:border-blue-500/50 text-white rounded-xl p-4 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all font-bold text-lg"
+            >
+              <option value="">-- チームを選択 --</option>
+              {teams.map((team, idx) => (
+                <option key={idx} value={team}>{team}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* 2. 表示選択 */}
           <div>
             <label className="block text-sm font-bold text-blue-400 mb-2 uppercase tracking-widest">
-              1. 名前として使用する列
+              2. スイングフィルター
             </label>
-            <p className="text-xs text-slate-500 mb-3">※野手分析時はID（batter等）を選択してください</p>
+            <p className="text-xs text-slate-500 mb-3">全スイング / 安打打球の切り替え</p>
+            <div className="flex bg-slate-900 p-1.5 rounded-xl border-2 border-blue-500/20 h-[58px] items-center">
+              <button 
+                onClick={() => setHitsOnly(false)}
+                className={`flex-1 h-full rounded-lg text-xs font-bold transition-all ${!hitsOnly ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+              >
+                全スイング
+              </button>
+              <button 
+                onClick={() => setHitsOnly(true)}
+                className={`flex-1 h-full rounded-lg text-xs font-bold transition-all ${hitsOnly ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+              >
+                安打のみ
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Collapsible Name Key Advanced Config */}
+        {showNameKeyConfig && (
+          <div className="mt-4 p-4 bg-slate-900/80 border border-blue-500/30 rounded-2xl animate-in fade-in duration-200">
+            <label className="block text-xs font-bold text-blue-300 mb-1">
+              名前として使用する列 (アドバンスド設定)
+            </label>
+            <p className="text-[11px] text-slate-500 mb-2">※野手分析時にID（batter等）や別名列を使用する場合は変更してください</p>
             <select
               value={nameKey}
               onChange={(e) => setNameKey(e.target.value)}
-              className="w-full bg-slate-900 border-2 border-blue-500/20 hover:border-blue-500/50 text-white rounded-xl p-4 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all font-bold text-lg"
+              className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg p-2.5 text-sm font-bold"
             >
-              {/* 名前として有効な列のみ表示 */}
               {['Player Name', 'player_name', 'PlayerName', '選手名', '氏名', 'batter_name', 'pitcher_name', 'batter', 'pitcher']
                 .filter(h => headers.includes(h))
                 .map((h, idx) => {
@@ -503,43 +591,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                 })}
             </select>
           </div>
-
-          <div>
-            <label className="block text-sm font-bold text-slate-400 mb-2 uppercase tracking-widest">
-              2. 対象チーム
-            </label>
-            <p className="text-xs text-slate-500 mb-3 invisible">spacer</p>
-            <select
-              value={selectedTeam}
-              onChange={(e) => setSelectedTeam(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 hover:border-slate-500 text-white rounded-xl p-4 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all text-lg"
-            >
-              <option value="">-- チームを選択 --</option>
-              {teams.map((team, idx) => (
-                <option key={idx} value={team}>{team}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-400 mb-2 uppercase tracking-widest">
-              3. 表示設定
-            </label>
-            <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-700 h-[60px] items-center px-4">
-              <button 
-                onClick={() => setHitsOnly(false)}
-                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${!hitsOnly ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
-              >
-                全スイング
-              </button>
-              <button 
-                onClick={() => setHitsOnly(true)}
-                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${hitsOnly ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
-              >
-                安打のみ
-              </button>
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* Filters: Date / LA Range / Hits */}
         <div className="mt-8 pt-8 border-t border-blue-500/20 space-y-5">
@@ -686,30 +738,83 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
 
           {/* 選手比較テーブル (全幅表示) */}
           <div className="w-full bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-xl mb-8">
-            <div className="p-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between">
+            <div className="p-4 bg-slate-900 border-b border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center">
                 <TrendingUp className="w-5 h-5 text-blue-400 mr-2" />
                 <h3 className="font-bold text-white">選手比較テーブル</h3>
+                <span className="ml-3 text-xs text-slate-400">全 {teamStats.players.length} 名</span>
               </div>
-              <span className="text-xs text-slate-400">全 {teamStats.players.length} 名</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-bold whitespace-nowrap">並び替え:</span>
+                <select
+                  value={`${tableSortKey}_${tableSortDir}`}
+                  onChange={(e) => {
+                    const [key, dir] = e.target.value.split('_');
+                    setTableSortKey(key);
+                    setTableSortDir(dir);
+                  }}
+                  className="bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value="avgExitVelo_desc">平均打球速度 (高い順)</option>
+                  <option value="maxExitVelo_desc">最大打球速度 (高い順)</option>
+                  <option value="avgBatSpeed_desc">平均バット速度 (高い順)</option>
+                  <option value="maxBatSpeed_desc">最大バット速度 (高い順)</option>
+                  <option value="avgAttackAngle_desc">アッパースイング度 (高い順)</option>
+                  <option value="avgLaunchAngle_desc">平均打球角度 (高い順)</option>
+                  <option value="swings_desc">スイング数 (多い順)</option>
+                  <option value="player_asc">選手名 (50音・アルファベット順)</option>
+                </select>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left text-slate-300">
-                <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
+                <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700 select-none">
                   <tr>
-                    <th className="px-5 py-3.5">選手名</th>
-                    <th className="px-5 py-3.5">スイング数</th>
-                    {hasBatData && <th className="px-5 py-3.5 text-blue-400 font-bold">平均バットスピード</th>}
-                    {hasBatData && <th className="px-5 py-3.5 text-blue-300 font-bold">最大バットスピード</th>}
-                    {hasAttackAngle && <th className="px-5 py-3.5 text-green-400 font-bold">平均アッパー度</th>}
-                    {hasBallData && <th className="px-5 py-3.5 text-emerald-400 font-bold">平均打球速度</th>}
-                    {hasBallData && <th className="px-5 py-3.5 text-emerald-300 font-bold">最大打球速度</th>}
-                    <th className="px-5 py-3.5 text-purple-400 font-bold">平均打球角度</th>
+                    <th onClick={() => handleSort('player')} className="px-5 py-3.5 cursor-pointer hover:text-white transition-colors">
+                      選手名 {tableSortKey === 'player' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
+                    </th>
+                    <th onClick={() => handleSort('swings')} className="px-5 py-3.5 cursor-pointer hover:text-white transition-colors">
+                      スイング数 {tableSortKey === 'swings' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
+                    </th>
+                    {hasBatData && (
+                      <th onClick={() => handleSort('avgBatSpeed')} className="px-5 py-3.5 text-blue-400 font-bold cursor-pointer hover:text-blue-300 transition-colors">
+                        平均バットスピード {tableSortKey === 'avgBatSpeed' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
+                        <span className="block text-[10px] text-slate-500 font-normal normal-case">km/h</span>
+                      </th>
+                    )}
+                    {hasBatData && (
+                      <th onClick={() => handleSort('maxBatSpeed')} className="px-5 py-3.5 text-blue-300 font-bold cursor-pointer hover:text-blue-200 transition-colors">
+                        最大バットスピード {tableSortKey === 'maxBatSpeed' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
+                        <span className="block text-[10px] text-slate-500 font-normal normal-case">km/h</span>
+                      </th>
+                    )}
+                    {hasAttackAngle && (
+                      <th onClick={() => handleSort('avgAttackAngle')} className="px-5 py-3.5 text-green-400 font-bold cursor-pointer hover:text-green-300 transition-colors">
+                        平均アッパー度 {tableSortKey === 'avgAttackAngle' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
+                        <span className="block text-[10px] text-slate-500 font-normal normal-case">°</span>
+                      </th>
+                    )}
+                    {hasBallData && (
+                      <th onClick={() => handleSort('avgExitVelo')} className="px-5 py-3.5 text-emerald-400 font-bold cursor-pointer hover:text-emerald-300 transition-colors">
+                        平均打球速度 {tableSortKey === 'avgExitVelo' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
+                        <span className="block text-[10px] text-slate-500 font-normal normal-case">km/h</span>
+                      </th>
+                    )}
+                    {hasBallData && (
+                      <th onClick={() => handleSort('maxExitVelo')} className="px-5 py-3.5 text-emerald-300 font-bold cursor-pointer hover:text-emerald-200 transition-colors">
+                        最大打球速度 {tableSortKey === 'maxExitVelo' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
+                        <span className="block text-[10px] text-slate-500 font-normal normal-case">km/h</span>
+                      </th>
+                    )}
+                    <th onClick={() => handleSort('avgLaunchAngle')} className="px-5 py-3.5 text-purple-400 font-bold cursor-pointer hover:text-purple-300 transition-colors">
+                      平均打球角度 {tableSortKey === 'avgLaunchAngle' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
+                      <span className="block text-[10px] text-slate-500 font-normal normal-case">°</span>
+                    </th>
                     <th className="px-5 py-3.5 text-right">詳細</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/60">
-                  {teamStats.players.map((p, i) => (
+                  {sortedPlayers.map((p, i) => (
                     <tr key={i} className="hover:bg-slate-700/40 transition-colors">
                       <td className="px-5 py-3.5 font-bold text-white text-base">{p.player}</td>
                       <td className="px-5 py-3.5 text-slate-400 font-mono">{p.swings} 回</td>
@@ -721,7 +826,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                       <td className="px-5 py-3.5 font-bold text-purple-300 text-base">{p.avgLaunchAngle.toFixed(1)}°</td>
                       <td className="px-5 py-3.5 text-right">
                         <button 
-                          onClick={() => onViewPlayer(p.player, selectedTeam, sourceType)}
+                          onClick={() => onViewPlayer(p.player, selectedTeam, sourceType === 'savant' ? 'rapsodo_batting' : sourceType)}
                           className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3.5 py-1.5 rounded-lg font-bold transition-all shadow-lg flex items-center ml-auto gap-1 cursor-pointer"
                         >
                           <BarChart3 className="w-3.5 h-3.5" />

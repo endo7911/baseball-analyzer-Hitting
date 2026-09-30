@@ -33,27 +33,51 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
   }, [savantData, savantPitchingData]);
 
   const defaultSource = useMemo(() => {
-    if (initialSource) return initialSource;
+    if (initialSource === 'savant') {
+      // Legacy: auto-detect which Rapsodo data exists
+      if (savantData?.data?.length > 0) return 'rapsodo_batting';
+      if (savantPitchingData?.data?.length > 0) return 'rapsodo_pitching';
+    }
+    if (initialSource && initialSource !== 'savant') return initialSource;
     if (combinedData?.data?.length > 0) return 'combined';
-    if (rapsodoMergedData?.data?.length > 0 || savantData?.data?.length > 0 || savantPitchingData?.data?.length > 0) return 'savant';
+    if (savantData?.data?.length > 0) return 'rapsodo_batting';
+    if (savantPitchingData?.data?.length > 0) return 'rapsodo_pitching';
     if (blastData?.data?.length > 0) return 'blast';
     return 'combined';
-  }, [initialSource, savantData, savantPitchingData, blastData, combinedData, rapsodoMergedData]);
+  }, [initialSource, savantData, savantPitchingData, blastData, combinedData]);
 
   const [sourceType, setSourceType] = useState(defaultSource);
   const [analysisMode, setAnalysisMode] = useState('hitting'); // 'hitting' | 'pitching'
 
   // Auto-switch sourceType if activeData is empty but another source has data
   useEffect(() => {
-    const active = sourceType === 'savant' ? (rapsodoMergedData || savantData || savantPitchingData) : sourceType === 'blast' ? blastData : combinedData;
+    const getActive = (t) => {
+      if (t === 'rapsodo_batting') return savantData?.data?.length ? savantData : combinedData;
+      if (t === 'rapsodo_pitching') return savantPitchingData;
+      if (t === 'blast') return blastData?.data?.length ? blastData : combinedData;
+      return combinedData?.data?.length ? combinedData : savantData;
+    };
+    const active = getActive(sourceType);
     if (!active?.data?.length) {
-      if (combinedData?.data?.length) setSourceType('combined');
-      else if (rapsodoMergedData?.data?.length || savantData?.data?.length || savantPitchingData?.data?.length) setSourceType('savant');
+      if (combinedData?.data?.length && analysisMode !== 'pitching') setSourceType('combined');
+      else if (savantData?.data?.length) setSourceType('rapsodo_batting');
+      else if (savantPitchingData?.data?.length) setSourceType('rapsodo_pitching');
       else if (blastData?.data?.length) setSourceType('blast');
     }
-  }, [savantData, savantPitchingData, blastData, combinedData, sourceType, rapsodoMergedData]);
+  }, [savantData, savantPitchingData, blastData, combinedData, sourceType, analysisMode]);
 
-  const activeData = sourceType === 'savant' ? (rapsodoMergedData || savantData || savantPitchingData) : sourceType === 'blast' ? blastData : combinedData;
+  const activeData = useMemo(() => {
+    if (analysisMode === 'pitching' || sourceType === 'rapsodo_pitching') {
+      return savantPitchingData?.data?.length ? savantPitchingData : (rapsodoMergedData || combinedData);
+    }
+    if (sourceType === 'rapsodo_batting') {
+      return savantData?.data?.length ? savantData : combinedData;
+    }
+    if (sourceType === 'blast') {
+      return blastData?.data?.length ? blastData : combinedData;
+    }
+    return combinedData?.data?.length ? combinedData : (savantData?.data?.length ? savantData : blastData);
+  }, [analysisMode, sourceType, savantData, savantPitchingData, blastData, combinedData, rapsodoMergedData]);
   
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState(initialTeam || '');
@@ -65,6 +89,7 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
   const [groupedData, setGroupedData] = useState({});
   const [profileStartDate, setProfileStartDate] = useState('');
   const [profileEndDate, setProfileEndDate] = useState('');
+  const [showNameKeyConfig, setShowNameKeyConfig] = useState(false);
   const headers = useMemo(() => {
     const set = new Set(activeData?.headers || []);
     if (activeData?.data && activeData.data.length > 0) {
@@ -148,9 +173,11 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
       let sEvents = [];
       let bEvents = [];
 
-      if (sourceType === 'savant') {
+      if (sourceType === 'savant' || sourceType === 'rapsodo_batting') {
         sEvents = events;
+        bEvents = [];
       } else if (sourceType === 'blast') {
+        sEvents = [];
         bEvents = events;
       } else {
         events.forEach(e => {
@@ -242,23 +269,80 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
             <Settings2 className="w-6 h-6 mr-2" />
             <h3 className="text-xl font-bold">分析設定</h3>
           </div>
-          <div className="bg-slate-900/50 p-1 rounded-2xl border border-blue-500/20 flex self-start md:self-center">
-            <button onClick={() => setSourceType('combined')} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${sourceType === 'combined' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>統合データ</button>
-            <button onClick={() => setSourceType('savant')} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${sourceType === 'savant' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Rapsodo</button>
-            <button onClick={() => setSourceType('blast')} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${sourceType === 'blast' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Blast</button>
+          <div className="bg-slate-900/50 p-1 rounded-2xl border border-blue-500/20 flex flex-wrap self-start md:self-center gap-0.5">
+            {combinedData?.data?.length > 0 && (
+              <button onClick={() => { setSourceType('combined'); setAnalysisMode('hitting'); }} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${analysisMode === 'hitting' && sourceType === 'combined' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>統合データ</button>
+            )}
+            {(savantData?.data?.length > 0 || combinedData?.data?.length > 0) && (
+              <button onClick={() => { setSourceType('rapsodo_batting'); setAnalysisMode('hitting'); }} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${analysisMode === 'hitting' && sourceType === 'rapsodo_batting' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>Rapsodo 打撃</button>
+            )}
+            {(blastData?.data?.length > 0 || combinedData?.data?.length > 0) && (
+              <button onClick={() => { setSourceType('blast'); setAnalysisMode('hitting'); }} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${analysisMode === 'hitting' && sourceType === 'blast' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>Blast</button>
+            )}
+            {savantPitchingData?.data?.length > 0 && (
+              <button onClick={() => { setSourceType('rapsodo_pitching'); setAnalysisMode('pitching'); }} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${analysisMode === 'pitching' ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>Rapsodo 投手</button>
+            )}
           </div>
         </div>
         
-        <div className={`grid grid-cols-1 ${teams.length === 1 && teams[0] === 'Unknown Team' ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-8`}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-bold text-blue-400 uppercase tracking-widest">
+                1. チーム選択
+              </label>
+              <button 
+                onClick={() => setShowNameKeyConfig(!showNameKeyConfig)} 
+                className="text-[11px] text-slate-500 hover:text-blue-400 transition-colors cursor-pointer"
+              >
+                ⚙️ {showNameKeyConfig ? '名前列設定を閉じる' : '名前の列を変更'}
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mb-3">分析対象のチームを選択してください</p>
+            <select
+              value={selectedTeam}
+              onChange={(e) => setSelectedTeam(e.target.value)}
+              className="w-full bg-slate-900 border-2 border-blue-500/20 hover:border-blue-500/50 text-white rounded-xl p-4 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all font-bold text-lg"
+            >
+              {teams.length === 0 || (teams.length === 1 && teams[0] === 'Unknown Team') ? (
+                <option value="Unknown Team">全チーム (チーム指定なし)</option>
+              ) : (
+                teams.map((team, idx) => (
+                  <option key={idx} value={team}>{team}</option>
+                ))
+              )}
+            </select>
+          </div>
+
           <div>
             <label className="block text-sm font-bold text-blue-400 mb-2 uppercase tracking-widest">
-              1. 名前として使用する列
+              2. 選手選択
             </label>
-            <p className="text-xs text-slate-500 mb-3">※「Player Name」や「選手名」が自動選択されます</p>
+            <p className="text-xs text-slate-500 mb-3">分析する選手を選択してください</p>
+            <select
+              value={selectedPlayer}
+              onChange={(e) => setSelectedPlayer(e.target.value)}
+              disabled={!selectedTeam || players.length === 0}
+              className="w-full bg-slate-900 border-2 border-blue-500/20 hover:border-blue-500/50 text-white rounded-xl p-4 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all text-lg disabled:opacity-30 disabled:cursor-not-allowed font-bold"
+            >
+              {players.map((player, idx) => (
+                <option key={idx} value={player}>{player}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Collapsible Name Key Advanced Config */}
+        {showNameKeyConfig && (
+          <div className="mt-4 p-4 bg-slate-900/80 border border-blue-500/30 rounded-2xl animate-in fade-in duration-200">
+            <label className="block text-xs font-bold text-blue-300 mb-1">
+              名前として使用する列 (アドバンスド設定)
+            </label>
+            <p className="text-[11px] text-slate-500 mb-2">※CSV内の選手名が正しく認識されない場合は列を変更してください</p>
             <select
               value={nameKey}
               onChange={(e) => setNameKey(e.target.value)}
-              className="w-full bg-slate-900 border-2 border-blue-500/20 hover:border-blue-500/50 text-white rounded-xl p-4 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all font-bold text-lg"
+              className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg p-2.5 text-sm font-bold"
             >
               {nameHeaderOptions.map((h, idx) => {
                 const labels = {
@@ -277,47 +361,12 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
               })}
             </select>
           </div>
-
-          {teams.length > 1 || teams[0] !== 'Unknown Team' ? (
-            <div>
-              <label className="block text-sm font-bold text-blue-400 mb-2 uppercase tracking-widest">
-                2. チーム選択
-              </label>
-              <p className="text-xs text-slate-500 mb-3">分析対象のチームを選択してください</p>
-              <select
-                value={selectedTeam}
-                onChange={(e) => setSelectedTeam(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 hover:border-slate-500 text-white rounded-xl p-4 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all font-bold text-lg"
-              >
-                {teams.map((team, idx) => (
-                  <option key={idx} value={team}>{team}</option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-
-          <div>
-            <label className="block text-sm font-bold text-blue-400 mb-2 uppercase tracking-widest">
-              {teams.length === 1 && teams[0] === 'Unknown Team' ? '2. 選手選択' : '3. 選手選択'}
-            </label>
-            <p className="text-xs text-slate-500 mb-3">分析する選手を選択してください</p>
-            <select
-              value={selectedPlayer}
-              onChange={(e) => setSelectedPlayer(e.target.value)}
-              disabled={!selectedTeam || players.length === 0}
-              className="w-full bg-slate-900 border border-slate-700 hover:border-slate-500 text-white rounded-xl p-4 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all text-lg disabled:opacity-30 disabled:cursor-not-allowed font-bold"
-            >
-              {players.map((player, idx) => (
-                <option key={idx} value={player}>{player}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+        )}
 
         {teams.length === 1 && teams[0] === 'Unknown Team' && (
           <div className="mt-4 pt-3 border-t border-blue-500/20 flex items-center gap-2 text-xs text-slate-400">
             <Info className="w-4 h-4 text-blue-400 flex-shrink-0" />
-            <span>CSVにチーム列が含まれていないため、自動的に全データをまとめて表示しています。</span>
+            <span>※CSVにチーム列が含まれていないため「全チーム (チーム指定なし)」として表示しています。</span>
           </div>
         )}
 
@@ -359,42 +408,10 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
       {/* Selected Player Report Area */}
       {selectedPlayer && rawPlayerEvents.length > 0 ? (
         <div className="space-y-6">
-          {/* Mode Switcher: Rendered ONLY if SHOW_PITCHER_MODULE is true AND player has BOTH hitting and pitching data! */}
-          {SHOW_PITCHER_MODULE && playerCapabilities.isDual && (
-            <div className="flex items-center justify-between bg-slate-900/80 border border-blue-500/30 p-4 rounded-2xl print:hidden">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">二刀流選手データ検出:</span>
-                <span className="text-xs text-slate-300 font-semibold">投打両方の測定データが存在します。表示するレポートを選択してください</span>
-              </div>
-              <div className="bg-slate-950 p-1 rounded-xl border border-slate-800 flex items-center">
-                <button
-                  onClick={() => setAnalysisMode('hitting')}
-                  className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 transition-all ${
-                    analysisMode === 'hitting'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Activity className="w-3.5 h-3.5" /> 打撃レポート
-                </button>
-                <button
-                  onClick={() => setAnalysisMode('pitching')}
-                  className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 transition-all ${
-                    analysisMode === 'pitching'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Target className="w-3.5 h-3.5" /> 投手レポート
-                </button>
-              </div>
-            </div>
-          )}
-
           {SHOW_PITCHER_MODULE && analysisMode === 'pitching' ? (
             <PitcherProfile pitcherName={selectedPlayer} events={rawPlayerEvents} startDate={profileStartDate} endDate={profileEndDate} />
           ) : (
-            <PlayerProfile playerName={selectedPlayer} stats={playerStats} isCombined={sourceType === 'combined'} startDate={profileStartDate} endDate={profileEndDate} />
+            <PlayerProfile playerName={selectedPlayer} stats={playerStats} isCombined={sourceType === 'combined'} sourceType={sourceType} startDate={profileStartDate} endDate={profileEndDate} />
           )}
         </div>
       ) : (

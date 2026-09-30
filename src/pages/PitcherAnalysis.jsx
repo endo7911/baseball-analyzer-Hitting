@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ReferenceLine 
+  ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ReferenceLine,
+  ComposedChart, Line, Bar, Legend
 } from 'recharts';
 import { 
   groupEventsByTeamAndPlayer, 
-  getDataValue, 
+  getDataValue,
+  getRawDataValue,
+  parseAnyDate,
+  DEFAULT_DATE_KEYS,
   getPitcherHand,
   getSpinDirectionClock,
   PITCH_VELO_KEYS, 
@@ -16,7 +20,7 @@ import {
   RELEASE_HEIGHT_KEYS, 
   RELEASE_SIDE_KEYS 
 } from '../utils/dataHelpers';
-import { Target, Users, Settings2, Info, Move, Crosshair, Table, Activity, Zap, Layers, Hash, ChevronRight } from 'lucide-react';
+import { Target, Users, Settings2, Info, Move, Crosshair, Table, Activity, Zap, Layers, Hash, ChevronRight, Calendar } from 'lucide-react';
 
 const COLOR_MAP = {
   "4-Seam Fastball": "#ef4444",
@@ -70,22 +74,23 @@ const getPitchName = (row) => {
 };
 
 function PitcherAnalysis({ savantData, blastData, combinedData, initialTeam, initialSource, onViewPlayer }) {
-  const defaultSource = useMemo(() => {
-    if (initialSource) return initialSource;
-    if (savantData?.data?.length > 0) return 'savant';
-    if (combinedData?.data?.length > 0) return 'combined';
-    if (blastData?.data?.length > 0) return 'blast';
-    return 'savant';
-  }, [initialSource, savantData, blastData, combinedData]);
-
-  const [sourceType, setSourceType] = useState(defaultSource);
-  const activeData = sourceType === 'savant' ? savantData : sourceType === 'blast' ? blastData : combinedData;
+  // PitcherAnalysis uses only savantData (投手専用CSV). combinedData/blastData are not used.
+  const activeData = savantData;
 
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState(initialTeam || '');
   const [nameKey, setNameKey] = useState('pitcher_name');
   const [groupedData, setGroupedData] = useState({});
   const [handFilter, setHandFilter] = useState('ALL'); // 'ALL' | 'R' | 'L'
+  const [teamDateTrendMetric, setTeamDateTrendMetric] = useState('fb_velo');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [showNameKeyConfig, setShowNameKeyConfig] = useState(false);
+
+  // Pitcher Overlay Comparison State
+  const [pitcherA, setPitcherA] = useState('');
+  const [pitcherB, setPitcherB] = useState('');
+  const [comparePitchType, setComparePitchType] = useState('ALL');
   const headers = useMemo(() => {
     const set = new Set(activeData?.headers || []);
     if (activeData?.data && activeData.data.length > 0) {
@@ -97,8 +102,22 @@ function PitcherAnalysis({ savantData, blastData, combinedData, initialTeam, ini
     return Array.from(set);
   }, [activeData]);
 
+  // Filter activeData by date range
+  const filteredActiveData = useMemo(() => {
+    if (!activeData?.data) return [];
+    if (!startDate && !endDate) return activeData.data;
+    return activeData.data.filter(e => {
+      const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || e.file_name || e.filename || '';
+      const dateStr = parseAnyDate(rawDate);
+      if (!dateStr) return false;
+      if (startDate && dateStr < startDate) return false;
+      if (endDate && dateStr > endDate) return false;
+      return true;
+    });
+  }, [activeData, startDate, endDate]);
+
   useEffect(() => {
-    if (activeData && activeData.data && activeData.data.length > 0) {
+    if (filteredActiveData && filteredActiveData.length > 0) {
       const teamCandidates = ['チーム名', 'チーム', 'Team', 'team_name', 'home_team', 'away_team', 'Unknown Team'];
       const teamKey = headers.find(h => teamCandidates.includes(h)) || 'Unknown Team';
 
@@ -126,7 +145,7 @@ function PitcherAnalysis({ savantData, blastData, combinedData, initialTeam, ini
         setNameKey(bestNameKey);
       }
 
-      const grouped = groupEventsByTeamAndPlayer(activeData.data, teamKey, bestNameKey);
+      const grouped = groupEventsByTeamAndPlayer(filteredActiveData, teamKey, bestNameKey);
       setGroupedData(grouped);
       const availableTeams = Object.keys(grouped).sort();
       setTeams(availableTeams);
@@ -139,7 +158,7 @@ function PitcherAnalysis({ savantData, blastData, combinedData, initialTeam, ini
         }
       }
     }
-  }, [activeData, nameKey, initialTeam, headers]);
+  }, [filteredActiveData, nameKey, initialTeam, headers]);
 
   // Aggregate statistics for each pitcher in the selected team
   const pitcherSummaries = useMemo(() => {
@@ -247,6 +266,71 @@ function PitcherAnalysis({ savantData, blastData, combinedData, initialTeam, ini
     return pitcherSummaries.filter(p => p.hand === handFilter);
   }, [pitcherSummaries, handFilter]);
 
+  // Default pitcher selections for comparison
+  useEffect(() => {
+    if (pitcherSummaries.length > 0) {
+      if (!pitcherA || !pitcherSummaries.some(p => p.name === pitcherA)) {
+        setPitcherA(pitcherSummaries[0].name);
+      }
+      if (!pitcherB || !pitcherSummaries.some(p => p.name === pitcherB)) {
+        setPitcherB(pitcherSummaries[1]?.name || pitcherSummaries[0].name);
+      }
+    }
+  }, [pitcherSummaries]);
+
+  // Pitcher Comparison Overlay Data
+  const comparisonData = useMemo(() => {
+    const summaryA = pitcherSummaries.find(p => p.name === pitcherA);
+    const summaryB = pitcherSummaries.find(p => p.name === pitcherB);
+
+    const getMovement = (summary, pitcherName, color) => {
+      if (!summary || !summary.events) return [];
+      return summary.events.filter(e => {
+        if (!e) return false;
+        if (comparePitchType !== 'ALL') {
+          const pt = (getDataValue(e, PITCH_TYPE_KEYS) || '').toLowerCase();
+          if (!pt.includes(comparePitchType.toLowerCase())) return false;
+        }
+        return true;
+      }).map(e => {
+        const vb = getDataValue(e, VB_TRAJ_KEYS);
+        const hb = getDataValue(e, HB_TRAJ_KEYS);
+        const velo = getDataValue(e, PITCH_VELO_KEYS);
+        const pitchType = getDataValue(e, PITCH_TYPE_KEYS) || 'Unknown';
+        return {
+          x: Number(hb.toFixed(1)),
+          y: Number(vb.toFixed(1)),
+          velo: velo > 0 ? velo.toFixed(1) : '-',
+          pitchType,
+          pitcherName,
+          color
+        };
+      }).filter(d => d.x !== 0 || d.y !== 0);
+    };
+
+    const getStats = (summary) => {
+      if (!summary) return null;
+      return {
+        count: summary.totalCount,
+        maxVelo: summary.maxVelo,
+        fbAvgVelo: summary.fbAvgVelo,
+        fbAvgSpin: summary.fbAvgSpin,
+        fbAvgSpinEff: summary.fbAvgEff,
+        fbAvgVb: summary.fbAvgVb,
+        fbAvgHb: summary.fbAvgHb,
+        avgReleaseZ: summary.avgReleaseZ,
+        avgReleaseX: summary.avgReleaseX,
+      };
+    };
+
+    return {
+      movementA: getMovement(summaryA, pitcherA || '投手A', '#38bdf8'),
+      movementB: getMovement(summaryB, pitcherB || '投手B', '#fb923c'),
+      statsA: getStats(summaryA),
+      statsB: getStats(summaryB),
+    };
+  }, [pitcherSummaries, pitcherA, pitcherB, comparePitchType]);
+
   // Combined events for filtered pitchers
   const filteredEvents = useMemo(() => {
     return filteredPitchers.flatMap(p => p.events);
@@ -350,6 +434,64 @@ function PitcherAnalysis({ savantData, blastData, combinedData, initialTeam, ini
     };
   }, [teamReleaseData]);
 
+  // Team Date Trend Data (aggregate all filteredPitchers events by date)
+  const teamDateTrendData = useMemo(() => {
+    if (filteredEvents.length === 0) return [];
+    const datesMap = {};
+
+    filteredEvents.forEach(row => {
+      const rawDate = getRawDataValue(row, DEFAULT_DATE_KEYS) || row.date || row.game_date || '';
+      const dateStr = parseAnyDate(rawDate);
+      if (!dateStr) return;
+
+      if (!datesMap[dateStr]) {
+        datesMap[dateStr] = {
+          date: dateStr,
+          fbVelos: [], allVelos: [], spins: [], effs: [],
+          vbs: [], hbs: [], releaseZs: [], releaseXs: [], count: 0
+        };
+      }
+      const item = datesMap[dateStr];
+      item.count++;
+      const pType = getPitchName(row);
+      const isFb = pType.toLowerCase().includes('ストレート') || pType.toLowerCase().includes('fastball') || pType.toLowerCase().includes('4-seam');
+      const velo = getDataValue(row, PITCH_VELO_KEYS);
+      const spin = getDataValue(row, SPIN_RATE_KEYS);
+      const eff = getDataValue(row, SPIN_EFFICIENCY_KEYS);
+      const vb = getDataValue(row, VB_TRAJ_KEYS);
+      const hb = getDataValue(row, HB_TRAJ_KEYS);
+      const rz = getDataValue(row, RELEASE_HEIGHT_KEYS);
+      const rx = getDataValue(row, RELEASE_SIDE_KEYS);
+
+      if (velo > 0) { item.allVelos.push(velo); if (isFb) item.fbVelos.push(velo); }
+      if (spin > 0) item.spins.push(spin);
+      if (eff > 0) item.effs.push(eff);
+      if (vb !== 0) item.vbs.push(vb);
+      if (hb !== 0) item.hbs.push(hb);
+      if (rz > 0) item.releaseZs.push(rz);
+      if (rx !== 0) item.releaseXs.push(rx);
+    });
+
+    return Object.keys(datesMap).sort().map(d => {
+      const item = datesMap[d];
+      const avg = arr => arr.length > 0 ? Number((arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1)) : null;
+      const max = arr => arr.length > 0 ? Number(Math.max(...arr).toFixed(1)) : null;
+      return {
+        date: d,
+        count: item.count,
+        fbAvg: avg(item.fbVelos),
+        fbMax: max(item.fbVelos),
+        allAvg: avg(item.allVelos),
+        spinAvg: item.spins.length > 0 ? Math.round(item.spins.reduce((a,b)=>a+b,0)/item.spins.length) : null,
+        effAvg: avg(item.effs),
+        vbAvg: avg(item.vbs),
+        hbAvg: avg(item.hbs),
+        releaseZAvg: item.releaseZs.length > 0 ? Number((item.releaseZs.reduce((a,b)=>a+b,0)/item.releaseZs.length).toFixed(2)) : null,
+        releaseXAvg: item.releaseXs.length > 0 ? Number((item.releaseXs.reduce((a,b)=>a+b,0)/item.releaseXs.length).toFixed(2)) : null,
+      };
+    });
+  }, [filteredEvents]);
+
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
       <header className="mb-6 print:hidden">
@@ -361,67 +503,146 @@ function PitcherAnalysis({ savantData, blastData, combinedData, initialTeam, ini
         </p>
       </header>
 
-      {/* Control Toolbar */}
-      <div className="bg-blue-900/10 border-2 border-blue-500/30 p-6 rounded-3xl shadow-2xl backdrop-blur-sm print:hidden">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="flex flex-wrap items-center gap-6">
-            <div>
-              <label className="block text-xs font-bold text-blue-400 mb-1.5 uppercase tracking-widest">
-                対象チーム
-              </label>
-              <select
-                value={selectedTeam}
-                onChange={(e) => setSelectedTeam(e.target.value)}
-                className="bg-slate-900 border border-slate-700 hover:border-slate-500 text-white rounded-xl px-4 py-2.5 text-base font-bold outline-none"
-              >
-                {teams.map((team, idx) => (
-                  <option key={idx} value={team}>{team}</option>
-                ))}
-              </select>
-            </div>
+      {/* No pitching data guard */}
+      {(!activeData || !activeData.data || activeData.data.length === 0) && (
+        <div className="bg-amber-950/30 border-2 border-amber-500/40 rounded-3xl p-8 text-center">
+          <div className="text-5xl mb-4">⚾</div>
+          <h3 className="text-xl font-bold text-amber-300 mb-2">投手専用データが読み込まれていません</h3>
+          <p className="text-slate-400 text-sm mb-4">
+            投手分析ページはRapsodo投球データ（投手専用CSV）のみを使用します。<br/>
+            打撃データや統合データは使用されません。
+          </p>
+          <p className="text-xs text-slate-500">
+            ▶ 「データ読み込み」ページ →「投手分析用データ」のCSVをアップロードしてください
+          </p>
+        </div>
+      )}
 
-            {/* Hand Filter Buttons */}
-            <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-widest">
-                投手左右フィルター
+      {/* Only show analysis when pitching data is loaded */}
+      {activeData && activeData.data && activeData.data.length > 0 && (
+        <>
+      {/* Unified Analysis Settings Card */}
+      <div className="bg-blue-900/10 border-2 border-blue-500/30 p-8 rounded-3xl mb-8 shadow-2xl backdrop-blur-sm print:hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center text-blue-300">
+            <Settings2 className="w-6 h-6 mr-2 text-blue-400" />
+            <h3 className="text-xl font-bold text-white">投手分析 設定</h3>
+          </div>
+          <div className="flex items-center gap-2 text-xs bg-slate-900/80 px-3.5 py-1.5 rounded-full border border-blue-500/30 text-blue-300 font-bold">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            使用データ: Rapsodo 投球データ ({filteredActiveData.length} 投球)
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* 1. チーム選択 */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-bold text-blue-400 uppercase tracking-widest">
+                1. チーム選択
               </label>
-              <div className="bg-slate-900 p-1 rounded-xl border border-slate-800 flex items-center gap-1">
-                <button
-                  onClick={() => setHandFilter('ALL')}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    handFilter === 'ALL'
-                      ? 'bg-blue-600 text-white shadow'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  全投手 ({teamKPIs.totalPitchers}名)
-                </button>
-                <button
-                  onClick={() => setHandFilter('R')}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
-                    handFilter === 'R'
-                      ? 'bg-blue-600 text-white shadow'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span className="w-2 h-2 rounded-full bg-blue-400"></span> 右投手 RHP ({teamKPIs.rhpCount}名)
-                </button>
-                <button
-                  onClick={() => setHandFilter('L')}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
-                    handFilter === 'L'
-                      ? 'bg-orange-600 text-white shadow'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span className="w-2 h-2 rounded-full bg-orange-400"></span> 左投手 LHP ({teamKPIs.lhpCount}名)
-                </button>
-              </div>
+              <button 
+                onClick={() => setShowNameKeyConfig(!showNameKeyConfig)} 
+                className="text-[11px] text-slate-500 hover:text-blue-400 transition-colors cursor-pointer"
+              >
+                ⚙️ {showNameKeyConfig ? '名前列設定を閉じる' : '名前の列を変更'}
+              </button>
             </div>
+            <p className="text-xs text-slate-500 mb-3">分析対象のチームを選択してください</p>
+            <select
+              value={selectedTeam}
+              onChange={(e) => setSelectedTeam(e.target.value)}
+              className="w-full bg-slate-900 border-2 border-blue-500/20 hover:border-blue-500/50 text-white rounded-xl p-4 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all font-bold text-lg"
+            >
+              {teams.length === 0 || (teams.length === 1 && teams[0] === 'Unknown Team') ? (
+                <option value="Unknown Team">全チーム (チーム指定なし)</option>
+              ) : (
+                teams.map((team, idx) => (
+                  <option key={idx} value={team}>{team}</option>
+                ))
+              )}
+            </select>
           </div>
 
-          <div className="text-right text-xs text-slate-400">
-            <span>データ件数: <strong className="text-white">{teamKPIs.totalPitches} 投球</strong></span>
+          {/* 2. 投手左右フィルター */}
+          <div>
+            <label className="block text-sm font-bold text-blue-400 mb-2 uppercase tracking-widest">
+              2. 投手左右フィルター
+            </label>
+            <p className="text-xs text-slate-500 mb-3">右投手 (RHP) / 左投手 (LHP) の絞り込み</p>
+            <div className="bg-slate-900 p-1.5 rounded-xl border-2 border-blue-500/20 flex items-center gap-2 h-[58px]">
+              <button
+                onClick={() => setHandFilter('ALL')}
+                className={`flex-1 h-full rounded-lg text-xs font-bold transition-all ${
+                  handFilter === 'ALL' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                全投手 ({teamKPIs.totalPitchers}名)
+              </button>
+              <button
+                onClick={() => setHandFilter('R')}
+                className={`flex-1 h-full rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all ${
+                  handFilter === 'R' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-blue-400"></span> 右投手 RHP ({teamKPIs.rhpCount}名)
+              </button>
+              <button
+                onClick={() => setHandFilter('L')}
+                className={`flex-1 h-full rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all ${
+                  handFilter === 'L' ? 'bg-orange-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-orange-400"></span> 左投手 LHP ({teamKPIs.lhpCount}名)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Collapsible Name Key Config */}
+        {showNameKeyConfig && (
+          <div className="mt-4 p-4 bg-slate-900/80 border border-blue-500/30 rounded-2xl animate-in fade-in duration-200">
+            <label className="block text-xs font-bold text-blue-300 mb-1">
+              名前として使用する列 (アドバンスド設定)
+            </label>
+            <p className="text-[11px] text-slate-500 mb-2">※CSV内の投手名が正しく認識されない場合は列を変更してください</p>
+            <select
+              value={nameKey}
+              onChange={(e) => setNameKey(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg p-2.5 text-sm font-bold"
+            >
+              {headers.map((h, idx) => (
+                <option key={idx} value={h}>{h}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Date Range Bar */}
+        <div className="mt-6 pt-5 border-t border-blue-500/20 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span className="text-xs font-bold text-blue-300 uppercase tracking-widest whitespace-nowrap">📅 日付範囲:</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs font-mono font-bold outline-none focus:border-blue-500"
+            />
+            <span className="text-slate-500 text-xs">～</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs font-mono font-bold outline-none focus:border-blue-500"
+            />
+            {(startDate || endDate) && (
+              <button
+                onClick={() => { setStartDate(''); setEndDate(''); }}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs transition-colors cursor-pointer"
+              >
+                クリア
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -484,14 +705,30 @@ function PitcherAnalysis({ savantData, blastData, combinedData, initialTeam, ini
                 <th className="py-3.5 px-3 print:py-1 print:px-1">投手名</th>
                 <th className="py-3.5 px-3 text-center print:py-1 print:px-1">左右</th>
                 <th className="py-3.5 px-3 text-right print:py-1 print:px-1">投球数</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">最速</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">FB平均</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">FB回転</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">FB効率</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">FB縦変化</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">FB横変化</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">リリース高度</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">リリース幅</th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">
+                  最速<br/><span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">km/h</span>
+                </th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">
+                  FB平均<br/><span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">km/h</span>
+                </th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">
+                  FB回転<br/><span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">rpm</span>
+                </th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">
+                  FB効率<br/><span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">%</span>
+                </th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">
+                  FB縦変化<br/><span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">cm</span>
+                </th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">
+                  FB横変化<br/><span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">cm</span>
+                </th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">
+                  リリース高度<br/><span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">m</span>
+                </th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">
+                  リリース幅<br/><span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">m</span>
+                </th>
                 <th className="py-3.5 px-3 print:py-1 print:px-1">球種割合</th>
                 <th className="py-3.5 px-3 text-center print:hidden">レポート</th>
               </tr>
@@ -519,7 +756,7 @@ function PitcherAnalysis({ savantData, blastData, combinedData, initialTeam, ini
                   <td className="py-4 px-3 text-xs text-slate-400 font-medium print:py-1 print:px-1 print:text-[7.5pt]">{p.topPitches}</td>
                   <td className="py-4 px-3 text-center print:hidden">
                     <button
-                      onClick={() => onViewPlayer && onViewPlayer(p.name, selectedTeam, sourceType)}
+                      onClick={() => onViewPlayer && onViewPlayer(p.name, selectedTeam, 'rapsodo_pitching')}
                       className="px-3 py-1.5 bg-blue-600/30 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/40 rounded-xl text-xs font-bold transition-all flex items-center gap-1 mx-auto shadow-sm whitespace-nowrap"
                     >
                       レポートへ <ChevronRight className="w-3.5 h-3.5" />
@@ -693,6 +930,239 @@ function PitcherAnalysis({ savantData, blastData, combinedData, initialTeam, ini
           </div>
         </div>
       </div>
+
+      {/* Team Date Trend Chart */}
+      <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-emerald-400" />
+            <h3 className="text-xl font-bold text-white">チーム投手陣 日付別推移グラフ</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-bold whitespace-nowrap">Y軸指標:</span>
+            <select
+              value={teamDateTrendMetric}
+              onChange={e => setTeamDateTrendMetric(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="fb_velo">ストレート球速 (平均 &amp; 最高)</option>
+              <option value="all_velo">全球種 平均球速 (km/h)</option>
+              <option value="spin_rate">平均回転数 (rpm)</option>
+              <option value="spin_eff">平均回転効率 (%)</option>
+              <option value="vb_traj">平均縦変化量 (trajectory)</option>
+              <option value="hb_traj">平均横変化量 (trajectory)</option>
+              <option value="release_z">平均リリース高度 (m)</option>
+              <option value="release_x">平均リリース幅 (m)</option>
+            </select>
+          </div>
+        </div>
+
+        {teamDateTrendData.length > 0 ? (
+          <div className="w-full h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={teamDateTrendData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                <XAxis dataKey="date" stroke="#94a3b8" fontSize={10} />
+                <YAxis stroke="#94a3b8" fontSize={10} domain={['auto', 'auto']} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '0.75rem' }}
+                  labelStyle={{ color: '#fff', fontWeight: 'bold' }}
+                />
+                <Legend />
+                <Bar dataKey="count" name="投球数" fill="#334155" opacity={0.6} radius={[4,4,0,0]} />
+
+                {teamDateTrendMetric === 'fb_velo' && (
+                  <>
+                    <Line type="monotone" dataKey="fbAvg" name="ストレート平均球速 (km/h)" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4, fill: '#10b981', stroke: '#fff' }} connectNulls />
+                    <Line type="monotone" dataKey="fbMax" name="ストレート最高球速 (km/h)" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 4, fill: '#f59e0b', stroke: '#fff' }} connectNulls />
+                  </>
+                )}
+                {teamDateTrendMetric === 'all_velo' && (
+                  <Line type="monotone" dataKey="allAvg" name="全球種 平均球速 (km/h)" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4, fill: '#3b82f6', stroke: '#fff' }} connectNulls />
+                )}
+                {teamDateTrendMetric === 'spin_rate' && (
+                  <Line type="monotone" dataKey="spinAvg" name="平均回転数 (rpm)" stroke="#a855f7" strokeWidth={2.5} dot={{ r: 4, fill: '#a855f7', stroke: '#fff' }} connectNulls />
+                )}
+                {teamDateTrendMetric === 'spin_eff' && (
+                  <Line type="monotone" dataKey="effAvg" name="平均回転効率 (%)" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4, fill: '#10b981', stroke: '#fff' }} connectNulls />
+                )}
+                {teamDateTrendMetric === 'vb_traj' && (
+                  <Line type="monotone" dataKey="vbAvg" name="平均縦変化量 (traj)" stroke="#06b6d4" strokeWidth={2.5} dot={{ r: 4, fill: '#06b6d4', stroke: '#fff' }} connectNulls />
+                )}
+                {teamDateTrendMetric === 'hb_traj' && (
+                  <Line type="monotone" dataKey="hbAvg" name="平均横変化量 (traj)" stroke="#f97316" strokeWidth={2.5} dot={{ r: 4, fill: '#f97316', stroke: '#fff' }} connectNulls />
+                )}
+                {teamDateTrendMetric === 'release_z' && (
+                  <Line type="monotone" dataKey="releaseZAvg" name="平均リリース高度 (m)" stroke="#a855f7" strokeWidth={2.5} dot={{ r: 4, fill: '#a855f7', stroke: '#fff' }} connectNulls />
+                )}
+                {teamDateTrendMetric === 'release_x' && (
+                  <Line type="monotone" dataKey="releaseXAvg" name="平均リリース幅 (m)" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4, fill: '#3b82f6', stroke: '#fff' }} connectNulls />
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="h-48 flex items-center justify-center text-slate-500 border border-dashed border-slate-800 rounded-2xl text-xs">
+            日付情報が含まれる投球データが存在しません
+          </div>
+        )}
+      </div>
+
+      {/* 2-Pitcher Overlay Comparison Section */}
+      {filteredPitchers.length > 0 && (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6 print:hidden">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div className="flex items-center gap-2">
+              <Users className="w-6 h-6 text-blue-400" />
+              <div>
+                <h3 className="text-xl font-bold text-white">⚔️ 投手パフォーマンス 重ね合わせ対比</h3>
+                <p className="text-xs text-slate-400">チーム内の2名の投手を選択して変化量や軌道、スタッツをダイレクトに比較できます</p>
+              </div>
+            </div>
+
+            {/* Pitcher Selectors */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Pitcher A */}
+              <div className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-xl border border-sky-500/40 shadow-sm">
+                <span className="w-3 h-3 rounded-full bg-sky-400 flex-shrink-0"></span>
+                <span className="text-xs font-bold text-sky-400">投手 A:</span>
+                <select
+                  value={pitcherA}
+                  onChange={e => setPitcherA(e.target.value)}
+                  className="bg-slate-900 text-white text-xs font-bold rounded-lg px-3 py-1.5 outline-none border border-slate-700"
+                >
+                  {filteredPitchers.map(p => (
+                    <option key={p.name} value={p.name}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <span className="text-slate-500 font-black text-sm">VS</span>
+
+              {/* Pitcher B */}
+              <div className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-xl border border-orange-500/40 shadow-sm">
+                <span className="w-3 h-3 rounded-full bg-orange-400 flex-shrink-0"></span>
+                <span className="text-xs font-bold text-orange-400">投手 B:</span>
+                <select
+                  value={pitcherB}
+                  onChange={e => setPitcherB(e.target.value)}
+                  className="bg-slate-900 text-white text-xs font-bold rounded-lg px-3 py-1.5 outline-none border border-slate-700"
+                >
+                  {filteredPitchers.map(p => (
+                    <option key={p.name} value={p.name}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Pitch Type Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-xs font-bold text-slate-400">球種:</span>
+                <select
+                  value={comparePitchType}
+                  onChange={e => setComparePitchType(e.target.value)}
+                  className="bg-slate-900 text-white text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none border border-slate-700"
+                >
+                  <option value="ALL">全球種</option>
+                  <option value="ストレート">ストレート / Fastball</option>
+                  <option value="スライダー">スライダー / Slider</option>
+                  <option value="カーブ">カーブ / Curveball</option>
+                  <option value="チェンジアップ">チェンジアップ / Changeup</option>
+                  <option value="カット">カッター / Cutter</option>
+                  <option value="フォーク">フォーク / Splitter</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Charts & Stats Comparison Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: Pitch Movement Overlay Scatter Plot */}
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
+              <div>
+                <h4 className="text-sm font-bold text-white mb-2 flex items-center justify-between">
+                  <span>🌀 変化量 重ね合わせ比較 (Hb vs Vb)</span>
+                  <span className="text-xs text-slate-500 font-normal">単位: cm</span>
+                </h4>
+                <div className="w-full aspect-square max-w-[420px] mx-auto relative bg-slate-950 border border-slate-800 rounded-xl p-3 flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart margin={{ top: 15, right: 30, bottom: 25, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
+                      <XAxis type="number" dataKey="x" name="HB" domain={[-70, 70]} ticks={[-70, -35, 0, 35, 70]} stroke="#94a3b8" fontSize={10} />
+                      <YAxis type="number" dataKey="y" name="VB" domain={[-70, 70]} ticks={[-70, -35, 0, 35, 70]} stroke="#94a3b8" fontSize={10} width={30} />
+                      <ReferenceLine x={0} stroke="#64748b" strokeWidth={1.5} />
+                      <ReferenceLine y={0} stroke="#64748b" strokeWidth={1.5} />
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const d = payload[0].payload;
+                            return (
+                              <div className="bg-slate-900 border border-slate-700 p-2.5 rounded-xl shadow-xl text-xs space-y-1 z-50">
+                                <p className="font-bold text-white" style={{ color: d.color }}>{d.pitcherName}</p>
+                                <p className="text-slate-300">球種: <strong>{d.pitchType}</strong> ({d.velo} km/h)</p>
+                                <p className="text-slate-400">縦変化: {d.y}cm / 横変化: {d.x}cm</p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Scatter name={pitcherA} data={comparisonData.movementA} fill="#38bdf8" fillOpacity={0.7} stroke="#ffffff" strokeWidth={0.5} />
+                      <Scatter name={pitcherB} data={comparisonData.movementB} fill="#fb923c" fillOpacity={0.7} stroke="#ffffff" strokeWidth={0.5} />
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="flex justify-center items-center gap-6 mt-3 text-xs font-bold">
+                <span className="flex items-center gap-1.5 text-sky-400"><span className="w-3 h-3 rounded-full bg-sky-400"></span> {pitcherA || '投手A'} ({comparisonData.movementA.length}球)</span>
+                <span className="flex items-center gap-1.5 text-orange-400"><span className="w-3 h-3 rounded-full bg-orange-400"></span> {pitcherB || '投手B'} ({comparisonData.movementB.length}球)</span>
+              </div>
+            </div>
+
+            {/* Right: Pitcher Stat Comparison Table */}
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
+              <div>
+                <h4 className="text-sm font-bold text-white mb-3">📊 スタッツ対比</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-900 border-b border-slate-800 text-slate-400 uppercase font-bold">
+                      <tr>
+                        <th className="py-2.5 px-3">指標</th>
+                        <th className="py-2.5 px-3 text-sky-400 text-right">{pitcherA || '投手A'}</th>
+                        <th className="py-2.5 px-3 text-orange-400 text-right">{pitcherB || '投手B'}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/80 font-mono">
+                      {[
+                        { label: '投球数', valA: comparisonData.statsA?.count || '-', valB: comparisonData.statsB?.count || '-', unit: '球' },
+                        { label: '最速球速', valA: comparisonData.statsA?.maxVelo || '-', valB: comparisonData.statsB?.maxVelo || '-', unit: 'km/h' },
+                        { label: 'FB平均球速', valA: comparisonData.statsA?.fbAvgVelo || '-', valB: comparisonData.statsB?.fbAvgVelo || '-', unit: 'km/h' },
+                        { label: 'FB平均回転数', valA: comparisonData.statsA?.fbAvgSpin || '-', valB: comparisonData.statsB?.fbAvgSpin || '-', unit: 'rpm' },
+                        { label: 'FB平均回転効率', valA: comparisonData.statsA?.fbAvgSpinEff || '-', valB: comparisonData.statsB?.fbAvgSpinEff || '-', unit: '%' },
+                        { label: 'FB平均縦変化', valA: comparisonData.statsA?.fbAvgVb || '-', valB: comparisonData.statsB?.fbAvgVb || '-', unit: 'cm' },
+                        { label: 'FB平均横変化', valA: comparisonData.statsA?.fbAvgHb || '-', valB: comparisonData.statsB?.fbAvgHb || '-', unit: 'cm' },
+                        { label: 'リリース高度', valA: comparisonData.statsA?.avgReleaseZ || '-', valB: comparisonData.statsB?.avgReleaseZ || '-', unit: 'm' },
+                        { label: 'リリース幅', valA: comparisonData.statsA?.avgReleaseX || '-', valB: comparisonData.statsB?.avgReleaseX || '-', unit: 'm' }
+                      ].map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-900/40">
+                          <td className="py-2.5 px-3 font-sans font-bold text-slate-300">{row.label}</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-sky-300">{row.valA} <span className="text-[10px] text-slate-500 font-normal">{row.unit}</span></td>
+                          <td className="py-2.5 px-3 text-right font-bold text-orange-300">{row.valB} <span className="text-[10px] text-slate-500 font-normal">{row.unit}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-500">
+                ※球種フィルターを変更すると、指定球種の散布図分布を比較できます。
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      </>
+      )}
     </div>
   );
 }

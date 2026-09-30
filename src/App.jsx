@@ -558,8 +558,12 @@ function App() {
         await insertRowsToTable('baseball_data', COMBINED_COLUMNS);
       }
       
-      alert(`「${dataObj.filename}」(${totalRows.toLocaleString()}件)をクラウドに保存しました！`);
+      alert(`「${dataObj.filename}」(${totalRows.toLocaleString()}件)のクラウド同期が完了しました！\n「データ読み込み」の枠をクリアしました。クラウド管理画面でいつでも閲覧・管理が可能です。`);
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Saved!' }));
+      
+      // Auto-fetch latest cloud files and remove the synced local file entry from local drop list
+      await fetchFromCloud();
+      await updateDataState(type, dataObj.id || dataObj.filename, 'remove');
     } catch (err) {
       console.warn("Cloud save unavailable, fallback to local storage:", err);
       const currentFiles = type === 'savant' ? savantFiles : (type === 'blast' ? blastFiles : (type === 'savant_pitching' ? savantPitchingFiles : combinedFiles));
@@ -810,8 +814,10 @@ function App() {
       if (typeof payload === 'number') {
         newFiles.splice(payload, 1);
       } else {
-        newFiles = newFiles.filter(f => f.id !== payload);
+        newFiles = newFiles.filter(f => f.id !== payload && f.filename !== payload);
       }
+    } else if (action === 'clear') {
+      newFiles = [];
     } else if (action === 'update_file_date') {
       const { index, date } = payload;
       if (newFiles[index]) {
@@ -922,7 +928,7 @@ function App() {
       case 'upload':   return <UploadPage {...uploadProps} />;
       case 'team':     return <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
       case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} />;
-      case 'pitcher':  return SHOW_PITCHER_MODULE ? <PitcherAnalysis savantData={savantPitchingData || savantData} blastData={blastData} combinedData={combinedData} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} /> : <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
+      case 'pitcher':  return SHOW_PITCHER_MODULE ? <PitcherAnalysis savantData={savantPitchingData} blastData={null} combinedData={null} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} /> : <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
       case 'game':     return <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'custom':   return <CustomCharts savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'cloud':    return <CloudDataManager updateDataState={updateDataState} profile={profile} syncState={syncState} fetchFromCloud={fetchFromCloud} />;

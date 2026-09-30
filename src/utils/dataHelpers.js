@@ -150,11 +150,11 @@ export const NAME_KEYS = ['player_name', 'Player Name', 'Player', 'PlayerName', 
 // Pitcher Specific Keys (Prioritizing trajectory for VB and HB as requested)
 export const VB_TRAJ_KEYS = ['VB (trajectory)', 'VB(trajectory)', 'vbreak_traj', 'traj_vb', 'VB', 'vbreak', 'VerticalBreak', '縦変化量', '縦変化量(cm)', 'iVB'];
 export const HB_TRAJ_KEYS = ['HB (trajectory)', 'HB(trajectory)', 'hbreak_traj', 'traj_hb', 'HB', 'hbreak', 'HorizontalBreak', '横変化量', '横変化量(cm)'];
-export const SPIN_RATE_KEYS = ['Spin Rate', 'SpinRate', 'spin_rate', 'release_spin_rate', '回転数', '回転数(rpm)', 'Spin'];
+export const SPIN_RATE_KEYS = ['Spin', 'Total Spin', 'Spin Rate', 'SpinRate', 'spin_rate', 'release_spin_rate', '回転数', '回転数(rpm)'];
 export const SPIN_AXIS_KEYS = ['Spin Direction', 'SpinDirection', 'spin_direction', 'Spin Axis', 'SpinAxis', 'spin_axis', '回転軸', '回転方向', 'Axis', 'True Spin Axis', '回転軸(時:分)'];
 export const SPIN_EFFICIENCY_KEYS = ['Spin Efficiency', 'SpinEfficiency', 'spin_efficiency', '回転効率', '回転効率(%)', 'Spin Efficiency (%)', 'True Spin %', 'Efficiency', 'EFF'];
 export const GYRO_ANGLE_KEYS = ['Gyro Angle', 'GyroAngle', 'gyro_angle', 'ジャイロ角度', 'ジャイロ角', 'Gyro Angle (deg)', 'Gyro'];
-export const VAA_KEYS = ['VAA', 'VerticalApproachAngle', 'vertical_approach_angle', 'VAA (deg)', '垂直アプローチ角度', '垂直アプローチ角', 'アプローチ角度'];
+export const VAA_KEYS = ['VAA', 'VerticalApproachAngle', 'vertical_approach_angle', 'VAA (deg)', 'Vertical Approach Angle', '垂直アプローチ角度', '垂直アプローチ角', 'アプローチ角度'];
 export const PITCH_TYPE_KEYS = ['Pitch Type', 'PitchType', 'pitch_type', 'pitch_name', '球種', 'Pitch', 'Type'];
 export const RELEASE_HEIGHT_KEYS = ['Release Height', 'ReleaseHeight', 'release_pos_z', 'リリース高度', 'リリース高', 'Release Height (m)', 'Release Height (ft)'];
 export const RELEASE_SIDE_KEYS = ['Release Side', 'ReleaseSide', 'release_pos_x', 'リリース横', 'リリース幅', 'Release Side (m)', 'Release Side (ft)'];

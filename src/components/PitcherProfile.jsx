@@ -106,17 +106,37 @@ const getPitchName = (row) => {
   return 'その他';
 };
 
-function PitcherProfile({ pitcherName, events = [] }) {
+function PitcherProfile({ pitcherName, events = [], startDate = '', endDate = '' }) {
   const [selectedPitchType, setSelectedPitchType] = useState('ALL');
   const [sortField, setSortField] = useState('id');
   const [sortAsc, setSortAsc] = useState(true);
   const [dateTrendMetric, setDateTrendMetric] = useState('fb_velo');
 
+  // Custom Axis Range State for Release Point Chart
+  const [releaseRangeMode, setReleaseRangeMode] = useState('auto'); // 'auto' | 'custom'
+  const [releaseCustomXMin, setReleaseCustomXMin] = useState(-1.0);
+  const [releaseCustomXMax, setReleaseCustomXMax] = useState(1.0);
+  const [releaseCustomYMin, setReleaseCustomYMin] = useState(1.0);
+  const [releaseCustomYMax, setReleaseCustomYMax] = useState(2.5);
+
+  // Apply date filter to events
+  const filteredEventsByDate = useMemo(() => {
+    if (!startDate && !endDate) return events;
+    return events.filter(e => {
+      const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || '';
+      const dateStr = parseAnyDate(rawDate);
+      if (!dateStr) return false;
+      if (startDate && dateStr < startDate) return false;
+      if (endDate && dateStr > endDate) return false;
+      return true;
+    });
+  }, [events, startDate, endDate]);
+
   // Parse metrics for each pitch event
   const parsedPitches = useMemo(() => {
-    if (!events || events.length === 0) return [];
+    if (!filteredEventsByDate || filteredEventsByDate.length === 0) return [];
 
-    return events.map((row, idx) => {
+    return filteredEventsByDate.map((row, idx) => {
       const pitchType = getPitchName(row);
       const velo = getDataValue(row, PITCH_VELO_KEYS);
       const spin = getDataValue(row, SPIN_RATE_KEYS);
@@ -155,7 +175,7 @@ function PitcherProfile({ pitcherName, events = [] }) {
         color: getPitchColor(pitchType)
       };
     });
-  }, [events]);
+  }, [filteredEventsByDate]);
 
   // Pitch Arsenal Breakdown (Grouped by Pitch Type and Sorted by PITCH_ORDER)
   const arsenalStats = useMemo(() => {
@@ -255,10 +275,10 @@ function PitcherProfile({ pitcherName, events = [] }) {
 
       if (primaryFbRow && item.name === primaryFbRow.name) {
         fbRatioNum = 100.0;
-        fbVeloRatio = '100.0%';
+        fbVeloRatio = '100.0';
       } else if (fbAvgVeloNum > 0 && item.numericAvgVelo > 0) {
         fbRatioNum = (item.numericAvgVelo / fbAvgVeloNum) * 100;
-        fbVeloRatio = fbRatioNum.toFixed(1) + '%';
+        fbVeloRatio = fbRatioNum.toFixed(1);
       }
 
       return {
@@ -316,10 +336,14 @@ function PitcherProfile({ pitcherName, events = [] }) {
           date: d,
           fbVelos: [],
           allVelos: [],
-          spins: [],
-          effs: [],
-          vbs: [],
-          hbs: [],
+          fbSpins: [],
+          allSpins: [],
+          fbEffs: [],
+          allEffs: [],
+          fbVbs: [],
+          allVbs: [],
+          fbHbs: [],
+          allHbs: [],
           releaseZs: [],
           releaseXs: [],
           count: 0
@@ -327,16 +351,29 @@ function PitcherProfile({ pitcherName, events = [] }) {
       }
       const item = datesMap[d];
       item.count++;
-      const isFb = p.pitchType.toLowerCase().includes('ストレート') || p.pitchType.toLowerCase().includes('fastball') || p.pitchType.toLowerCase().includes('4-seam');
+      const pTypeLower = (p.pitchType || '').toLowerCase();
+      const isFb = pTypeLower.includes('ストレート') || pTypeLower.includes('fastball') || pTypeLower.includes('4-seam') || pTypeLower.includes('クイックストレート') || pTypeLower.includes('ff');
       
       if (p.velo > 0) {
         item.allVelos.push(p.velo);
         if (isFb) item.fbVelos.push(p.velo);
       }
-      if (p.spin > 0) item.spins.push(p.spin);
-      if (p.spinEff > 0) item.effs.push(p.spinEff);
-      if (p.vbTraj !== 0) item.vbs.push(p.vbTraj);
-      if (p.hbTraj !== 0) item.hbs.push(p.hbTraj);
+      if (p.spin > 0) {
+        item.allSpins.push(p.spin);
+        if (isFb) item.fbSpins.push(p.spin);
+      }
+      if (p.spinEff > 0) {
+        item.allEffs.push(p.spinEff);
+        if (isFb) item.fbEffs.push(p.spinEff);
+      }
+      if (p.vbTraj !== 0) {
+        item.allVbs.push(p.vbTraj);
+        if (isFb) item.fbVbs.push(p.vbTraj);
+      }
+      if (p.hbTraj !== 0) {
+        item.allHbs.push(p.hbTraj);
+        if (isFb) item.fbHbs.push(p.hbTraj);
+      }
       if (p.releaseZ > 0) item.releaseZs.push(p.releaseZ);
       if (p.releaseX !== 0) item.releaseXs.push(p.releaseX);
     });
@@ -347,12 +384,21 @@ function PitcherProfile({ pitcherName, events = [] }) {
       const item = datesMap[d];
       const fbAvg = item.fbVelos.length > 0 ? Number((item.fbVelos.reduce((a, b) => a + b, 0) / item.fbVelos.length).toFixed(1)) : null;
       const fbMax = item.fbVelos.length > 0 ? Number(Math.max(...item.fbVelos).toFixed(1)) : null;
-      
       const allAvg = item.allVelos.length > 0 ? Number((item.allVelos.reduce((a, b) => a + b, 0) / item.allVelos.length).toFixed(1)) : null;
-      const spinAvg = item.spins.length > 0 ? Math.round(item.spins.reduce((a, b) => a + b, 0) / item.spins.length) : null;
-      const effAvg = item.effs.length > 0 ? Number((item.effs.reduce((a, b) => a + b, 0) / item.effs.length).toFixed(1)) : null;
-      const vbAvg = item.vbs.length > 0 ? Number((item.vbs.reduce((a, b) => a + b, 0) / item.vbs.length).toFixed(1)) : null;
-      const hbAvg = item.hbs.length > 0 ? Number((item.hbs.reduce((a, b) => a + b, 0) / item.hbs.length).toFixed(1)) : null;
+
+      // Restrict spin, eff, vb, hb trend averages to Fastball (fallback to all if no fastballs on date)
+      const targetSpins = item.fbSpins.length > 0 ? item.fbSpins : item.allSpins;
+      const spinAvg = targetSpins.length > 0 ? Math.round(targetSpins.reduce((a, b) => a + b, 0) / targetSpins.length) : null;
+
+      const targetEffs = item.fbEffs.length > 0 ? item.fbEffs : item.allEffs;
+      const effAvg = targetEffs.length > 0 ? Number((targetEffs.reduce((a, b) => a + b, 0) / targetEffs.length).toFixed(1)) : null;
+
+      const targetVbs = item.fbVbs.length > 0 ? item.fbVbs : item.allVbs;
+      const vbAvg = targetVbs.length > 0 ? Number((targetVbs.reduce((a, b) => a + b, 0) / targetVbs.length).toFixed(1)) : null;
+
+      const targetHbs = item.fbHbs.length > 0 ? item.fbHbs : item.allHbs;
+      const hbAvg = targetHbs.length > 0 ? Number((targetHbs.reduce((a, b) => a + b, 0) / targetHbs.length).toFixed(1)) : null;
+
       const releaseZAvg = item.releaseZs.length > 0 ? Number((item.releaseZs.reduce((a, b) => a + b, 0) / item.releaseZs.length).toFixed(2)) : null;
       const releaseXAvg = item.releaseXs.length > 0 ? Number((item.releaseXs.reduce((a, b) => a + b, 0) / item.releaseXs.length).toFixed(2)) : null;
 
@@ -515,20 +561,22 @@ function PitcherProfile({ pitcherName, events = [] }) {
             </div>
 
             <div className="bg-slate-900/80 border border-slate-800 p-4 print:p-2 rounded-2xl print:rounded-xl text-center shadow-lg flex flex-col justify-center items-center min-h-[110px] print:min-h-0 print:border-slate-200">
-              <p className="text-xs print:text-[8px] text-slate-400 font-bold flex items-center justify-center gap-1">
-                <Zap className="w-3.5 h-3.5 print:w-2.5 print:h-2.5 text-amber-400" /> 最速球速
+              <p className="text-xs print:text-[8px] text-slate-400 font-bold flex flex-col items-center justify-center">
+                <span className="flex items-center gap-1"><Zap className="w-3.5 h-3.5 print:w-2.5 print:h-2.5 text-amber-400" /> 最速球速</span>
+                <span className="text-[10px] font-normal text-slate-500 normal-case">(km/h)</span>
               </p>
-              <p className="text-2xl print:text-base font-black text-amber-400 mt-1.5 print:mt-0.5">
-                {overallSummary.maxVelo} {overallSummary.maxVelo !== '-' && <span className="text-xs print:text-[8px] text-slate-400 font-normal">km/h</span>}
+              <p className="text-2xl print:text-base font-black text-amber-400 mt-1 print:mt-0.5">
+                {overallSummary.maxVelo}
               </p>
             </div>
 
             <div className="bg-slate-900/80 border border-slate-800 p-4 print:p-2 rounded-2xl print:rounded-xl text-center shadow-lg flex flex-col justify-center items-center min-h-[110px] print:min-h-0 print:border-slate-200">
-              <p className="text-xs print:text-[8px] text-slate-400 font-bold flex items-center justify-center gap-1">
-                <Activity className="w-3.5 h-3.5 print:w-2.5 print:h-2.5 text-emerald-400" /> FB平均球速
+              <p className="text-xs print:text-[8px] text-slate-400 font-bold flex flex-col items-center justify-center">
+                <span className="flex items-center gap-1"><Activity className="w-3.5 h-3.5 print:w-2.5 print:h-2.5 text-emerald-400" /> FB平均球速</span>
+                <span className="text-[10px] font-normal text-slate-500 normal-case">(km/h)</span>
               </p>
-              <p className="text-2xl print:text-base font-black text-emerald-400 mt-1.5 print:mt-0.5">
-                {overallSummary.fbAvgVelo} {overallSummary.fbAvgVelo !== '-' && <span className="text-xs print:text-[8px] text-slate-400 font-normal">km/h</span>}
+              <p className="text-2xl print:text-base font-black text-emerald-400 mt-1 print:mt-0.5">
+                {overallSummary.fbAvgVelo}
               </p>
             </div>
 
@@ -593,18 +641,18 @@ function PitcherProfile({ pitcherName, events = [] }) {
               <tr className="border-b border-slate-800 text-xs text-slate-400 font-bold uppercase tracking-wider print:text-[7pt]">
                 <th className="py-3.5 px-3 print:py-1 print:px-1 print:text-left">球種</th>
                 <th className="py-3.5 px-3 text-right print:py-1 print:px-1">投球数</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">配球比</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">平均球速</th>
-                <th className="py-3.5 px-3 text-center print:py-1 print:px-1">対FB比</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">最高球速</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">平均回転</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">回転効率</th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">配球比<span className="block text-[10px] text-slate-400 font-normal normal-case">%</span></th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">平均球速<span className="block text-[10px] text-slate-400 font-normal normal-case">km/h</span></th>
+                <th className="py-3.5 px-3 text-center print:py-1 print:px-1">対FB比<span className="block text-[10px] text-slate-400 font-normal normal-case">%</span></th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">最高球速<span className="block text-[10px] text-slate-400 font-normal normal-case">km/h</span></th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">平均回転<span className="block text-[10px] text-slate-400 font-normal normal-case">rpm</span></th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">回転効率<span className="block text-[10px] text-slate-400 font-normal normal-case">%</span></th>
                 <th className="py-3.5 px-3 text-right print:py-1 print:px-1">回転方向</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">縦変化</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">横変化</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">リリース高度</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">リリース幅</th>
-                {overallSummary.hasVaaData && <th className="py-3.5 px-3 text-right print:py-1 print:px-1">VAA</th>}
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">縦変化<span className="block text-[10px] text-slate-400 font-normal normal-case">cm</span></th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">横変化<span className="block text-[10px] text-slate-400 font-normal normal-case">cm</span></th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">リリース高度<span className="block text-[10px] text-slate-400 font-normal normal-case">m</span></th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">リリース幅<span className="block text-[10px] text-slate-400 font-normal normal-case">m</span></th>
+                {overallSummary.hasVaaData && <th className="py-3.5 px-3 text-right print:py-1 print:px-1">VAA<span className="block text-[10px] text-slate-400 font-normal normal-case">°</span></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -625,14 +673,14 @@ function PitcherProfile({ pitcherName, events = [] }) {
                   {/* 配球比 + Visual Bar */}
                   <td className="py-4 px-3 text-right font-mono print:py-1 print:px-1 print:text-[8px]">
                     <div className="flex items-center justify-end gap-2">
-                      <span className="text-blue-400 font-bold">{item.pct}%</span>
+                      <span className="text-blue-400 font-bold">{item.pct}</span>
                       <div className="w-12 h-2 bg-slate-800 rounded-full overflow-hidden hidden sm:block print:hidden">
                         <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(Number(item.pct), 100)}%` }}></div>
                       </div>
                     </div>
                   </td>
                   
-                  <td className="py-4 px-3 text-right font-mono font-bold text-white print:py-1 print:px-1 print:text-[8px]">{item.avgVelo} <span className="text-[10px] print:text-[7px] text-slate-500">km/h</span></td>
+                  <td className="py-4 px-3 text-right font-mono font-bold text-white print:py-1 print:px-1 print:text-[8px]">{item.avgVelo}</td>
                   
                   {/* 対FB球速比 % + Visual Progress Indicator */}
                   <td className="py-4 px-3 text-center font-mono print:py-1 print:px-1 print:text-[8px]">
@@ -655,7 +703,7 @@ function PitcherProfile({ pitcherName, events = [] }) {
 
                   <td className="py-4 px-3 text-right font-mono text-amber-400 font-bold print:py-1 print:px-1 print:text-[8px]">{item.maxVelo}</td>
                   <td className="py-4 px-3 text-right font-mono text-emerald-400 font-bold print:py-1 print:px-1 print:text-[8px]">{item.avgSpin}</td>
-                  <td className="py-4 px-3 text-right font-mono text-emerald-300 print:py-1 print:px-1 print:text-[8px]">{item.avgEff}{item.avgEff !== '-' ? '%' : ''}</td>
+                  <td className="py-4 px-3 text-right font-mono text-emerald-300 print:py-1 print:px-1 print:text-[8px]">{item.avgEff}</td>
                   <td className="py-4 px-3 text-right font-mono text-blue-300 font-bold print:py-1 print:px-1 print:text-[8px]">{item.mainClock}</td>
                   <td className={`py-4 px-3 text-right font-mono print:py-1 print:px-1 print:text-[8px] ${Number(item.avgVb) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {Number(item.avgVb) > 0 ? `+${item.avgVb}` : item.avgVb}
@@ -771,14 +819,93 @@ function PitcherProfile({ pitcherName, events = [] }) {
         {/* Right: Release Point Scatter Chart (Release Side vs Height with ±0.1 Margin) */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col justify-between print:p-2.5 print:rounded-2xl print:border-slate-200 print:shadow-none">
           <div>
-            <div className="flex items-center justify-between mb-2 print:mb-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2 print:mb-1">
               <div className="flex items-center gap-2">
                 <Crosshair className="w-5 h-5 print:w-3.5 print:h-3.5 text-purple-400" />
                 <h3 className="text-xl print:text-xs font-bold text-white print:text-slate-900">リリースポイント チャート図</h3>
               </div>
+
+              {/* Range Control Toggle & Inputs */}
+              <div className="flex items-center gap-1.5 print:hidden">
+                <button
+                  onClick={() => setReleaseRangeMode('auto')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                    releaseRangeMode === 'auto'
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  自動範囲
+                </button>
+                <button
+                  onClick={() => {
+                    if (releaseRangeMode === 'auto') {
+                      setReleaseCustomXMin(releaseBounds.minX);
+                      setReleaseCustomXMax(releaseBounds.maxX);
+                      setReleaseCustomYMin(releaseBounds.minY);
+                      setReleaseCustomYMax(releaseBounds.maxY);
+                    }
+                    setReleaseRangeMode('custom');
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                    releaseRangeMode === 'custom'
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  範囲指定
+                </button>
+              </div>
             </div>
+            
+            {/* Custom Axis Inputs */}
+            {releaseRangeMode === 'custom' && (
+              <div className="bg-slate-950/80 border border-purple-500/30 p-3 rounded-2xl mb-4 flex flex-wrap items-center gap-4 text-xs print:hidden animate-in fade-in duration-200">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-purple-300 font-bold">横軸 (リリース幅):</span>
+                  <span className="text-slate-500">Min</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={releaseCustomXMin}
+                    onChange={e => setReleaseCustomXMin(e.target.value)}
+                    className="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-center font-mono font-bold focus:border-purple-500 outline-none"
+                  />
+                  <span className="text-slate-500">～ Max</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={releaseCustomXMax}
+                    onChange={e => setReleaseCustomXMax(e.target.value)}
+                    className="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-center font-mono font-bold focus:border-purple-500 outline-none"
+                  />
+                  <span className="text-slate-500">m</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-purple-300 font-bold">縦軸 (リリース高度):</span>
+                  <span className="text-slate-500">Min</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={releaseCustomYMin}
+                    onChange={e => setReleaseCustomYMin(e.target.value)}
+                    className="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-center font-mono font-bold focus:border-purple-500 outline-none"
+                  />
+                  <span className="text-slate-500">～ Max</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={releaseCustomYMax}
+                    onChange={e => setReleaseCustomYMax(e.target.value)}
+                    className="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-center font-mono font-bold focus:border-purple-500 outline-none"
+                  />
+                  <span className="text-slate-500">m</span>
+                </div>
+              </div>
+            )}
+
             <p className="text-xs text-slate-400 mb-4 print:hidden">
-              横軸: リリース幅 Release Side / 縦軸: リリリース高度 Release Height (上下±0.1m余白)
+              横軸: リリース幅 Release Side / 縦軸: リリリース高度 Release Height {releaseRangeMode === 'auto' ? '(上下±0.1m余白)' : '(手動指定範囲)'}
             </p>
 
             {releaseChartData.length > 0 ? (
@@ -790,7 +917,9 @@ function PitcherProfile({ pitcherName, events = [] }) {
                       type="number" 
                       dataKey="x" 
                       name="Release Side" 
-                      domain={[releaseBounds.minX, releaseBounds.maxX]}
+                      domain={releaseRangeMode === 'custom'
+                        ? [Number(releaseCustomXMin) || -1, Number(releaseCustomXMax) || 1]
+                        : [releaseBounds.minX, releaseBounds.maxX]}
                       stroke="#94a3b8" 
                       fontSize={10} 
                       axisLine={{ stroke: '#475569' }}
@@ -800,7 +929,9 @@ function PitcherProfile({ pitcherName, events = [] }) {
                       type="number" 
                       dataKey="y" 
                       name="Release Height" 
-                      domain={[releaseBounds.minY, releaseBounds.maxY]}
+                      domain={releaseRangeMode === 'custom'
+                        ? [Number(releaseCustomYMin) || 0, Number(releaseCustomYMax) || 3]
+                        : [releaseBounds.minY, releaseBounds.maxY]}
                       stroke="#94a3b8" 
                       fontSize={10} 
                       axisLine={{ stroke: '#475569' }}
@@ -865,10 +996,10 @@ function PitcherProfile({ pitcherName, events = [] }) {
             >
               <option value="fb_velo">ストレート球速 (平均 & 最高)</option>
               <option value="all_velo">全球種 平均球速 (km/h)</option>
-              <option value="spin_rate">平均回転数 (rpm)</option>
-              <option value="spin_eff">平均回転効率 (%)</option>
-              <option value="vb_traj">平均縦変化量 (trajectory)</option>
-              <option value="hb_traj">平均横変化量 (trajectory)</option>
+              <option value="spin_rate">ストレート 平均回転数 (rpm)</option>
+              <option value="spin_eff">ストレート 平均回転効率 (%)</option>
+              <option value="vb_traj">ストレート 平均縦変化量 (cm)</option>
+              <option value="hb_traj">ストレート 平均横変化量 (cm)</option>
               <option value="release_z">平均リリース高度 (m)</option>
               <option value="release_x">平均リリース幅 (m)</option>
             </select>
@@ -899,16 +1030,16 @@ function PitcherProfile({ pitcherName, events = [] }) {
                   <Line type="monotone" dataKey="allAvg" name="全球種 平均球速 (km/h)" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4, fill: '#3b82f6', stroke: '#fff' }} />
                 )}
                 {dateTrendMetric === 'spin_rate' && (
-                  <Line type="monotone" dataKey="spinAvg" name="平均回転数 (rpm)" stroke="#a855f7" strokeWidth={2.5} dot={{ r: 4, fill: '#a855f7', stroke: '#fff' }} />
+                  <Line type="monotone" dataKey="spinAvg" name="ストレート 平均回転数 (rpm)" stroke="#a855f7" strokeWidth={2.5} dot={{ r: 4, fill: '#a855f7', stroke: '#fff' }} />
                 )}
                 {dateTrendMetric === 'spin_eff' && (
-                  <Line type="monotone" dataKey="effAvg" name="平均回転効率 (%)" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4, fill: '#10b981', stroke: '#fff' }} />
+                  <Line type="monotone" dataKey="effAvg" name="ストレート 平均回転効率 (%)" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4, fill: '#10b981', stroke: '#fff' }} />
                 )}
                 {dateTrendMetric === 'vb_traj' && (
-                  <Line type="monotone" dataKey="vbAvg" name="平均縦変化量 (traj)" stroke="#06b6d4" strokeWidth={2.5} dot={{ r: 4, fill: '#06b6d4', stroke: '#fff' }} />
+                  <Line type="monotone" dataKey="vbAvg" name="ストレート 平均縦変化量 (cm)" stroke="#06b6d4" strokeWidth={2.5} dot={{ r: 4, fill: '#06b6d4', stroke: '#fff' }} />
                 )}
                 {dateTrendMetric === 'hb_traj' && (
-                  <Line type="monotone" dataKey="hbAvg" name="平均横変化量 (traj)" stroke="#f97316" strokeWidth={2.5} dot={{ r: 4, fill: '#f97316', stroke: '#fff' }} />
+                  <Line type="monotone" dataKey="hbAvg" name="ストレート 平均横変化量 (cm)" stroke="#f97316" strokeWidth={2.5} dot={{ r: 4, fill: '#f97316', stroke: '#fff' }} />
                 )}
                 {dateTrendMetric === 'release_z' && (
                   <Line type="monotone" dataKey="releaseZAvg" name="平均リリース高度 (m)" stroke="#a855f7" strokeWidth={2.5} dot={{ r: 4, fill: '#a855f7', stroke: '#fff' }} />
@@ -952,29 +1083,29 @@ function PitcherProfile({ pitcherName, events = [] }) {
                 <th className="py-3.5 px-3 print:py-1 print:px-1">日付</th>
                 <th className="py-3.5 px-3 print:py-1 print:px-1">球種</th>
                 <th className="py-3.5 px-3 text-right print:py-1 print:px-1 cursor-pointer hover:text-white" onClick={() => { setSortField('velo'); setSortAsc(!sortAsc); }}>
-                  球速 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" />
+                  球速 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" /><span className="block text-[10px] text-slate-400 font-normal normal-case">km/h</span>
                 </th>
                 <th className="py-3.5 px-3 text-right print:py-1 print:px-1 cursor-pointer hover:text-white" onClick={() => { setSortField('spin'); setSortAsc(!sortAsc); }}>
-                  回転数 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" />
+                  回転数 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" /><span className="block text-[10px] text-slate-400 font-normal normal-case">rpm</span>
                 </th>
                 <th className="py-3.5 px-3 text-right print:py-1 print:px-1 cursor-pointer hover:text-white" onClick={() => { setSortField('spinEff'); setSortAsc(!sortAsc); }}>
-                  回転効率 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" />
+                  回転効率 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" /><span className="block text-[10px] text-slate-400 font-normal normal-case">%</span>
                 </th>
                 <th className="py-3.5 px-3 text-right print:py-1 print:px-1">回転方向</th>
                 <th className="py-3.5 px-3 text-right print:py-1 print:px-1 cursor-pointer hover:text-white" onClick={() => { setSortField('gyroAngle'); setSortAsc(!sortAsc); }}>
-                  ジャイロ角 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" />
+                  ジャイロ角 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" /><span className="block text-[10px] text-slate-400 font-normal normal-case">°</span>
                 </th>
                 <th className="py-3.5 px-3 text-right print:py-1 print:px-1 cursor-pointer hover:text-white" onClick={() => { setSortField('vbTraj'); setSortAsc(!sortAsc); }}>
-                  縦変化 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" />
+                  縦変化 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" /><span className="block text-[10px] text-slate-400 font-normal normal-case">cm</span>
                 </th>
                 <th className="py-3.5 px-3 text-right print:py-1 print:px-1 cursor-pointer hover:text-white" onClick={() => { setSortField('hbTraj'); setSortAsc(!sortAsc); }}>
-                  横変化 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" />
+                  横変化 <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" /><span className="block text-[10px] text-slate-400 font-normal normal-case">cm</span>
                 </th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">リリース高度</th>
-                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">リリース幅</th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">リリース高度<span className="block text-[10px] text-slate-400 font-normal normal-case">m</span></th>
+                <th className="py-3.5 px-3 text-right print:py-1 print:px-1">リリース幅<span className="block text-[10px] text-slate-400 font-normal normal-case">m</span></th>
                 {overallSummary.hasVaaData && (
                   <th className="py-3.5 px-3 text-right print:py-1 print:px-1 cursor-pointer hover:text-white" onClick={() => { setSortField('vaa'); setSortAsc(!sortAsc); }}>
-                    VAA <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" />
+                    VAA <ArrowDownUp className="inline w-3 h-3 ml-1 print:hidden" /><span className="block text-[10px] text-slate-400 font-normal normal-case">°</span>
                   </th>
                 )}
               </tr>
@@ -990,7 +1121,7 @@ function PitcherProfile({ pitcherName, events = [] }) {
                   </td>
                   <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono font-bold text-amber-400 print:text-[8px]">{p.velo > 0 ? p.velo : '-'}</td>
                   <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-emerald-400 print:text-[8px]">{p.spin > 0 ? p.spin : '-'}</td>
-                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-emerald-300 print:text-[8px]">{p.spinEff > 0 ? `${p.spinEff}%` : '-'}</td>
+                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-emerald-300 print:text-[8px]">{p.spinEff > 0 ? p.spinEff : '-'}</td>
                   <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-blue-300 print:text-[8px]">{p.spinClock}</td>
                   <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-purple-400 print:text-[8px]">{p.gyroAngle !== 0 ? `${p.gyroAngle}°` : '-'}</td>
                   <td className={`py-3 px-3 print:py-1 print:px-1 text-right font-mono print:text-[8px] ${p.vbTraj >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>

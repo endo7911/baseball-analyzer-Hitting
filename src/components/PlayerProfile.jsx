@@ -152,44 +152,45 @@ const VelocityAngleChart = ({ data, xKeys, yKeys, xDomain = ['auto', 'auto'], yD
 };
 
 
-const PlayerTrendScatterChart = ({ savantEvents, blastEvents, startDate = '', endDate = '' }) => {
-  const [metric, setMetric] = useState('ev');
+const PlayerTrendScatterChart = ({ savantEvents, blastEvents, sourceType = 'combined', startDate = '', endDate = '' }) => {
+  const [metric, setMetric] = useState(sourceType === 'blast' ? 'bs' : 'ev');
 
-  const metricMeta = {
-    ev: { label: '打球速度', unit: 'km/h', color: '#10b981', keys: EV_KEYS },
-    la: { label: '打球角度', unit: '°', color: '#a855f7', keys: LA_KEYS },
-    bs: { label: 'バット速度', unit: 'km/h', color: '#3b82f6', keys: BS_KEYS },
-    aa: { label: 'アッパースイング度', unit: '°', color: '#f59e0b', keys: AA_KEYS },
-  };
+  const metricMeta = useMemo(() => {
+    const all = {
+      ev: { label: '打球速度', unit: 'km/h', color: '#10b981', keys: EV_KEYS },
+      la: { label: '打球角度', unit: '°', color: '#a855f7', keys: LA_KEYS },
+      bs: { label: 'バット速度', unit: 'km/h', color: '#3b82f6', keys: BS_KEYS },
+      aa: { label: 'アッパースイング度', unit: '°', color: '#f59e0b', keys: AA_KEYS },
+    };
 
-  const currentMeta = metricMeta[metric];
+    if (sourceType === 'rapsodo_batting') {
+      return { ev: all.ev, la: all.la };
+    }
+    if (sourceType === 'blast') {
+      return { bs: all.bs, aa: all.aa };
+    }
+    return all;
+  }, [sourceType]);
+
+  const availableMetricKeys = Object.keys(metricMeta);
+
+  // Keep metric valid for the current sourceType
+  useEffect(() => {
+    if (!availableMetricKeys.includes(metric)) {
+      setMetric(availableMetricKeys[0] || 'ev');
+    }
+  }, [sourceType, availableMetricKeys, metric]);
+
+  const currentMeta = metricMeta[metric] || metricMeta.ev || metricMeta.bs;
 
   const allEvents = useMemo(() => {
+    if (sourceType === 'rapsodo_batting') return savantEvents || [];
+    if (sourceType === 'blast') return blastEvents || [];
     return [...(savantEvents || []), ...(blastEvents || [])];
-  }, [savantEvents, blastEvents]);
-
-  // Auto-switch metric if the selected metric has 0 data points but another metric has data
-  useEffect(() => {
-    if (!allEvents || allEvents.length === 0) return;
-    const hasCurrent = allEvents.some(e => {
-      const v = parseNumeric(getDataValue(e, currentMeta.keys));
-      return v !== 0 && !isNaN(v);
-    });
-
-    if (!hasCurrent) {
-      if (allEvents.some(e => parseNumeric(getDataValue(e, BS_KEYS)) > 0)) {
-        setMetric('bs');
-      } else if (allEvents.some(e => parseNumeric(getDataValue(e, EV_KEYS)) > 0)) {
-        setMetric('ev');
-      } else if (allEvents.some(e => parseNumeric(getDataValue(e, LA_KEYS)) !== 0)) {
-        setMetric('la');
-      } else if (allEvents.some(e => parseNumeric(getDataValue(e, AA_KEYS)) !== 0)) {
-        setMetric('aa');
-      }
-    }
-  }, [allEvents, currentMeta.keys]);
+  }, [savantEvents, blastEvents, sourceType]);
 
   const trendData = useMemo(() => {
+    if (!currentMeta) return [];
     const dateMap = {};
     allEvents.forEach(e => {
       const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || e.file_name || e.filename || '';
@@ -232,6 +233,8 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents, startDate = '', en
     return list.sort((a, b) => a.timeMs - b.timeMs);
   }, [allEvents, currentMeta, startDate, endDate]);
 
+  if (!currentMeta) return null;
+
   return (
     <div className="player-trend-card w-full bg-slate-800/60 p-4 sm:p-6 rounded-2xl border border-slate-700 mt-6 print:bg-white print:border-slate-200 print:mt-4 print:p-2 print:border-none print:shadow-none">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-700/60 pb-3 mb-4 print:border-slate-200">
@@ -248,10 +251,9 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents, startDate = '', en
               onChange={e => setMetric(e.target.value)}
               className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
             >
-              <option value="ev">打球速度 (km/h)</option>
-              <option value="la">打球角度 (°)</option>
-              <option value="bs">バット速度 (km/h)</option>
-              <option value="aa">アッパースイング度 (°)</option>
+              {Object.keys(metricMeta).map(k => (
+                <option key={k} value={k}>{metricMeta[k].label} ({metricMeta[k].unit})</option>
+              ))}
             </select>
           </div>
         </div>
@@ -337,13 +339,10 @@ const PlayerTrendScatterChart = ({ savantEvents, blastEvents, startDate = '', en
 
 // --- Main Component ---
 
-const PlayerProfile = ({ playerName, stats, isCombined = false, startDate = '', endDate = '' }) => {
+const PlayerProfile = ({ playerName, stats, isCombined = false, sourceType = 'combined', startDate = '', endDate = '' }) => {
   const rawSavantEvents = stats?.savantEvents || [];
   const rawBlastEvents = stats?.blastEvents || [];
-  const [forceMode, setForceMode] = useState(null); 
   const [hitsOnly] = useState(false);
-
-  const mode = forceMode || (isCombined ? 'classic' : 'pro');
 
   // Apply date filter to both event sets
   const applyDateFilter = (events) => {
@@ -378,21 +377,20 @@ const PlayerProfile = ({ playerName, stats, isCombined = false, startDate = '', 
     const avgEV = hasEvData ? calculateAverages(validEvRows, EV_KEYS) : 0;
     const maxEV = hasEvData ? Math.max(...validEvRows.map(r => getDataValue(r, EV_KEYS)), 0) : 0;
     const avgLA = calculateAverages(filteredData, LA_KEYS);
-    const avgBS = calculateAverages(blastEvents, BS_KEYS) || calculateAverages(filteredData, BS_KEYS);
-    const maxBS = Math.max(...blastEvents.map(r => getDataValue(r, BS_KEYS)), ...filteredData.map(r => getDataValue(r, BS_KEYS)), 0);
+    const avgBS = sourceType === 'rapsodo_batting' ? 0 : (calculateAverages(blastEvents, BS_KEYS) || calculateAverages(filteredData, BS_KEYS));
+    const maxBS = sourceType === 'rapsodo_batting' ? 0 : Math.max(...blastEvents.map(r => getDataValue(r, BS_KEYS)), ...filteredData.map(r => getDataValue(r, BS_KEYS)), 0);
     
     const total = filteredData.length;
-    // Thresholds in km/h (Rapsodo data is already km/h)
-    const hardHit = validEvRows.filter(r => getDataValue(r, EV_KEYS) >= 153).length; // 95mph = 153km/h
-    const barrel = validEvRows.filter(r => getDataValue(r, EV_KEYS) >= 158 && getDataValue(r, LA_KEYS) >= 26 && getDataValue(r, LA_KEYS) <= 30).length; // 98mph = 158km/h
+    const hardHit = validEvRows.filter(r => getDataValue(r, EV_KEYS) >= 153).length;
+    const barrel = validEvRows.filter(r => getDataValue(r, EV_KEYS) >= 158 && getDataValue(r, LA_KEYS) >= 26 && getDataValue(r, LA_KEYS) <= 30).length;
     const sweetSpot = filteredData.filter(r => getDataValue(r, LA_KEYS) >= 8 && getDataValue(r, LA_KEYS) <= 32).length;
 
     return {
       hasEvData,
-      avgEV, // No conversion - data is already in km/h
-      maxEV, // No conversion
+      avgEV,
+      maxEV,
       avgLA,
-      avgBS, // No conversion
+      avgBS,
       maxBS,
       hardHitRate: validEvRows.length > 0 ? (hardHit / validEvRows.length * 100).toFixed(1) : '0.0',
       barrelRate: validEvRows.length > 0 ? (barrel / validEvRows.length * 100).toFixed(1) : '0.0',
@@ -406,225 +404,86 @@ const PlayerProfile = ({ playerName, stats, isCombined = false, startDate = '', 
       avgPlaneScore: calculateAverages(blastEvents, ON_PLANE_SCORE_KEYS),
       total
     };
-  }, [filteredData, blastEvents]);
+  }, [filteredData, blastEvents, sourceType]);
 
+  const reportTeam = savantEvents[0]?.Team || savantEvents[0]?.team_name || blastEvents[0]?.Team || blastEvents[0]?.team_name || 'Individual';
 
-  const hasBatData = summary.avgBS > 0;
-  const reportTeam = savantEvents[0]?.Team || savantEvents[0]?.team_name || 'Individual';
+  const showBallTracking = summary.hasEvData && sourceType !== 'blast';
+  const showSwingAnalysis = sourceType === 'combined' && summary.avgBS > 0;
 
-  const [isExportingPDF, setIsExportingPDF] = useState(false);
-
-  const exportToPDF = async () => {
-    const targetElement = document.querySelector('.report-content');
-    if (!targetElement) return;
-
-    setIsExportingPDF(true);
-    try {
-      const canvas = await html2canvas(targetElement, {
-        scale: 2, // High DPI retina resolution
-        useCORS: true,
-        backgroundColor: mode === 'pro' ? '#0b0f17' : '#ffffff',
-        logging: false
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`${playerName || '選手'}_打撃分析レポート.pdf`);
-    } catch (err) {
-      console.error("PDF Export Error:", err);
-    } finally {
-      setIsExportingPDF(false);
-    }
-  };
-
-  const handlePrint = exportToPDF;
-
-  const renderClassic = () => (
-    <div className="report-content player-report player-classic-report print:bg-white print:text-slate-900">
-      {/* Print-Only Header */}
-      <div className="player-print-header hidden print:block border-b-4 border-blue-600 pb-4 mb-4">
-        <h1 className="text-3xl font-black uppercase text-slate-900">{playerName}</h1>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-          {reportTeam} • {new Date().toLocaleDateString('ja-JP')} • Analysis Report
-        </p>
+  return (
+    <div className="player-profile-root text-slate-200 pb-20">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6 no-print">
+        <div>
+          <h1 className="text-4xl font-black text-white tracking-tight">{playerName}</h1>
+          <p className="text-slate-400 text-xs font-bold mt-1 uppercase tracking-widest">
+            {sourceType === 'rapsodo_batting' ? 'Rapsodo 打撃分析レポート' : sourceType === 'blast' ? 'Blast スイング分析レポート' : '打撃総合分析レポート'}
+          </p>
+        </div>
       </div>
 
-      <div className="player-report-body space-y-6 print:space-y-4">
-        {!summary.hasEvData && (
-          <div className="bg-amber-500/10 border-2 border-amber-500/30 p-5 rounded-2xl mb-6 flex flex-col sm:flex-row items-center gap-4 text-amber-300 shadow-xl no-print">
-            <div className="p-3 bg-amber-500/20 border border-amber-500/40 rounded-xl text-amber-400 flex-shrink-0">
-              <ShieldAlert className="w-6 h-6" />
-            </div>
-            <div className="space-y-1 text-center sm:text-left text-xs">
-              <h4 className="font-bold text-white text-sm">打球速度（Exit Velocity）の計測データが含まれていません</h4>
-              <p className="text-slate-300 leading-relaxed">
-                選択された「<strong>{playerName}</strong>」選手のデータには、打球速度（Exit Velocity / launch_speed）の有効な数値が含まれていません。<br/>
-                ※Blast Motion等のスイング分析データが含まれている場合は下部のスイング指標をご確認いただくか、RapsodoデータのCSVファイルを「データ読み込み」画面でアップロードしてください。
-              </p>
-            </div>
-          </div>
-        )}
-        {/* Summary Metrics */}
-        <div className="player-kpi-grid grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 print:grid-cols-4 print:gap-2 print:mb-4">
-          {[
-            { label: '平均打球速度', val: summary.avgEV.toFixed(1), unit: 'km/h' },
-            { label: '平均打球角度', val: summary.avgLA.toFixed(1), unit: '°' },
-            { label: 'Hard Hit率', val: summary.hardHitRate, unit: '%' },
-            { label: 'Sweet Spot率', val: summary.sweetSpotRate, unit: '%' }
-          ].map((kpi, i) => (
-            <div key={i} className="player-kpi-card bg-slate-800/60 p-4 rounded-xl border border-slate-700 text-center print:bg-slate-50 print:border-slate-200 print:p-2">
-              <p className="text-[10px] text-slate-500 font-bold uppercase print:text-[8px]">{kpi.label}</p>
-              <p className="text-2xl font-black text-white print:text-slate-900 print:text-lg">{kpi.val}<span className="text-[10px] ml-0.5">{kpi.unit}</span></p>
-            </div>
-          ))}
+      <div className="report-content player-report print:bg-[#0b0f17] print:text-slate-100 space-y-6">
+        {/* Print-Only Header */}
+        <div className="player-print-header hidden print:block border-b-2 border-blue-500 pb-1 mb-2">
+          <h1 className="text-2xl font-black uppercase text-white leading-none">{playerName}</h1>
+          <p className="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-widest">
+            {reportTeam} • {new Date().toLocaleDateString('ja-JP')} • 打撃分析レポート
+          </p>
         </div>
 
-        {/* Charts */}
-        <div className="player-chart-grid grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 print:grid-cols-2 print:gap-4">
-          <div className="player-chart-card bg-slate-800/60 p-4 sm:p-6 rounded-2xl border border-slate-700 h-[320px] sm:h-[350px] flex flex-col print:bg-white print:border-2 print:border-slate-200 print:h-[220px] print:p-2">
-            <h3 className="text-xs font-black text-slate-400 uppercase mb-4 print:text-slate-900 print:mb-1 print:text-[10px]">打球速度 vs 打球角度</h3>
-            <div className="player-chart-body flex-1"><VelocityAngleChart data={filteredData} xKeys={EV_KEYS} yKeys={LA_KEYS} /></div>
-          </div>
-          <div className="player-chart-card bg-slate-800/60 p-4 sm:p-6 rounded-2xl border border-slate-700 h-[320px] sm:h-[350px] flex flex-col print:bg-white print:border-2 print:border-slate-200 print:h-[220px] print:p-2">
-            <h3 className="text-xs font-black text-slate-400 uppercase mb-4 print:text-slate-900 print:mb-1 print:text-[10px]">打球方向 (スプレーチャート)</h3>
-            <div className="player-chart-body flex-1"><SprayChart data={filteredData} /></div>
-          </div>
-        </div>
-
-        {/* 日付推移散布図 */}
-        <PlayerTrendScatterChart savantEvents={savantEvents} blastEvents={blastEvents} startDate={startDate} endDate={endDate} />
-      </div>
-    </div>
-  );
-
-  const renderPro = () => (
-    <div className="report-content player-report player-pro-report print:bg-[#0b0f17] print:text-slate-100">
-      {/* Print-Only Header */}
-      <div className="player-print-header hidden print:block border-b-2 border-blue-500 pb-1 mb-2">
-        <h1 className="text-2xl font-black uppercase text-white leading-none">{playerName}</h1>
-        <p className="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-widest">
-          {reportTeam} • {new Date().toLocaleDateString('ja-JP')} • Pro レポート
-        </p>
-      </div>
-
-      <div className="player-report-body space-y-4 print:space-y-2">
+        {/* Summary KPI Cards */}
         <div className="player-kpi-grid grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 print:grid-cols-4 print:gap-2">
-          {[
-            { label: '平均打球速度', val: summary.avgEV.toFixed(1), color: 'blue' },
-            { label: '最大打球速度', val: summary.maxEV.toFixed(1), color: 'red' },
-            { label: 'Hard Hit率', val: summary.hardHitRate, color: 'orange' },
-            { label: '平均打球角度', val: summary.avgLA.toFixed(1), color: 'emerald' }
-          ].map((kpi, i) => (
-            <div key={i} className="player-kpi-card bg-slate-800/60 p-3 sm:p-4 rounded-xl border border-slate-700 text-center print:bg-[#1e293b] print:border-slate-700 print:p-1.5">
-              <p className="text-[10px] text-slate-400 font-black uppercase print:text-slate-400 print:text-[7px]">{kpi.label}</p>
-              <p className="text-xl sm:text-2xl font-black text-white print:text-white print:text-base">{kpi.val}</p>
+          {(showBallTracking ? [
+            { label: '平均打球速度', val: summary.avgEV.toFixed(1), unit: 'km/h', titleColor: 'text-emerald-300' },
+            { label: '最大打球速度', val: summary.maxEV.toFixed(1), unit: 'km/h', titleColor: 'text-rose-300' },
+            { label: 'Hard Hit率', val: summary.hardHitRate, unit: '%', titleColor: 'text-amber-300' },
+            { label: '平均打球角度', val: summary.avgLA.toFixed(1), unit: '°', titleColor: 'text-purple-300' }
+          ] : [
+            { label: '平均バット速度', val: summary.avgBS.toFixed(1), unit: 'km/h', titleColor: 'text-blue-300' },
+            { label: '最大バット速度', val: summary.maxBS.toFixed(1), unit: 'km/h', titleColor: 'text-rose-300' },
+            { label: 'アッパースイング度', val: summary.avgAA.toFixed(1), unit: '°', titleColor: 'text-amber-300' },
+            { label: 'オンプレーン率', val: summary.avgPlane.toFixed(1), unit: '%', titleColor: 'text-emerald-300' }
+          ]).map((kpi, i) => (
+            <div key={i} className="player-kpi-card bg-slate-800/80 p-4 rounded-xl border border-slate-700 text-center print:bg-[#1e293b] print:border-slate-700 print:p-2">
+              <p className={`text-xs font-bold uppercase print:text-[8px] ${kpi.titleColor}`}>{kpi.label}<span className="block text-[10px] font-normal text-slate-400 normal-case">({kpi.unit})</span></p>
+              <p className="text-2xl font-black text-white print:text-white print:text-lg mt-1">{kpi.val}</p>
             </div>
           ))}
         </div>
 
-        <section className="player-analysis-section bg-slate-900/40 p-4 sm:p-6 rounded-[2rem] border border-slate-700/80 print:bg-[#0f172a] print:p-2 print:border-slate-700 print:m-0 print:mb-1">
-          <h3 className="text-lg sm:text-xl font-black text-white mb-4 uppercase italic border-l-4 border-blue-500 pl-2.5 print:text-[10px] print:mb-1">打球トラッキング分析</h3>
-          <div className="player-chart-grid grid grid-cols-1 md:grid-cols-2 gap-4 h-auto print:grid-cols-2 print:gap-2 print:h-[160px]">
-            <div className="player-chart-card player-chart-card-inner bg-slate-800/50 p-4 rounded-xl border border-slate-700/60 flex flex-col h-[320px] print:bg-[#1e293b] print:h-[160px] print:p-1.5">
-              <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-[8px] print:mb-0.5">打球速度 vs 打球角度</h3>
-              <div className="player-chart-body flex-1 w-full min-h-[240px] print:h-[135px]"><VelocityAngleChart data={filteredData} xKeys={EV_KEYS} yKeys={LA_KEYS} /></div>
-            </div>
-            <div className="player-chart-card player-chart-card-inner bg-slate-800/50 p-4 rounded-xl border border-slate-700/60 flex flex-col h-[320px] print:bg-[#1e293b] print:h-[160px] print:p-1.5">
-              <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-[8px] print:mb-0.5">打球方向 (スプレーチャート)</h3>
-              <div className="player-chart-body flex-1 w-full min-h-[240px] print:h-[135px]"><SprayChart data={filteredData} /></div>
-            </div>
-          </div>
-        </section>
-
-        {hasBatData && (
-          <section className="player-swing-section bg-gradient-to-br from-slate-800/80 to-slate-900/80 p-4 rounded-xl border border-purple-500/20 print:bg-[#1e293b] print:p-2 print:border-purple-500/30">
-            <h3 className="text-purple-400 text-xs font-black uppercase tracking-widest flex items-center gap-1.5 mb-2 print:text-[9px] print:mb-0.5"><Zap size={13} /> スイング分析</h3>
-            <div className="flex justify-around text-center">
-              <div><p className="text-slate-400 text-[10px] font-black uppercase print:text-[7px]">平均バット速度</p><p className="text-xl font-black text-white print:text-base">{summary.avgBS.toFixed(1)}</p></div>
-              <div><p className="text-slate-400 text-[10px] font-black uppercase print:text-[7px]">オンプレーン率</p><p className="text-xl font-black text-white print:text-base">{summary.avgPlane.toFixed(1)}%</p></div>
+        {/* Ball Tracking Section (Rapsodo / Combined) */}
+        {showBallTracking && (
+          <section className="player-analysis-section bg-slate-900/40 p-4 sm:p-6 rounded-[2rem] border border-slate-700/80 print:bg-[#0f172a] print:p-2 print:border-slate-700 print:m-0 print:mb-1">
+            <h3 className="text-lg sm:text-xl font-black text-white mb-4 uppercase italic border-l-4 border-blue-500 pl-2.5 print:text-[10px] print:mb-1">打球トラッキング分析</h3>
+            <div className="player-chart-grid grid grid-cols-1 md:grid-cols-2 gap-4 h-auto print:grid-cols-2 print:gap-2 print:h-[160px]">
+              <div className="player-chart-card player-chart-card-inner bg-slate-800/50 p-4 rounded-xl border border-slate-700/60 flex flex-col h-[320px] print:bg-[#1e293b] print:h-[160px] print:p-1.5">
+                <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-[8px] print:mb-0.5">打球速度 vs 打球角度</h3>
+                <div className="player-chart-body flex-1 w-full min-h-[240px] print:h-[135px]"><VelocityAngleChart data={filteredData} xKeys={EV_KEYS} yKeys={LA_KEYS} /></div>
+              </div>
+              <div className="player-chart-card player-chart-card-inner bg-slate-800/50 p-4 rounded-xl border border-slate-700/60 flex flex-col h-[320px] print:bg-[#1e293b] print:h-[160px] print:p-1.5">
+                <h3 className="text-xs font-black text-slate-400 uppercase mb-2 print:text-[8px] print:mb-0.5">打球方向 (スプレーチャート)</h3>
+                <div className="player-chart-body flex-1 w-full min-h-[240px] print:h-[135px]"><SprayChart data={filteredData} /></div>
+              </div>
             </div>
           </section>
         )}
 
-        {/* 日付推移散布図 */}
-        <PlayerTrendScatterChart savantEvents={savantEvents} blastEvents={blastEvents} startDate={startDate} endDate={endDate} />
+        {/* Swing Analysis Section (Blast / Combined) */}
+        {showSwingAnalysis && (
+          <section className="player-swing-section bg-gradient-to-br from-slate-800/80 to-slate-900/80 p-5 rounded-2xl border border-purple-500/20 print:bg-[#1e293b] print:p-2 print:border-purple-500/30">
+            <h3 className="text-purple-400 text-xs font-black uppercase tracking-widest flex items-center gap-1.5 mb-3 print:text-[9px] print:mb-1"><Zap size={15} /> スイング分析</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+              <div><p className="text-slate-400 text-[10px] font-black uppercase print:text-[7px]">平均バット速度<span className="block text-[9px] font-normal text-slate-500 normal-case">(km/h)</span></p><p className="text-xl font-black text-white print:text-base mt-0.5">{summary.avgBS.toFixed(1)}</p></div>
+              <div><p className="text-slate-400 text-[10px] font-black uppercase print:text-[7px]">最大バット速度<span className="block text-[9px] font-normal text-slate-500 normal-case">(km/h)</span></p><p className="text-xl font-black text-white print:text-base mt-0.5">{summary.maxBS.toFixed(1)}</p></div>
+              <div><p className="text-slate-400 text-[10px] font-black uppercase print:text-[7px]">オンプレーン率<span className="block text-[9px] font-normal text-slate-500 normal-case">(%)</span></p><p className="text-xl font-black text-white print:text-base mt-0.5">{summary.avgPlane.toFixed(1)}</p></div>
+              <div><p className="text-slate-400 text-[10px] font-black uppercase print:text-[7px]">アッパースイング度<span className="block text-[9px] font-normal text-slate-500 normal-case">(°)</span></p><p className="text-xl font-black text-white print:text-base mt-0.5">{summary.avgAA.toFixed(1)}</p></div>
+            </div>
+          </section>
+        )}
+
+        {/* Date Trend Chart */}
+        <PlayerTrendScatterChart savantEvents={savantEvents} blastEvents={blastEvents} sourceType={sourceType} startDate={startDate} endDate={endDate} />
       </div>
-    </div>
-  );
-
-
-  return (
-    <div className="player-profile-root text-slate-200 pb-20">
-      <style>{`
-        @media print {
-          @page {
-            size: A4 portrait;
-            margin: 4mm 5mm;
-          }
-
-          .no-print {
-            display: none !important;
-          }
-
-          /* CLASSIC MODE PRINT (Left View Mode): REVERTED 100% TO ORIGINAL CLEAN WHITE REPORT */
-          .player-classic-report {
-            background-color: white !important;
-            color: #0f172a !important;
-          }
-          .player-classic-report .player-kpi-card {
-            background-color: #f8fafc !important;
-            border-color: #e2e8f0 !important;
-            color: #0f172a !important;
-          }
-          .player-classic-report .player-chart-card {
-            background-color: white !important;
-            border-color: #e2e8f0 !important;
-          }
-          .player-classic-report .player-trend-card {
-            background-color: white !important;
-            border-color: #e2e8f0 !important;
-          }
-          .player-classic-report svg text {
-            fill: #334155 !important;
-          }
-          .player-classic-report .recharts-cartesian-grid line {
-            stroke: #e2e8f0 !important;
-          }
-
-          /* PRO MODE PRINT (Right View Mode): DEDICATED COMPACT SINGLE-PAGE DASHBOARD */
-          .player-pro-report {
-            background-color: #0b0f17 !important;
-            color: #f8fafc !important;
-            max-height: 275mm !important;
-            overflow: hidden !important;
-          }
-          .recharts-surface {
-            width: 100% !important;
-            height: 100% !important;
-          }
-        }
-      `}</style>
-
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 no-print">
-        <div>
-          <h1 className="text-4xl font-black text-white tracking-tight">{playerName}</h1>
-          <p className="text-slate-500 text-xs font-bold mt-1 uppercase tracking-widest">{mode === 'classic' ? '打撃分析レポート' : 'Rapsodo / Blast 単体分析'}</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="bg-slate-800 p-1 rounded-2xl border border-slate-700 flex">
-            <button onClick={() => setForceMode('classic')} className={`p-2 rounded-xl transition-all ${mode === 'classic' ? 'bg-slate-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}><List size={18} /></button>
-            <button onClick={() => setForceMode('pro')} className={`p-2 rounded-xl transition-all ${mode === 'pro' ? 'bg-slate-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}><Layout size={18} /></button>
-          </div>
-          {/* PDF出力機能は一時非表示（html2canvas + jsPDFキャンバス連携を実装中） */}
-          {/* <button onClick={handlePrint} disabled={isExportingPDF} className="bg-white text-slate-900 font-black py-3 px-6 rounded-2xl flex items-center gap-2 shadow-xl hover:bg-slate-100 transition-all"><Printer size={18} /> {isExportingPDF ? 'PDF生成中...' : 'PDF出力'}</button> */}
-        </div>
-      </div>
-
-      {mode === 'classic' ? renderClassic() : renderPro()}
     </div>
   );
 };
