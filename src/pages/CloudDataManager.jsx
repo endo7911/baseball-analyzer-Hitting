@@ -51,9 +51,15 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         .select('file_name, upload_id, updated_at, created_at')
         .limit(5000);
 
+      const { data: bodyCompRows, error: bcError } = await client
+        .from('body_comp_data')
+        .select('file_name, upload_id, updated_at, created_at')
+        .limit(5000);
+
       if (sError) console.warn("savant_data fetch error:", sError);
       if (blError) console.warn("blast_data fetch error:", blError);
       if (pError) console.warn("pitching_data fetch error:", pError);
+      if (bcError) console.warn("body_comp_data fetch error:", bcError);
 
       const rawEmail = (profile?.email || profile?.display_name || '').trim().toLowerCase();
       const userEmail = rawEmail.includes('@') ? rawEmail : 'guest';
@@ -67,11 +73,10 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
           return (
             emailPrefix === userEmail || 
             emailPrefix === 'guest' || 
-            userEmail === 'guest' || 
-            userEmail === 'admin@example.com'
+            userEmail === 'guest'
           );
         }
-        if (tName.includes('@') && tName !== userEmail && userEmail !== 'admin@example.com' && userEmail !== 'guest') {
+        if (tName.includes('@') && tName !== userEmail && userEmail !== 'guest') {
           return false;
         }
         return true;
@@ -115,6 +120,27 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
             filename: name,
             updated_at: row.updated_at || row.created_at,
             table: 'pitching_data',
+            is_legacy: false,
+            count: 1
+          });
+        } else {
+          datasetMap.get(key).count += 1;
+        }
+      });
+
+      // Process body_comp_data
+      (bodyCompRows || []).forEach(row => {
+        if (!isRowForUser(row)) return;
+        const name = row.file_name || row.upload_id;
+        if (!name) return;
+        const key = `body_comp-${name}`;
+        if (!datasetMap.has(key)) {
+          datasetMap.set(key, {
+            id: key,
+            type: 'body_comp',
+            filename: name,
+            updated_at: row.updated_at || row.created_at,
+            table: 'body_comp_data',
             is_legacy: false,
             count: 1
           });
@@ -215,6 +241,9 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       } else if (table === 'pitching_data') {
         const { error } = await client.from('pitching_data').delete().eq('file_name', filename);
         if (error) throw error;
+      } else if (table === 'body_comp_data') {
+        const { error } = await client.from('body_comp_data').delete().eq('file_name', filename);
+        if (error) throw error;
       } else {
         const targetTable = table || (type === 'savant' ? 'savant_data' : 'blast_data');
         const { error } = await client.from(targetTable).delete().eq('file_name', filename);
@@ -303,9 +332,10 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
                           dataset.type === 'savant' ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 
                           dataset.type === 'savant_pitching' ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30' : 
                           dataset.type === 'blast' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 
+                          dataset.type === 'body_comp' ? 'bg-cyan-600/20 text-cyan-400 border border-cyan-500/30' :
                           'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
                         }`}>
-                          {dataset.type === 'savant' ? 'RAPSODO 打撃' : dataset.type === 'savant_pitching' ? 'RAPSODO 投球' : dataset.type === 'combined' ? '統合データ' : dataset.type?.toUpperCase()}
+                          {dataset.type === 'savant' ? 'RAPSODO 打撃' : dataset.type === 'savant_pitching' ? 'RAPSODO 投球' : dataset.type === 'blast' ? 'BLAST' : dataset.type === 'body_comp' ? '体組成' : dataset.type === 'combined' ? '統合データ' : dataset.type?.toUpperCase()}
                         </span>
                         {dataset.is_legacy && (
                           <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px] font-bold">LEGACY</span>

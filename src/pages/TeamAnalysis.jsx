@@ -1,7 +1,308 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { extractTeams, extractPlayersByTeam, getPlayerStats, calculateAverages, calculateMax, groupEventsByTeamAndPlayer, parseNumeric, getDataValue, getRawDataValue, parseAnyDate, parseDateToTimestamp, EV_KEYS, BS_KEYS, LA_KEYS, AA_KEYS, DEFAULT_DATE_KEYS } from '../utils/dataHelpers';
-import { ScatterChart, Scatter, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, LabelList } from 'recharts';
+import { ScatterChart, Scatter, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, LabelList, ReferenceLine } from 'recharts';
 import { Users, TrendingUp, Zap, BarChart3, Eye, RefreshCw, Settings2 } from 'lucide-react';
+
+function SmashFactorChart({ groupedData, selectedTeam }) {
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [viewType, setViewType] = useState('trend'); // 'trend' or 'bar'
+
+  // 1. 日別推移散布図データ
+  const trendData = useMemo(() => {
+    if (!selectedTeam || !groupedData[selectedTeam]) return [];
+    const teamPlayers = groupedData[selectedTeam];
+    const list = [];
+
+    Object.keys(teamPlayers).forEach(player => {
+      const events = teamPlayers[player];
+      if (!events || !Array.isArray(events)) return;
+
+      const dateEvBs = {};
+      events.forEach(e => {
+        const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || e.file_name || e.filename || '';
+        if (!rawDate) return;
+        const dateStr = parseAnyDate(rawDate);
+        if (!dateStr) return;
+        if (startDate && dateStr < startDate) return;
+        if (endDate && dateStr > endDate) return;
+
+        const ev = parseNumeric(getDataValue(e, EV_KEYS));
+        const bs = parseNumeric(getDataValue(e, BS_KEYS));
+        if (!dateEvBs[dateStr]) dateEvBs[dateStr] = { evs: [], bss: [], paired: [] };
+        if (ev > 0 && bs > 0) dateEvBs[dateStr].paired.push(ev / bs);
+        if (ev > 0) dateEvBs[dateStr].evs.push(ev);
+        if (bs > 0) dateEvBs[dateStr].bss.push(bs);
+      });
+
+      Object.keys(dateEvBs).forEach(dateStr => {
+        const item = dateEvBs[dateStr];
+        let smashVals = [];
+        if (item.paired.length > 0) {
+          smashVals = item.paired;
+        } else if (item.evs.length > 0 && item.bss.length > 0) {
+          const avgE = item.evs.reduce((a, b) => a + b, 0) / item.evs.length;
+          const avgB = item.bss.reduce((a, b) => a + b, 0) / item.bss.length;
+          if (avgB > 0) smashVals = [avgE / avgB];
+        }
+
+        if (smashVals.length > 0) {
+          const avgSmash = Number((smashVals.reduce((a, b) => a + b, 0) / smashVals.length).toFixed(3));
+          const maxSmash = Number(Math.max(...smashVals).toFixed(3));
+          const timeMs = parseDateToTimestamp(dateStr);
+          if (!isNaN(timeMs) && timeMs > 0) {
+            list.push({
+              date: dateStr,
+              timeMs,
+              player,
+              avgSmash,
+              maxSmash,
+              count: smashVals.length
+            });
+          }
+        }
+      });
+    });
+
+    return list.sort((a, b) => a.timeMs - b.timeMs);
+  }, [selectedTeam, groupedData, startDate, endDate]);
+
+  // 2. 選手別比較棒グラフデータ
+  const barData = useMemo(() => {
+    if (!selectedTeam || !groupedData[selectedTeam]) return [];
+    const teamPlayers = groupedData[selectedTeam];
+
+    const list = Object.keys(teamPlayers).map(player => {
+      const events = teamPlayers[player];
+      if (!events || !Array.isArray(events)) return null;
+
+      const evs = [];
+      const bss = [];
+      const pairedSmash = [];
+
+      events.forEach(e => {
+        const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || e.file_name || e.filename || '';
+        const dateStr = parseAnyDate(rawDate);
+        if (!dateStr) return;
+        if (startDate && dateStr < startDate) return;
+        if (endDate && dateStr > endDate) return;
+
+        const ev = parseNumeric(getDataValue(e, EV_KEYS));
+        const bs = parseNumeric(getDataValue(e, BS_KEYS));
+        if (ev > 0 && bs > 0) pairedSmash.push(ev / bs);
+        if (ev > 0) evs.push(ev);
+        if (bs > 0) bss.push(bs);
+      });
+
+      let avgSmash = 0;
+      let maxSmash = 0;
+
+      if (pairedSmash.length > 0) {
+        avgSmash = Number((pairedSmash.reduce((a, b) => a + b, 0) / pairedSmash.length).toFixed(3));
+        maxSmash = Number(Math.max(...pairedSmash).toFixed(3));
+      } else if (evs.length > 0 && bss.length > 0) {
+        const avgE = evs.reduce((a, b) => a + b, 0) / evs.length;
+        const avgB = bss.reduce((a, b) => a + b, 0) / bss.length;
+        if (avgB > 0) {
+          avgSmash = Number((avgE / avgB).toFixed(3));
+          maxSmash = avgSmash;
+        }
+      }
+
+      if (avgSmash === 0) return null;
+
+      return {
+        player,
+        avgSmash,
+        maxSmash,
+        count: pairedSmash.length || evs.length
+      };
+    }).filter(Boolean);
+
+    return list.sort((a, b) => b.avgSmash - a.avgSmash);
+  }, [selectedTeam, groupedData, startDate, endDate]);
+
+  const teamAvgSmash = useMemo(() => {
+    if (barData.length === 0) return null;
+    const sum = barData.reduce((acc, curr) => acc + (curr.avgSmash || 0), 0);
+    return Number((sum / barData.length).toFixed(3));
+  }, [barData]);
+
+  return (
+    <div className="w-full bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl mt-8 p-4 sm:p-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700 pb-4 mb-5">
+        <div className="flex items-center gap-2 min-w-0">
+          <Zap className="w-5 h-5 text-cyan-400 flex-shrink-0" />
+          <div className="min-w-0">
+            <h3 className="font-extrabold text-white text-base sm:text-lg whitespace-nowrap truncate">スマッシュファクター推移 (打球速 ÷ バット速)</h3>
+            <p className="text-xs text-slate-400 truncate">
+              インパクト時のミート効率（エネルギー伝達率）
+              {teamAvgSmash && <span className="ml-2 text-amber-400 font-bold">(チーム平均: {teamAvgSmash.toFixed(3)})</span>}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-bold whitespace-nowrap">範囲:</span>
+            <input 
+              type="date" 
+              value={startDate} 
+              onChange={e => setStartDate(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-cyan-500"
+            />
+            <span className="text-xs text-slate-500">~</span>
+            <input 
+              type="date" 
+              value={endDate} 
+              onChange={e => setEndDate(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-cyan-500"
+            />
+            {(startDate || endDate) && (
+              <button 
+                onClick={() => { setStartDate(''); setEndDate(''); }}
+                className="text-[11px] text-cyan-400 hover:text-cyan-300 font-bold underline"
+              >
+                全期間
+              </button>
+            )}
+          </div>
+
+          <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-700">
+            <button 
+              onClick={() => setViewType('trend')}
+              className={`px-3 py-1 rounded text-xs font-bold transition-all ${viewType === 'trend' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            >
+              日別推移散布図
+            </button>
+            <button 
+              onClick={() => setViewType('bar')}
+              className={`px-3 py-1 rounded text-xs font-bold transition-all ${viewType === 'bar' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            >
+              選手別比較
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ height: '350px' }} className="w-full">
+        {viewType === 'trend' ? (
+          trendData.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400 text-sm">
+              <p className="font-bold text-slate-300">スマッシュファクターのデータがありません</p>
+              <p className="text-xs text-slate-500 mt-1">※ 打球速度とバット速度の両方が含まれるデータで自動計算されます</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 15 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis 
+                  type="number"
+                  dataKey="timeMs" 
+                  name="日付" 
+                  stroke="#94a3b8" 
+                  fontSize={11}
+                  domain={['auto', 'auto']}
+                  tickFormatter={(timeMs) => {
+                    const d = new Date(timeMs);
+                    if (isNaN(d.getTime())) return '';
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    return `${d.getFullYear()}-${m}-${day}`;
+                  }}
+                  label={{ value: '日付', position: 'insideBottom', offset: -25, fill: '#94a3b8', fontSize: 11, fontWeight: 'bold' }}
+                />
+                <YAxis 
+                  type="number" 
+                  dataKey="avgSmash" 
+                  name="スマッシュファクター" 
+                  stroke="#94a3b8" 
+                  fontSize={11}
+                  width={55}
+                  domain={[1.0, 1.6]}
+                  ticks={[1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]}
+                />
+                <ReferenceLine y={1.40} stroke="#475569" strokeDasharray="3 3" strokeWidth={1} strokeOpacity={0.6} />
+                {teamAvgSmash && (
+                  <ReferenceLine y={teamAvgSmash} stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.5} />
+                )}
+                <Tooltip 
+                  cursor={{ strokeDasharray: '3 3' }} 
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const d = payload[0].payload;
+                      return (
+                        <div className="bg-slate-900 border border-cyan-500/40 p-3 rounded-xl shadow-2xl text-sm">
+                          <p className="font-bold text-white mb-1 border-b border-slate-700 pb-1">{d.player} ({d.date})</p>
+                          <p className="font-bold text-cyan-400">
+                            平均スマッシュファクター: <span className="text-white font-mono">{d.avgSmash.toFixed(3)}</span>
+                          </p>
+                          <p className="font-bold text-rose-400">
+                            最大スマッシュファクター: <span className="text-white font-mono">{d.maxSmash.toFixed(3)}</span>
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Scatter 
+                  data={trendData} 
+                  fill="#06b6d4"
+                  shape={(props) => {
+                    const { cx, cy, payload } = props;
+                    return (
+                      <g>
+                        <circle cx={cx} cy={cy} r={6} fill="#06b6d4" fillOpacity={0.85} stroke="#67e8f9" strokeWidth={1.5} />
+                        <text x={cx} y={cy - 9} textAnchor="middle" fill="#cbd5e1" fontSize={9} fontWeight="bold">
+                          {payload.player}
+                        </text>
+                      </g>
+                    );
+                  }}
+                />
+              </ScatterChart>
+            </ResponsiveContainer>
+          )
+        ) : (
+          barData.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400 text-sm">
+              <p className="font-bold text-slate-300">スマッシュファクターのデータがありません</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={barData} margin={{ top: 25, right: 30, left: 15, bottom: 50 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                <XAxis dataKey="player" stroke="#94a3b8" fontSize={11} interval={0} angle={-35} textAnchor="end" />
+                <YAxis stroke="#94a3b8" fontSize={11} domain={[1.0, 1.6]} ticks={[1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]} width={55} />
+                <ReferenceLine y={1.40} stroke="#475569" strokeDasharray="3 3" strokeWidth={1} strokeOpacity={0.6} />
+                {teamAvgSmash && (
+                  <ReferenceLine y={teamAvgSmash} stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.5} />
+                )}
+                <Tooltip 
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      const d = payload[0].payload;
+                      return (
+                        <div className="bg-slate-900 border border-cyan-500/40 p-3 rounded-xl shadow-2xl text-sm">
+                          <p className="font-bold text-white mb-1 border-b border-slate-700 pb-1">{label}</p>
+                          <p className="text-cyan-400 font-bold">平均スマッシュファクター: <span className="text-white font-mono">{d.avgSmash.toFixed(3)}</span></p>
+                          <p className="text-rose-400 font-bold">最大スマッシュファクター: <span className="text-white font-mono">{d.maxSmash.toFixed(3)}</span></p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Bar dataKey="avgSmash" name="平均スマッシュファクター" fill="#06b6d4" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
 
 function TeamTrendScatterChart({ groupedData, selectedTeam }) {
   const [metric, setMetric] = useState('ev');
@@ -14,9 +315,45 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
     la: { label: '打球角度', unit: '°', avgColor: '#a855f7', maxColor: '#f97316', keys: LA_KEYS },
     bs: { label: 'バット速度', unit: 'km/h', avgColor: '#3b82f6', maxColor: '#ec4899', keys: BS_KEYS },
     aa: { label: 'アッパースイング度', unit: '°', avgColor: '#f59e0b', maxColor: '#f43f5e', keys: AA_KEYS },
+    smash: { label: 'スマッシュファクター', unit: '', avgColor: '#06b6d4', maxColor: '#f43f5e', isSmash: true },
   };
 
   const currentMeta = metricMeta[metric];
+
+  // チーム全体の期間内スマッシュファクター（打球速度 ÷ バット速度）計算
+  const overallTeamSmash = useMemo(() => {
+    if (!selectedTeam || !groupedData[selectedTeam]) return null;
+    const teamPlayers = groupedData[selectedTeam];
+    let totalEV = 0, countEV = 0;
+    let totalBS = 0, countBS = 0;
+
+    Object.keys(teamPlayers).forEach(player => {
+      const events = teamPlayers[player];
+      if (!events || !Array.isArray(events)) return;
+
+      events.forEach(e => {
+        const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || e.file_name || e.filename || '';
+        const dateStr = parseAnyDate(rawDate);
+        if (startDate && dateStr && dateStr < startDate) return;
+        if (endDate && dateStr && dateStr > endDate) return;
+
+        const ev = parseNumeric(getDataValue(e, EV_KEYS));
+        const bs = parseNumeric(getDataValue(e, BS_KEYS));
+        if (ev > 0) { totalEV += ev; countEV++; }
+        if (bs > 0) { totalBS += bs; countBS++; }
+      });
+    });
+
+    const avgEV = countEV > 0 ? (totalEV / countEV) : 0;
+    const avgBS = countBS > 0 ? (totalBS / countBS) : 0;
+    const smash = (avgEV > 0 && avgBS > 0) ? (avgEV / avgBS).toFixed(3) : null;
+
+    return {
+      avgEV: avgEV.toFixed(1),
+      avgBS: avgBS.toFixed(1),
+      smash
+    };
+  }, [selectedTeam, groupedData, startDate, endDate]);
 
   const trendData = useMemo(() => {
     if (!selectedTeam || !groupedData[selectedTeam]) return [];
@@ -27,32 +364,66 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
       const events = teamPlayers[player];
       if (!events || !Array.isArray(events)) return;
 
-      // Group events for each player by date
       const dateMap = {};
-      events.forEach(e => {
-        const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || e.file_name || e.filename || '';
-        if (!rawDate) return;
 
-        const dateStr = parseAnyDate(rawDate);
-        if (!dateStr) return;
-        if (startDate && dateStr < startDate) return;
-        if (endDate && dateStr > endDate) return;
+      if (currentMeta.isSmash) {
+        // スマッシュファクター: イベント単位または同日の平均打球速度 ÷ 平均バット速度
+        const dateEvBs = {};
+        events.forEach(e => {
+          const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || e.file_name || e.filename || '';
+          if (!rawDate) return;
+          const dateStr = parseAnyDate(rawDate);
+          if (!dateStr) return;
+          if (startDate && dateStr < startDate) return;
+          if (endDate && dateStr > endDate) return;
 
-        const val = parseNumeric(getDataValue(e, currentMeta.keys));
-        if (val !== 0 && !isNaN(val)) {
+          const ev = parseNumeric(getDataValue(e, EV_KEYS));
+          const bs = parseNumeric(getDataValue(e, BS_KEYS));
+          if (!dateEvBs[dateStr]) dateEvBs[dateStr] = { evs: [], bss: [], paired: [] };
+          if (ev > 0 && bs > 0) dateEvBs[dateStr].paired.push(ev / bs);
+          if (ev > 0) dateEvBs[dateStr].evs.push(ev);
+          if (bs > 0) dateEvBs[dateStr].bss.push(bs);
+        });
+
+        Object.keys(dateEvBs).forEach(dateStr => {
+          const item = dateEvBs[dateStr];
           if (!dateMap[dateStr]) dateMap[dateStr] = [];
-          dateMap[dateStr].push(val);
-        }
-      });
+          if (item.paired.length > 0) {
+            dateMap[dateStr].push(...item.paired);
+          } else if (item.evs.length > 0 && item.bss.length > 0) {
+            const avgE = item.evs.reduce((a, b) => a + b, 0) / item.evs.length;
+            const avgB = item.bss.reduce((a, b) => a + b, 0) / item.bss.length;
+            if (avgB > 0) dateMap[dateStr].push(avgE / avgB);
+          }
+        });
+      } else {
+        // 通常の単一指標
+        events.forEach(e => {
+          const rawDate = getRawDataValue(e, DEFAULT_DATE_KEYS) || e.date || e.game_date || e.file_name || e.filename || '';
+          if (!rawDate) return;
 
-      // Calculate avg & max for each date
+          const dateStr = parseAnyDate(rawDate);
+          if (!dateStr) return;
+          if (startDate && dateStr < startDate) return;
+          if (endDate && dateStr > endDate) return;
+
+          const val = parseNumeric(getDataValue(e, currentMeta.keys));
+          if (val !== 0 && !isNaN(val)) {
+            if (!dateMap[dateStr]) dateMap[dateStr] = [];
+            dateMap[dateStr].push(val);
+          }
+        });
+      }
+
+      // 日ごとの平均 & 最大値を算出
       Object.keys(dateMap).forEach(dateStr => {
         const vals = dateMap[dateStr];
         if (vals.length === 0) return;
 
         const sum = vals.reduce((a, b) => a + b, 0);
-        const avg = Number((sum / vals.length).toFixed(1));
-        const max = Number(Math.max(...vals).toFixed(1));
+        const decimals = currentMeta.isSmash ? 3 : 1;
+        const avg = Number((sum / vals.length).toFixed(decimals));
+        const max = Number(Math.max(...vals).toFixed(decimals));
 
         const timeMs = parseDateToTimestamp(dateStr);
 
@@ -149,6 +520,7 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
               <option value="la">打球角度 (°)</option>
               <option value="bs">バット速度 (km/h)</option>
               <option value="aa">アッパースイング度 (°)</option>
+              <option value="smash">スマッシュファクター (打球速度÷バット速度)</option>
             </select>
           </div>
         </div>
@@ -218,14 +590,15 @@ function TeamTrendScatterChart({ groupedData, selectedTeam }) {
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
                     const d = payload[0].payload;
+                    const decimals = currentMeta.isSmash ? 3 : 1;
                     return (
                       <div className="bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl text-sm">
                         <p className="font-bold text-white mb-1 border-b border-slate-700 pb-1">{d.player} ({d.date})</p>
                         <p className="font-bold" style={{ color: currentMeta.avgColor }}>
-                          日別平均: <span className="text-white font-mono">{d.avgVal.toFixed(1)} {currentMeta.unit}</span>
+                          日別平均: <span className="text-white font-mono">{d.avgVal.toFixed(decimals)} {currentMeta.unit}</span>
                         </p>
                         <p className="font-bold" style={{ color: currentMeta.maxColor }}>
-                          日別最大: <span className="text-white font-mono">{d.maxVal.toFixed(1)} {currentMeta.unit}</span>
+                          日別最大: <span className="text-white font-mono">{d.maxVal.toFixed(decimals)} {currentMeta.unit}</span>
                         </p>
                         <p className="text-slate-400 text-xs mt-1">当日のスイング数: {d.count} 回</p>
                       </div>
@@ -427,6 +800,9 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
         avgExitVelo: Number(calculateAverages(filteredEvents, EV_KEYS)),
         maxExitVelo: Number(calculateMax(filteredEvents, EV_KEYS)),
         avgLaunchAngle: Number(calculateAverages(filteredEvents, LA_KEYS)),
+        smashFactor: (Number(calculateAverages(filteredEvents, BS_KEYS)) > 0 && Number(calculateAverages(filteredEvents, EV_KEYS)) > 0)
+          ? Number((Number(calculateAverages(filteredEvents, EV_KEYS)) / Number(calculateAverages(filteredEvents, BS_KEYS))).toFixed(3))
+          : 0,
         swings: filteredEvents.length
       };
     }).filter(Boolean);
@@ -446,6 +822,9 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
     const teamAvgAttackAngle = activeStats.length > 0 ? (activeStats.reduce((acc, s) => acc + (s.avgAttackAngle || 0), 0) / activeStats.length).toFixed(1) : 0;
     const teamAvgExitVelo = activeStats.length > 0 ? (activeStats.reduce((acc, s) => acc + (s.avgExitVelo || 0), 0) / activeStats.length).toFixed(1) : 0;
     const teamAvgLaunchAngle = activeStats.length > 0 ? (activeStats.reduce((acc, s) => acc + (s.avgLaunchAngle || 0), 0) / activeStats.length).toFixed(1) : 0;
+    const teamSmashFactor = (Number(teamAvgBatSpeed) > 0 && Number(teamAvgExitVelo) > 0) 
+      ? (Number(teamAvgExitVelo) / Number(teamAvgBatSpeed)).toFixed(3) 
+      : 0;
 
     return {
       allPlayers: statsList,
@@ -453,7 +832,8 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
       teamAvgBatSpeed,
       teamAvgAttackAngle,
       teamAvgExitVelo,
-      teamAvgLaunchAngle
+      teamAvgLaunchAngle,
+      teamSmashFactor
     };
   }, [selectedTeam, groupedData, statsList, activePlayers]);
 
@@ -761,6 +1141,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                   <option value="maxBatSpeed_desc">最大バット速度 (高い順)</option>
                   <option value="avgAttackAngle_desc">アッパースイング度 (高い順)</option>
                   <option value="avgLaunchAngle_desc">平均打球角度 (高い順)</option>
+                  <option value="smashFactor_desc">スマッシュファクター (高い順)</option>
                   <option value="swings_desc">スイング数 (多い順)</option>
                   <option value="player_asc">選手名 (50音・アルファベット順)</option>
                 </select>
@@ -770,47 +1151,53 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
               <table className="w-full text-sm text-left text-slate-300">
                 <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700 select-none">
                   <tr>
-                    <th onClick={() => handleSort('player')} className="px-5 py-3.5 cursor-pointer hover:text-white transition-colors">
+                    <th onClick={() => handleSort('player')} className="px-5 py-3.5 cursor-pointer hover:text-white transition-colors whitespace-nowrap">
                       選手名 {tableSortKey === 'player' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
                     </th>
-                    <th onClick={() => handleSort('swings')} className="px-5 py-3.5 cursor-pointer hover:text-white transition-colors">
+                    <th onClick={() => handleSort('swings')} className="px-5 py-3.5 cursor-pointer hover:text-white transition-colors whitespace-nowrap">
                       スイング数 {tableSortKey === 'swings' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
                     </th>
                     {hasBatData && (
-                      <th onClick={() => handleSort('avgBatSpeed')} className="px-5 py-3.5 text-blue-400 font-bold cursor-pointer hover:text-blue-300 transition-colors">
+                      <th onClick={() => handleSort('avgBatSpeed')} className="px-5 py-3.5 text-blue-400 font-bold cursor-pointer hover:text-blue-300 transition-colors whitespace-nowrap">
                         平均バットスピード {tableSortKey === 'avgBatSpeed' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
                         <span className="block text-[10px] text-slate-500 font-normal normal-case">km/h</span>
                       </th>
                     )}
                     {hasBatData && (
-                      <th onClick={() => handleSort('maxBatSpeed')} className="px-5 py-3.5 text-blue-300 font-bold cursor-pointer hover:text-blue-200 transition-colors">
+                      <th onClick={() => handleSort('maxBatSpeed')} className="px-5 py-3.5 text-blue-300 font-bold cursor-pointer hover:text-blue-200 transition-colors whitespace-nowrap">
                         最大バットスピード {tableSortKey === 'maxBatSpeed' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
                         <span className="block text-[10px] text-slate-500 font-normal normal-case">km/h</span>
                       </th>
                     )}
                     {hasAttackAngle && (
-                      <th onClick={() => handleSort('avgAttackAngle')} className="px-5 py-3.5 text-green-400 font-bold cursor-pointer hover:text-green-300 transition-colors">
+                      <th onClick={() => handleSort('avgAttackAngle')} className="px-5 py-3.5 text-green-400 font-bold cursor-pointer hover:text-green-300 transition-colors whitespace-nowrap">
                         平均アッパー度 {tableSortKey === 'avgAttackAngle' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
                         <span className="block text-[10px] text-slate-500 font-normal normal-case">°</span>
                       </th>
                     )}
                     {hasBallData && (
-                      <th onClick={() => handleSort('avgExitVelo')} className="px-5 py-3.5 text-emerald-400 font-bold cursor-pointer hover:text-emerald-300 transition-colors">
+                      <th onClick={() => handleSort('avgExitVelo')} className="px-5 py-3.5 text-emerald-400 font-bold cursor-pointer hover:text-emerald-300 transition-colors whitespace-nowrap">
                         平均打球速度 {tableSortKey === 'avgExitVelo' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
                         <span className="block text-[10px] text-slate-500 font-normal normal-case">km/h</span>
                       </th>
                     )}
                     {hasBallData && (
-                      <th onClick={() => handleSort('maxExitVelo')} className="px-5 py-3.5 text-emerald-300 font-bold cursor-pointer hover:text-emerald-200 transition-colors">
+                      <th onClick={() => handleSort('maxExitVelo')} className="px-5 py-3.5 text-emerald-300 font-bold cursor-pointer hover:text-emerald-200 transition-colors whitespace-nowrap">
                         最大打球速度 {tableSortKey === 'maxExitVelo' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
                         <span className="block text-[10px] text-slate-500 font-normal normal-case">km/h</span>
                       </th>
                     )}
-                    <th onClick={() => handleSort('avgLaunchAngle')} className="px-5 py-3.5 text-purple-400 font-bold cursor-pointer hover:text-purple-300 transition-colors">
+                    <th onClick={() => handleSort('avgLaunchAngle')} className="px-5 py-3.5 text-purple-400 font-bold cursor-pointer hover:text-purple-300 transition-colors whitespace-nowrap">
                       平均打球角度 {tableSortKey === 'avgLaunchAngle' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
                       <span className="block text-[10px] text-slate-500 font-normal normal-case">°</span>
                     </th>
-                    <th className="px-5 py-3.5 text-right">詳細</th>
+                    {hasBatData && hasBallData && (
+                      <th onClick={() => handleSort('smashFactor')} className="px-5 py-3.5 text-cyan-400 font-bold cursor-pointer hover:text-cyan-300 transition-colors whitespace-nowrap">
+                        スマッシュファクター {tableSortKey === 'smashFactor' ? (tableSortDir === 'asc' ? '▲' : '▼') : ''}
+                        <span className="block text-[10px] text-slate-500 font-normal normal-case">打球速÷バット速</span>
+                      </th>
+                    )}
+                    <th className="px-5 py-3.5 text-right whitespace-nowrap">詳細</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/60">
@@ -824,6 +1211,11 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                       {hasBallData && <td className="px-5 py-3.5 font-bold text-emerald-300 text-base">{p.avgExitVelo.toFixed(1)} <span className="text-xs text-slate-500 font-normal">km/h</span></td>}
                       {hasBallData && <td className="px-5 py-3.5 font-bold text-emerald-200 text-base">{p.maxExitVelo.toFixed(1)} <span className="text-xs text-slate-500 font-normal">km/h</span></td>}
                       <td className="px-5 py-3.5 font-bold text-purple-300 text-base">{p.avgLaunchAngle.toFixed(1)}°</td>
+                      {hasBatData && hasBallData && (
+                        <td className="px-5 py-3.5 font-bold text-cyan-400 text-base font-mono">
+                          {p.smashFactor > 0 ? p.smashFactor.toFixed(3) : '-'}
+                        </td>
+                      )}
                       <td className="px-5 py-3.5 text-right">
                         <button 
                           onClick={() => onViewPlayer(p.player, selectedTeam, sourceType === 'savant' ? 'rapsodo_batting' : sourceType)}
@@ -1133,6 +1525,9 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
             </div>
 
           </div>
+
+          {/* スマッシュファクター推移グラフ (打球速度 ➗ バット速度) */}
+          <SmashFactorChart groupedData={groupedData} selectedTeam={selectedTeam} />
 
           {/* 日付推移散布図 (日付 vs 指標推移) */}
           <TeamTrendScatterChart groupedData={groupedData} selectedTeam={selectedTeam} />

@@ -12,26 +12,44 @@ import CloudDataManager from './pages/CloudDataManager';
 import LoginPage from './pages/LoginPage';
 import AdminPanel from './pages/AdminPanel';
 import GuidePage from './pages/GuidePage';
-import { SHOW_PITCHER_MODULE } from './config';
+import BodyCompAnalysis from './pages/BodyCompAnalysis';
+import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from './config';
 import './App.css';
 
 import { supabase, getSupabase } from './lib/supabase';
 import { getGlobalUsers } from './lib/userSync';
 import { saveDatasetToLocalDB, getDatasetFromLocalDB, clearLocalDB } from './lib/db';
 import { extractRowVal, toAsciiNumbers, parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS } from './utils/dataHelpers';
+import { toBodyCompDbRow, extractBodyValues, getBodyName, getBodyTeam, getBodyDate } from './utils/bodyComp';
 
 function App() {
   const [savantFiles, setSavantFiles] = useState([]);
   const [savantPitchingFiles, setSavantPitchingFiles] = useState([]);
   const [blastFiles, setBlastFiles] = useState([]);
   const [combinedFiles, setCombinedFiles] = useState([]);
+  const [bodyCompFiles, setBodyCompFiles] = useState([]);
   const [cloudSavantFiles, setCloudSavantFiles] = useState([]);
   const [cloudSavantPitchingFiles, setCloudSavantPitchingFiles] = useState([]);
   const [cloudBlastFiles, setCloudBlastFiles] = useState([]);
   const [cloudCombinedFiles, setCloudCombinedFiles] = useState([]);
+  const [cloudBodyCompFiles, setCloudBodyCompFiles] = useState([]);
   const [activeView, setActiveView] = useState('upload');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [analysisState, setAnalysisState] = useState({ team: '', player: '' });
+
+  // Day (朝 ☀️) / Night (夜 🌙) Theme State
+  const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
+
+  useEffect(() => {
+    localStorage.setItem('app_theme', theme);
+    if (theme === 'light') {
+      document.documentElement.classList.add('light-mode');
+      document.body.classList.add('light-mode');
+    } else {
+      document.documentElement.classList.remove('light-mode');
+      document.body.classList.remove('light-mode');
+    }
+  }, [theme]);
 
   // Auth state
   const [user, setUser] = useState(null);
@@ -43,9 +61,9 @@ function App() {
 
   // Check auth on mount
   useEffect(() => {
-    // 1. Check local storage for mock session first
-    const savedUser = localStorage.getItem('mockUser');
-    const savedProfile = localStorage.getItem('mockProfile');
+    // 1. Check session storage (session-based) first, fallback to legacy local storage
+    const savedUser = sessionStorage.getItem('mockUser') || localStorage.getItem('mockUser');
+    const savedProfile = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile');
     
     if (savedUser && savedProfile) {
       try {
@@ -55,6 +73,8 @@ function App() {
         getGlobalUsers().then(globalUsers => {
           const latest = globalUsers.find(m => m.id === u.id || m.email.toLowerCase() === (u.email || '').toLowerCase());
           if (latest?.is_disabled || p?.is_disabled) {
+            sessionStorage.removeItem('mockUser');
+            sessionStorage.removeItem('mockProfile');
             localStorage.removeItem('mockUser');
             localStorage.removeItem('mockProfile');
             setUser(null);
@@ -62,6 +82,12 @@ function App() {
             setAuthLoading(false);
             alert('このアカウントは停止されています。');
           } else {
+            // Migrate legacy localStorage session to sessionStorage
+            sessionStorage.setItem('mockUser', JSON.stringify(u));
+            sessionStorage.setItem('mockProfile', JSON.stringify(latest ? { ...p, ...latest } : p));
+            localStorage.removeItem('mockUser');
+            localStorage.removeItem('mockProfile');
+
             setUser(u);
             setProfile(latest ? { ...p, ...latest } : p);
             setAuthLoading(false);
@@ -116,17 +142,19 @@ function App() {
       const loadCachedData = async () => {
         const userKey = user?.id ? `user_${user.id}` : 'guest';
         try {
-          const [cCombined, cSavant, cBlast, cPitching] = await Promise.all([
+          const [cCombined, cSavant, cBlast, cPitching, cBodyComp] = await Promise.all([
             getDatasetFromLocalDB(`${userKey}_combined`),
             getDatasetFromLocalDB(`${userKey}_savant`),
             getDatasetFromLocalDB(`${userKey}_blast`),
-            getDatasetFromLocalDB(`${userKey}_savant_pitching`)
+            getDatasetFromLocalDB(`${userKey}_savant_pitching`),
+            getDatasetFromLocalDB(`${userKey}_body_comp`)
           ]);
           
           if (Array.isArray(cCombined) && cCombined.length > 0) setCombinedFiles(cCombined);
           if (Array.isArray(cSavant) && cSavant.length > 0) setSavantFiles(cSavant);
           if (Array.isArray(cBlast) && cBlast.length > 0) setBlastFiles(cBlast);
           if (Array.isArray(cPitching) && cPitching.length > 0) setSavantPitchingFiles(cPitching);
+          if (Array.isArray(cBodyComp) && cBodyComp.length > 0) setBodyCompFiles(cBodyComp);
         } catch (e) {
           console.warn("Local DB restore failed:", e);
         }
@@ -141,7 +169,9 @@ function App() {
   const handleLogin = (u, p) => { setUser(u); setProfile(p); };
 
   const handleLogout = async () => {
-    // Clear mock session
+    // Clear mock session from both sessionStorage and localStorage
+    sessionStorage.removeItem('mockUser');
+    sessionStorage.removeItem('mockProfile');
     localStorage.removeItem('mockUser');
     localStorage.removeItem('mockProfile');
     
@@ -166,7 +196,8 @@ function App() {
     
     const table = type === 'savant' ? 'savant_data' 
                 : (type === 'blast' ? 'blast_data' 
-                : (type === 'savant_pitching' ? 'pitching_data' : 'baseball_data'));
+                : (type === 'savant_pitching' ? 'pitching_data' 
+                : (type === 'body_comp' ? 'body_comp_data' : 'baseball_data')));
 
     // Define allowed columns matching exact Supabase schemas
     const SAVANT_COLUMNS = [
@@ -205,9 +236,17 @@ function App() {
       'file_name', 'upload_id'
     ];
 
+    const BODY_COMP_COLUMNS = [
+      'date', 'player_name', 'team_name', 'height', 'weight', 'muscle_mass',
+      'body_fat_pct', 'bmr', 'bmi', 'trunk_muscle', 'left_arm_muscle',
+      'right_arm_muscle', 'left_leg_muscle', 'right_leg_muscle', 'ffmi',
+      'file_name', 'upload_id'
+    ];
+
     const allowedColumns = table === 'savant_data' ? SAVANT_COLUMNS 
       : (table === 'blast_data' ? BLAST_COLUMNS 
-      : (table === 'pitching_data' ? PITCHING_COLUMNS : COMBINED_COLUMNS));
+      : (table === 'pitching_data' ? PITCHING_COLUMNS 
+      : (table === 'body_comp_data' ? BODY_COMP_COLUMNS : COMBINED_COLUMNS)));
 
     // Mapping for Japanese/Rapsodo keys to DB columns
     const COLUMN_MAP = {
@@ -224,6 +263,19 @@ function App() {
       'Pitcher': 'pitcher_name',
       'PitcherName': 'pitcher_name',
       'pitcher_name': 'pitcher_name',
+      // 体組成 (Body Composition)
+      '身長': 'height', 'Height': 'height', 'height': 'height',
+      '体重': 'weight', 'Weight': 'weight', 'weight': 'weight',
+      '筋肉量': 'muscle_mass', '全身筋肉量': 'muscle_mass', '骨格筋量': 'muscle_mass', 'Muscle Mass': 'muscle_mass', 'muscle_mass': 'muscle_mass', 'SMM': 'muscle_mass',
+      '体脂肪率': 'body_fat_pct', 'Body Fat': 'body_fat_pct', 'body_fat_pct': 'body_fat_pct', 'PBF': 'body_fat_pct',
+      '基礎代謝量': 'bmr', '基礎代謝': 'bmr', 'BMR': 'bmr', 'bmr': 'bmr',
+      'BMI': 'bmi', 'bmi': 'bmi',
+      '体幹': 'trunk_muscle', '体幹筋肉量': 'trunk_muscle', 'Trunk': 'trunk_muscle', 'trunk_muscle': 'trunk_muscle',
+      '左腕': 'left_arm_muscle', '左腕筋肉量': 'left_arm_muscle', 'Left Arm': 'left_arm_muscle', 'left_arm_muscle': 'left_arm_muscle',
+      '右腕': 'right_arm_muscle', '右腕筋肉量': 'right_arm_muscle', 'Right Arm': 'right_arm_muscle', 'right_arm_muscle': 'right_arm_muscle',
+      '左足': 'left_leg_muscle', '左脚': 'left_leg_muscle', 'Left Leg': 'left_leg_muscle', 'left_leg_muscle': 'left_leg_muscle',
+      '右足': 'right_leg_muscle', '右脚': 'right_leg_muscle', 'Right Leg': 'right_leg_muscle', 'right_leg_muscle': 'right_leg_muscle',
+      'FFMI': 'ffmi', 'ffmi': 'ffmi',
       // 学年
       '学年': 'grade',
       'grade': 'grade',
@@ -553,6 +605,74 @@ function App() {
         await insertRowsToTable('blast_data', BLAST_COLUMNS);
       } else if (type === 'savant_pitching') {
         await insertRowsToTable('pitching_data', PITCHING_COLUMNS);
+      } else if (type === 'body_comp') {
+        let savedToDedicated = false;
+        try {
+          const bodyCompDbRows = dataArray.map(row => {
+            const dbRow = toBodyCompDbRow(row) || {};
+            const d = dbRow.date || parseAnyDate(getRawDataValue(row, DEFAULT_DATE_KEYS)) || null;
+            return {
+              ...dbRow,
+              file_name: dataObj.filename,
+              upload_id: `${uploaderEmail}::up-${Date.now()}`,
+              team_name: dbRow.team_name || getBodyTeam(row) || null,
+              player_name: dbRow.player_name || getBodyName(row) || 'Unknown Player',
+              date: d
+            };
+          }).filter(r => r.player_name);
+
+          if (bodyCompDbRows.length > 0) {
+            const { error: bcErr } = await client.from('body_comp_data').insert(bodyCompDbRows);
+            if (!bcErr) {
+              savedToDedicated = true;
+            } else {
+              console.warn("body_comp_data table insert failed, falling back to baseball_data storage:", bcErr);
+            }
+          }
+        } catch (e) {
+          console.warn("body_comp_data table error, falling back to baseball_data storage:", e);
+        }
+
+        if (!savedToDedicated) {
+          const fallbackRows = dataArray.map(row => {
+            const values = extractBodyValues(row);
+            const name = getBodyName(row) || row['選手名'] || row['Player'] || 'Unknown Player';
+            const team = getBodyTeam(row) || row['チーム名'] || row['Team'] || 'Unknown Team';
+            const d = getBodyDate(row) || parseAnyDate(getRawDataValue(row, DEFAULT_DATE_KEYS)) || null;
+
+            const payloadObj = {
+              h: values.height,
+              w: values.weight,
+              m: values.muscle,
+              f: values.fatPct,
+              bmr: values.bmr,
+              bmi: values.bmi,
+              t: values.trunk,
+              la: values.leftArm,
+              ra: values.rightArm,
+              ll: values.leftLeg,
+              rl: values.rightLeg,
+              ffmi: values.ffmi
+            };
+            const jsonStr = JSON.stringify(payloadObj);
+            const rowUploadId = `${uploaderEmail}::bodycomp::${Date.now()}::${jsonStr}`;
+
+            return {
+              file_name: `__bodycomp__::${dataObj.filename}`,
+              player_name: name,
+              team_name: team,
+              game_date: d,
+              date: d,
+              upload_id: rowUploadId
+            };
+          }).filter(r => r.player_name);
+
+          for (let i = 0; i < fallbackRows.length; i += 500) {
+            const batch = fallbackRows.slice(i, i + 500);
+            const { error: fbErr } = await client.from('baseball_data').insert(batch);
+            if (fbErr) throw fbErr;
+          }
+        }
       } else {
         // combined: Save directly to dedicated baseball_data table in Supabase
         await insertRowsToTable('baseball_data', COMBINED_COLUMNS);
@@ -607,11 +727,12 @@ function App() {
         return allRows;
       };
 
-      const [savantRaw, blastRaw, combinedRaw, pitchingRaw] = await Promise.all([
+      const [savantRaw, blastRaw, combinedRaw, pitchingRaw, bodyCompRaw] = await Promise.all([
         fetchTable('savant_data').catch(() => []),
         fetchTable('blast_data').catch(() => []),
         fetchTable('baseball_data').catch(() => []),
-        fetchTable('pitching_data').catch(() => [])
+        fetchTable('pitching_data').catch(() => []),
+        fetchTable('body_comp_data').catch(() => [])
       ]);
 
       const rawEmail = (user?.email || profile?.email || '').trim().toLowerCase();
@@ -630,17 +751,16 @@ function App() {
 
           if (uId.includes('::')) {
             const uploader = uId.split('::')[0];
-            // Allow: own data, guest-uploaded, admin view
+            // Allow: own data, guest-uploaded
             if (
               uploader === uploaderEmail ||
-              uploader === 'guest' ||
-              uploaderEmail === 'admin@example.com'
+              uploader === 'guest'
             ) return true;
             return false; // belongs to a different real user
           }
 
           // Rows tagged with another user's email in team_name
-          if (tName.includes('@') && tName !== uploaderEmail && uploaderEmail !== 'admin@example.com') {
+          if (tName.includes('@') && tName !== uploaderEmail) {
             return false;
           }
 
@@ -650,8 +770,69 @@ function App() {
 
       const sRaw = filterByUserEmail(savantRaw);
       const bRaw = filterByUserEmail(blastRaw);
-      const cRaw = filterByUserEmail(combinedRaw);
+      const cRawHitting = (combinedRaw || []).filter(r => {
+        const fName = String(r?.file_name || '');
+        const uId = String(r?.upload_id || '');
+        return !fName.startsWith('__bodycomp__::') && !uId.includes('::bodycomp::');
+      });
+      const cRaw = filterByUserEmail(cRawHitting);
       const pRaw = filterByUserEmail(pitchingRaw);
+
+      // Dedicated body_comp_data rows
+      const bcDedicated = filterByUserEmail(bodyCompRaw);
+
+      // Fallback body_comp rows stored in baseball_data (combinedRaw)
+      const bcFallback = (combinedRaw || []).filter(row => {
+        if (!row) return false;
+        const fName = String(row.file_name || '');
+        const uId = String(row.upload_id || '').toLowerCase();
+        if (!fName.startsWith('__bodycomp__::') && !uId.includes('::bodycomp::')) return false;
+
+        if (uId.includes('::')) {
+          const uploader = uId.split('::')[0];
+          if (uploader === uploaderEmail || uploader === 'guest') {
+            return true;
+          }
+        }
+        return false;
+      }).map(row => {
+        const cleanFileName = String(row.file_name || '').replace(/^__bodycomp__::/, '');
+        const uId = String(row.upload_id || '');
+        let parsedVals = {};
+        if (uId.includes('::bodycomp::')) {
+          const parts = uId.split('::');
+          const jsonPart = parts.slice(3).join('::');
+          if (jsonPart) {
+            try {
+              const p = JSON.parse(jsonPart);
+              parsedVals = {
+                '身長': p.h, 'height': p.h,
+                '体重': p.w, 'weight': p.w,
+                '筋肉量': p.m, 'muscle_mass': p.m,
+                '体脂肪率': p.f, 'body_fat_pct': p.f,
+                '基礎代謝量': p.bmr, 'bmr': p.bmr,
+                'BMI': p.bmi, 'bmi': p.bmi,
+                '体幹': p.t, 'trunk_muscle': p.t,
+                '左腕': p.la, 'left_arm_muscle': p.la,
+                '右腕': p.ra, 'right_arm_muscle': p.ra,
+                '左足': p.ll, 'left_leg_muscle': p.ll,
+                '右足': p.rl, 'right_leg_muscle': p.rl,
+                'FFMI': p.ffmi, 'ffmi': p.ffmi
+              };
+            } catch (e) {}
+          }
+        }
+        return {
+          ...row,
+          ...parsedVals,
+          file_name: cleanFileName,
+          player_name: row.player_name,
+          team_name: row.team_name,
+          date: row.date || row.game_date
+        };
+      });
+
+      const allBcRows = [...bcDedicated, ...bcFallback];
 
       // Helper to group flat rows into the "Files" format the app expects
       const groupIntoFiles = (rows, type) => {
@@ -659,8 +840,12 @@ function App() {
         const grouped = {};
         rows.forEach(row => {
           if (!row) return;
-          const fileName = row.file_name || row.filename || 'Cloud Data';
-          if (fileName.startsWith('__')) return;
+          let fileName = row.file_name || row.filename || 'Cloud Data';
+          if (fileName.startsWith('__bodycomp__::')) {
+            fileName = fileName.replace(/^__bodycomp__::/, '');
+          } else if (fileName.startsWith('__')) {
+            return;
+          }
           
           const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS) || row.date || row.game_date;
           let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
@@ -744,20 +929,23 @@ function App() {
         }
       });
 
+      const bcRaw = filterByUserEmail(bodyCompRaw);
       const savantFilesCloud = groupIntoFiles(sRaw.filter(r => r?.file_name && !combinedFileNames.has(r.file_name)), 'savant');
       const blastFilesCloud = groupIntoFiles(bRaw.filter(r => r?.file_name && !combinedFileNames.has(r.file_name)), 'blast');
       const pitchingFilesCloud = groupIntoFiles(pRaw, 'savant_pitching');
       const combinedFilesCloud = groupIntoFiles(combinedRawList, 'combined');
+      const bodyCompFilesCloud = groupIntoFiles(allBcRows, 'body_comp');
 
-      console.log('[fetchFromCloud] sRaw:', sRaw.length, 'bRaw:', bRaw.length, 'cRaw:', cRaw.length, 'pRaw:', pRaw.length);
+      console.log('[fetchFromCloud] sRaw:', sRaw.length, 'bRaw:', bRaw.length, 'cRaw:', cRaw.length, 'pRaw:', pRaw.length, 'bcRaw:', bcRaw.length);
       console.log('[fetchFromCloud] combinedRawList:', combinedRawList.length, 'combinedFilesCloud:', combinedFilesCloud.length);
-      console.log('[fetchFromCloud] savantFilesCloud:', savantFilesCloud.length, 'blastFilesCloud:', blastFilesCloud.length);
+      console.log('[fetchFromCloud] savantFilesCloud:', savantFilesCloud.length, 'blastFilesCloud:', blastFilesCloud.length, 'bodyCompFilesCloud:', bodyCompFilesCloud.length);
 
       // Update cloud files for analysis views
       setCloudSavantFiles(savantFilesCloud);
       setCloudBlastFiles(blastFilesCloud);
       setCloudSavantPitchingFiles(pitchingFilesCloud);
       setCloudCombinedFiles(combinedFilesCloud);
+      setCloudBodyCompFiles(bodyCompFilesCloud);
       
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Synced!', cloudConnected: true, lastError: null }));
       console.log("Cloud sync complete.");
@@ -781,6 +969,7 @@ function App() {
     else if (type === 'savant_pitching' || type === 'pitcher') { setter = setSavantPitchingFiles; currentFiles = savantPitchingFiles; }
     else if (type === 'blast') { setter = setBlastFiles; currentFiles = blastFiles; }
     else if (type === 'combined') { setter = setCombinedFiles; currentFiles = combinedFiles; }
+    else if (type === 'body_comp' || type === 'bodyComp') { setter = setBodyCompFiles; currentFiles = bodyCompFiles; }
     else { setter = setSavantFiles; currentFiles = savantFiles; }
     
     let newFiles = [...currentFiles];
@@ -890,13 +1079,11 @@ function App() {
             const uploader = uId.split('::')[0];
             if (
               uploader !== userEmail &&
-              uploader !== 'guest' &&
-              userEmail !== 'admin@example.com'
+              uploader !== 'guest'
             ) return; // belongs to another user
           } else if (
             tName.includes('@') &&
-            tName !== userEmail &&
-            userEmail !== 'admin@example.com'
+            tName !== userEmail
           ) {
             return; // team_name contains another user's email
           }
@@ -918,17 +1105,19 @@ function App() {
   const savantPitchingData = useMemo(() => mergeFiles([...savantPitchingFiles, ...cloudSavantPitchingFiles]), [savantPitchingFiles, cloudSavantPitchingFiles]);
   const blastData = useMemo(() => mergeFiles([...blastFiles, ...cloudBlastFiles]), [blastFiles, cloudBlastFiles]);
   const combinedData = useMemo(() => mergeFiles([...combinedFiles, ...cloudCombinedFiles]), [combinedFiles, cloudCombinedFiles]);
+  const bodyCompData = useMemo(() => mergeFiles([...bodyCompFiles, ...cloudBodyCompFiles]), [bodyCompFiles, cloudBodyCompFiles]);
 
   const renderActiveView = () => {
     const uploadProps = {
-      savantFiles, savantPitchingFiles, blastFiles, combinedFiles, updateDataState,
+      savantFiles, savantPitchingFiles, blastFiles, combinedFiles, bodyCompFiles, updateDataState,
       setActiveView, saveToCloud, syncState, profile, fetchFromCloud
     };
     switch (activeView) {
       case 'upload':   return <UploadPage {...uploadProps} />;
       case 'team':     return <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
-      case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} />;
       case 'pitcher':  return SHOW_PITCHER_MODULE ? <PitcherAnalysis savantData={savantPitchingData} blastData={null} combinedData={null} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} /> : <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
+      case 'bodyComp': return SHOW_BODY_COMP_MODULE ? <BodyCompAnalysis bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source: source || 'body_comp' }); setActiveView('player'); }} /> : <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
+      case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} bodyCompData={bodyCompData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} />;
       case 'game':     return <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'custom':   return <CustomCharts savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'cloud':    return <CloudDataManager updateDataState={updateDataState} profile={profile} syncState={syncState} fetchFromCloud={fetchFromCloud} />;
@@ -938,7 +1127,36 @@ function App() {
     }
   };
 
-  const handleViewChange = (view) => { setActiveView(view); setIsMenuOpen(false); };
+  const checkAccountStatus = async () => {
+    if (!user) return true;
+    try {
+      const globalUsers = await getGlobalUsers();
+      const targetEmail = (user.email || profile?.email || '').toLowerCase();
+      const latest = globalUsers.find(u => (u.id && u.id === user.id) || (u.email && u.email.toLowerCase() === targetEmail));
+      if (latest && latest.is_disabled === true) {
+        localStorage.removeItem('mockUser');
+        localStorage.removeItem('mockProfile');
+        try {
+          await supabase.auth.signOut();
+        } catch (e) {}
+        setUser(null);
+        setProfile(null);
+        alert('このアカウントは管理者により停止されました。');
+        return false;
+      }
+    } catch (e) {
+      // Safe fallback: network error or fetch fail NEVER logs out an active user
+      console.warn("Account status check skipped:", e);
+    }
+    return true;
+  };
+
+  const handleViewChange = async (view) => { 
+    const isOk = await checkAccountStatus();
+    if (!isOk) return;
+    setActiveView(view); 
+    setIsMenuOpen(false); 
+  };
 
   // Loading
   if (authLoading) {
@@ -957,6 +1175,7 @@ function App() {
     cloud: 'クラウド管理',
     team: '打撃分析',
     pitcher: '投手分析',
+    bodyComp: '体組成分析',
     player: '個人分析',
     game: '試合スタッツ',
     custom: 'カスタムグラフ',
@@ -997,15 +1216,19 @@ function App() {
         savantPitchingData={savantPitchingData}
         blastData={blastData}
         combinedData={combinedData}
+        bodyCompData={bodyCompData}
         savantFiles={savantFiles}
         savantPitchingFiles={savantPitchingFiles}
         blastFiles={blastFiles}
         combinedFiles={combinedFiles}
+        bodyCompFiles={bodyCompFiles}
         isOpen={isMenuOpen}
         setIsOpen={setIsMenuOpen}
         syncState={syncState}
         profile={profile}
         onLogout={handleLogout}
+        theme={theme}
+        setTheme={setTheme}
       />
 
       <main className="content-area pt-20 lg:pt-10">

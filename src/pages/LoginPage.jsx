@@ -66,7 +66,7 @@ function LoginPage({ onLogin }) {
           return;
         }
 
-        if (await verifyPassword(password.trim(), foundGlobalUser.password)) {
+        if (await verifyPassword(password.trim(), foundGlobalUser.password, foundGlobalUser.temp_password)) {
           const userObj = { id: foundGlobalUser.id, email: foundGlobalUser.email };
           const profileObj = { 
             id: foundGlobalUser.id,
@@ -76,8 +76,10 @@ function LoginPage({ onLogin }) {
             is_disabled: false
           };
 
-          localStorage.setItem('mockUser', JSON.stringify(userObj));
-          localStorage.setItem('mockProfile', JSON.stringify(profileObj));
+          sessionStorage.setItem('mockUser', JSON.stringify(userObj));
+          sessionStorage.setItem('mockProfile', JSON.stringify(profileObj));
+          localStorage.removeItem('mockUser');
+          localStorage.removeItem('mockProfile');
           onLogin(userObj, profileObj);
           setLoading(false);
           return;
@@ -95,8 +97,10 @@ function LoginPage({ onLogin }) {
         const mockUser = { id: 'admin-id', email: 'admin@example.com' };
         const mockProfile = { id: 'admin-id', role: 'admin', team_id: '管理者', display_name: '管理者アカウント', is_disabled: false };
 
-        localStorage.setItem('mockUser', JSON.stringify(mockUser));
-        localStorage.setItem('mockProfile', JSON.stringify(mockProfile));
+        sessionStorage.setItem('mockUser', JSON.stringify(mockUser));
+        sessionStorage.setItem('mockProfile', JSON.stringify(mockProfile));
+        localStorage.removeItem('mockUser');
+        localStorage.removeItem('mockProfile');
         onLogin(mockUser, mockProfile);
         setLoading(false);
         return;
@@ -107,8 +111,10 @@ function LoginPage({ onLogin }) {
         const mockUser = { id: 'user-default-id', email: 'user@example.com' };
         const mockProfile = { id: 'user-default-id', role: 'user', team_id: 'Team A', display_name: '一般利用者', is_disabled: false };
 
-        localStorage.setItem('mockUser', JSON.stringify(mockUser));
-        localStorage.setItem('mockProfile', JSON.stringify(mockProfile));
+        sessionStorage.setItem('mockUser', JSON.stringify(mockUser));
+        sessionStorage.setItem('mockProfile', JSON.stringify(mockProfile));
+        localStorage.removeItem('mockUser');
+        localStorage.removeItem('mockProfile');
         onLogin(mockUser, mockProfile);
         setLoading(false);
         return;

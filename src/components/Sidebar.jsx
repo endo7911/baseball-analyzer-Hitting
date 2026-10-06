@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X, BookOpen, Target } from 'lucide-react';
-import { SHOW_PITCHER_MODULE } from '../config';
+import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X, BookOpen, Target, Dumbbell, Sun, Moon } from 'lucide-react';
+import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from '../config';
 
 function Sidebar({ 
   activeView, setActiveView, 
-  savantData, savantPitchingData, blastData, combinedData, 
-  savantFiles = [], savantPitchingFiles = [], blastFiles = [], combinedFiles = [],
-  isOpen, setIsOpen, syncState, profile, onLogout 
+  savantData, savantPitchingData, blastData, combinedData, bodyCompData,
+  savantFiles = [], savantPitchingFiles = [], blastFiles = [], combinedFiles = [], bodyCompFiles = [],
+  isOpen, setIsOpen, syncState, profile, onLogout,
+  theme = 'dark', setTheme
 }) {
   const isAdmin = profile?.role === 'admin';
   const hasData = 
@@ -14,10 +15,12 @@ function Sidebar({
     (savantPitchingData?.data?.length > 0) || 
     (blastData?.data?.length > 0) || 
     (combinedData?.data?.length > 0) ||
+    (bodyCompData?.data?.length > 0) ||
     (savantFiles.length > 0) ||
     (savantPitchingFiles.length > 0) ||
     (blastFiles.length > 0) ||
-    (combinedFiles.length > 0);
+    (combinedFiles.length > 0) ||
+    (bodyCompFiles.length > 0);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
 
@@ -30,6 +33,7 @@ function Sidebar({
   const allMenuItems = [
     { id: 'upload', label: 'データ読み込み', icon: UploadCloud, mobileHidden: true },
     { id: 'cloud', label: 'クラウド管理', icon: HardDrive, mobileHidden: true },
+    ...(SHOW_BODY_COMP_MODULE ? [{ id: 'bodyComp', label: '体組成分析', icon: Dumbbell, disabled: !hasData }] : []),
     { id: 'team', label: '打撃分析', icon: Users, disabled: !hasData },
     ...(SHOW_PITCHER_MODULE ? [{ id: 'pitcher', label: '投手分析', icon: Target, disabled: !hasData }] : []),
     { id: 'player', label: '個人分析', icon: User, disabled: !hasData },
@@ -50,13 +54,36 @@ function Sidebar({
       fixed lg:relative z-40 transition-transform duration-300
       ${isOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}
     `}>
-      <div className="p-5 border-b border-gray-800 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
+      <div className="p-4 border-b border-gray-800 flex items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 truncate">
             Baseball Analyzer
           </h1>
-          <p className="text-[10px] text-gray-500 mt-0.5">Rapsodo & Blast Integration</p>
+          <p className="text-[10px] text-gray-500 truncate">Rapsodo & Blast Integration</p>
         </div>
+
+        {/* Day (朝 ☀️) / Night (夜 🌙) Theme Switcher */}
+        <div className="flex items-center p-0.5 rounded-full bg-slate-800 border border-slate-700 shrink-0">
+          <button
+            onClick={() => setTheme && setTheme('light')}
+            title="朝モード（白・ライト）"
+            className={`p-1.5 rounded-full transition-all flex items-center justify-center ${
+              theme === 'light' ? 'bg-amber-400 text-slate-900 font-bold shadow-md scale-105' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Sun className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setTheme && setTheme('dark')}
+            title="夜モード（ダーク）"
+            className={`p-1.5 rounded-full transition-all flex items-center justify-center ${
+              theme === 'dark' ? 'bg-indigo-600 text-white font-bold shadow-md scale-105' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Moon className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
         <button 
           onClick={() => setIsOpen && setIsOpen(false)}
           className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"

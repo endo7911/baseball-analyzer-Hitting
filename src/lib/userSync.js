@@ -10,15 +10,36 @@ export async function hashPassword(password) {
   return 'sha256:' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Verify a login attempt against stored value (supports both hash and legacy plain text)
-export async function verifyPassword(inputPassword, stored) {
-  if (!stored || !inputPassword) return false;
-  if (stored.startsWith('sha256:')) {
-    const hashed = await hashPassword(inputPassword);
-    return hashed === stored;
+// Verify a login attempt against stored value (supports main password and 30-minute temporary passwords)
+export async function verifyPassword(inputPassword, stored, tempPasswordObj) {
+  if (!inputPassword) return false;
+
+  // 1. Verify against main stored password
+  if (stored) {
+    if (stored.startsWith('sha256:')) {
+      const hashed = await hashPassword(inputPassword);
+      if (hashed === stored) return true;
+    } else if (stored === String(inputPassword).trim()) {
+      return true;
+    }
   }
-  // Legacy plain-text fallback (only for migrating old accounts)
-  return stored === String(inputPassword).trim();
+
+  // 2. Verify against temporary password if valid (within 30 mins)
+  if (tempPasswordObj && tempPasswordObj.expires_at) {
+    const expiresMs = new Date(tempPasswordObj.expires_at).getTime();
+    if (!isNaN(expiresMs) && expiresMs > Date.now()) {
+      const inputTrimmed = String(inputPassword).trim();
+      if (tempPasswordObj.pass_plain && inputTrimmed === String(tempPasswordObj.pass_plain).trim()) {
+        return true;
+      }
+      if (tempPasswordObj.hashed) {
+        const hashed = await hashPassword(inputPassword);
+        if (hashed === tempPasswordObj.hashed) return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 export const DEFAULT_MOCK_USERS = [

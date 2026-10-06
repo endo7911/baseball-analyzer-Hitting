@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { getGlobalUsers, saveGlobalUsers } from '../lib/userSync';
-import { Users, Plus, Trash2, Shield, RefreshCw, CheckCircle2, XCircle, Ban, PlayCircle } from 'lucide-react';
+import { getGlobalUsers, saveGlobalUsers, hashPassword } from '../lib/userSync';
+import { Users, Plus, Trash2, Shield, RefreshCw, CheckCircle2, XCircle, Ban, PlayCircle, Key, Clock, Copy, Check } from 'lucide-react';
 
 function AdminPanel() {
   const [users, setUsers] = useState([]);
@@ -10,6 +10,8 @@ function AdminPanel() {
   const [showAdd, setShowAdd] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', password: '', team_id: '', role: 'user', display_name: '' });
   const [message, setMessage] = useState(null);
+  const [tempModal, setTempModal] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => { 
     fetchUsers(); 
@@ -70,6 +72,46 @@ function AdminPanel() {
     } catch (err) {
       console.error("Add user error:", err);
       setMessage({ type: 'error', text: 'ユーザーの追加に失敗しました。' });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMessage(null), 4000);
+    }
+  };
+
+  const issueTempPassword = async (user) => {
+    setLoading(true);
+    try {
+      const currentUsers = await getGlobalUsers();
+      const tempPass = 'tp' + Math.floor(100000 + Math.random() * 900000);
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const hashedTemp = await hashPassword(tempPass);
+
+      const updatedUsers = currentUsers.map(u => {
+        if (u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase()) {
+          return {
+            ...u,
+            temp_password: {
+              pass_plain: tempPass,
+              hashed: hashedTemp,
+              expires_at: expiresAt
+            }
+          };
+        }
+        return u;
+      });
+
+      await saveGlobalUsers(updatedUsers);
+      setUsers(updatedUsers);
+      setTempModal({
+        email: user.email,
+        name: user.display_name || user.email,
+        pass: tempPass,
+        expiresAt: expiresAt
+      });
+      setMessage({ type: 'success', text: `「${user.display_name || user.email}」に30分間有効の一時パスワードを発行しました。` });
+    } catch (e) {
+      console.error("Issue temp password error:", e);
+      setMessage({ type: 'error', text: '一時パスワードの発行に失敗しました。' });
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(null), 4000);
@@ -150,7 +192,7 @@ function AdminPanel() {
             <Shield className="w-8 h-8 text-purple-400" />
             管理者パネル
           </h2>
-          <p className="text-slate-400 text-sm">ユーザーの追加・停止・削除・チーム割り当てを管理します。</p>
+          <p className="text-slate-400 text-sm">ユーザーの追加・停止・一時パスワード発行・チーム割り当てを管理します。</p>
         </div>
         <button
           onClick={() => setShowAdd(!showAdd)}
@@ -167,6 +209,64 @@ function AdminPanel() {
         }`}>
           {message.type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <XCircle className="w-4 h-4 flex-shrink-0" />}
           {message.text}
+        </div>
+      )}
+
+      {/* Temp Password Modal */}
+      {tempModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border-2 border-purple-500/40 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-lg font-extrabold text-white flex items-center gap-2">
+                <Key className="w-5 h-5 text-purple-400" />
+                一時パスワード発行完了
+              </h3>
+              <button onClick={() => setTempModal(null)} className="text-slate-400 hover:text-white p-1 text-sm font-bold">
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-300">
+                対象アカウント: <strong className="text-white font-mono">{tempModal.name} ({tempModal.email})</strong>
+              </p>
+
+              <div className="bg-slate-950 p-4 rounded-2xl border border-purple-500/30 text-center space-y-2">
+                <p className="text-[11px] text-purple-400 font-bold uppercase tracking-widest">発行された一時パスワード</p>
+                <div className="text-3xl font-black font-mono text-cyan-300 tracking-wider flex items-center justify-center gap-3">
+                  <span>{tempModal.pass}</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(tempModal.pass);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }}
+                    className="p-2 bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 rounded-xl transition-all text-xs flex items-center gap-1 cursor-pointer"
+                    title="パスワードをコピー"
+                  >
+                    {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                    <span>{copied ? 'コピー完了' : 'コピー'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-amber-950/40 border border-amber-500/30 p-3 rounded-xl flex items-center gap-2 text-amber-300 text-xs font-medium">
+                <Clock className="w-4 h-4 flex-shrink-0" />
+                <span>有効期限: <strong>30分間</strong> ({new Date(tempModal.expiresAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} まで有効)</span>
+              </div>
+
+              <p className="text-[11px] text-slate-400">
+                ※ ユーザーに上記パスワードを連絡してください。30分経過すると自動的に失効し、ログインできなくなります。
+              </p>
+            </div>
+
+            <button
+              onClick={() => setTempModal(null)}
+              className="w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3 rounded-xl transition-all shadow-lg text-sm cursor-pointer mt-2"
+            >
+              閉じる
+            </button>
+          </div>
         </div>
       )}
 
@@ -268,12 +368,15 @@ function AdminPanel() {
         <div className="divide-y divide-slate-700">
           {users.map(user => {
             const isDisabled = !!user.is_disabled;
+            const isTempActive = user.temp_password && user.temp_password.expires_at && (new Date(user.temp_password.expires_at).getTime() > Date.now());
+            const tempExpiryFormatted = isTempActive ? new Date(user.temp_password.expires_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '';
+
             return (
-              <div key={user.id || user.email} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-4 transition-colors ${
+              <div key={user.id || user.email} className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-6 py-4 transition-colors ${
                 isDisabled ? 'bg-red-950/20 opacity-70' : 'hover:bg-slate-700/30'
               }`}>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-bold text-white truncate">{user.display_name || user.email}</p>
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
                       user.role === 'admin' ? 'bg-purple-600/30 text-purple-400 border border-purple-500/30' : 'bg-slate-700 text-slate-300'
@@ -285,11 +388,17 @@ function AdminPanel() {
                     }`}>
                       {isDisabled ? '停止中' : 'アクティブ'}
                     </span>
+                    {isTempActive && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                        <Key className="w-3 h-3 text-cyan-400" />
+                        一時パス有効 (~{tempExpiryFormatted})
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-400 truncate mt-0.5">{user.email}</p>
                 </div>
 
-                <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+                <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
                   <div className="relative">
                     <input
                       list="team-list"
@@ -306,10 +415,21 @@ function AdminPanel() {
                     />
                   </div>
 
+                  {/* Issue Temporary Password Button */}
+                  <button
+                    onClick={() => issueTempPassword(user)}
+                    disabled={loading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-950/60 hover:bg-cyan-900/80 text-cyan-300 border border-cyan-500/40 transition-all cursor-pointer whitespace-nowrap"
+                    title="30分間有効の一時パスワードを発行"
+                  >
+                    <Key className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{isTempActive ? '一時パス再発行' : '一時パス発行 (30分)'}</span>
+                  </button>
+
                   {/* Toggle Disable Status Button */}
                   <button
                     onClick={() => toggleUserStatus(user)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer whitespace-nowrap ${
                       isDisabled
                         ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-600/30'
                         : 'bg-amber-600/20 text-amber-400 border-amber-500/40 hover:bg-amber-600/30'
@@ -319,12 +439,12 @@ function AdminPanel() {
                     {isDisabled ? (
                       <>
                         <PlayCircle className="w-3.5 h-3.5" />
-                        <span>アカウント再開</span>
+                        <span>再開</span>
                       </>
                     ) : (
                       <>
                         <Ban className="w-3.5 h-3.5" />
-                        <span>アカウント停止</span>
+                        <span>停止</span>
                       </>
                     )}
                   </button>

@@ -120,3 +120,251 @@ input:-webkit-autofill:active {
     transition: background-color 5000s ease-in-out 0s;
 }
 
+/* =============================================================
+   朝モード (Light Theme / 白メイン) - 全ページ対応型ハイコントラスト設計
+   ============================================================= */
+html.light-mode,
+body.light-mode {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html.light-mode #root {
+  background-color: #f8fafc !important;
+}
+
+/* 1. サイドバー & ロゴヘッダー修正 */
+html.light-mode .w-64.h-screen {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html.light-mode .w-64.h-screen button:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* ロゴのグラデーションテキスト（白背景でも超鮮明） */
+html.light-mode .bg-clip-text {
+  background-image: linear-gradient(135deg, #1d4ed8 0%, #7e22ce 100%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  color: transparent !important;
+}
+
+/* 2. 全コンテナカードの背景をピュアホワイトに一括統一 */
+html.light-mode [class*="bg-slate-"],
+html.light-mode [class*="bg-gray-"] {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* 枠線・背景グラデーション */
+html.light-mode [class*="bg-gradient-to-"]:not(.bg-clip-text) {
+  background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%) !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* 3. カラーカード・KPIバッジのライトモード専用パステル配色 */
+html.light-mode [class*="bg-blue-900"],
+html.light-mode [class*="bg-blue-950"] {
+  background-color: #eff6ff !important;
+  border-color: #bfdbfe !important;
+}
+
+html.light-mode [class*="bg-green-900"],
+html.light-mode [class*="bg-green-950"] {
+  background-color: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+}
+
+html.light-mode [class*="bg-emerald-900"],
+html.light-mode [class*="bg-emerald-950"] {
+  background-color: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+}
+
+html.light-mode [class*="bg-cyan-900"],
+html.light-mode [class*="bg-cyan-950"] {
+  background-color: #ecfeff !important;
+  border-color: #a5f3fc !important;
+}
+
+html.light-mode [class*="bg-purple-900"],
+html.light-mode [class*="bg-purple-950"] {
+  background-color: #faf5ff !important;
+  border-color: #e9d5ff !important;
+}
+
+html.light-mode [class*="bg-amber-900"],
+html.light-mode [class*="bg-amber-950"] {
+  background-color: #fffbeb !important;
+  border-color: #fde68a !important;
+}
+
+html.light-mode [class*="bg-orange-900"],
+html.light-mode [class*="bg-orange-950"] {
+  background-color: #fff7ed !important;
+  border-color: #ffedd5 !important;
+}
+
+html.light-mode [class*="bg-rose-900"],
+html.light-mode [class*="bg-rose-950"] {
+  background-color: #fff1f2 !important;
+  border-color: #fecdd3 !important;
+}
+
+/* 4. テキストカラーの一括最適化（高コントラスト化） */
+html.light-mode .text-white,
+html.light-mode .text-slate-100,
+html.light-mode .text-slate-200,
+html.light-mode .text-slate-300 {
+  color: #0f172a !important;
+}
+
+html.light-mode .text-slate-400 {
+  color: #475569 !important;
+}
+
+html.light-mode .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* アクセントテキストカラー（鮮やかな濃色で視認性向上） */
+html.light-mode [class*="text-blue-300"],
+html.light-mode [class*="text-blue-400"],
+html.light-mode [class*="text-blue-500"] {
+  color: #1d4ed8 !important;
+}
+
+html.light-mode [class*="text-green-300"],
+html.light-mode [class*="text-green-400"],
+html.light-mode [class*="text-green-500"] {
+  color: #15803d !important;
+}
+
+html.light-mode [class*="text-emerald-300"],
+html.light-mode [class*="text-emerald-400"],
+html.light-mode [class*="text-emerald-500"] {
+  color: #047857 !important;
+}
+
+html.light-mode [class*="text-cyan-300"],
+html.light-mode [class*="text-cyan-400"],
+html.light-mode [class*="text-cyan-500"] {
+  color: #0e7490 !important;
+}
+
+html.light-mode [class*="text-purple-300"],
+html.light-mode [class*="text-purple-400"],
+html.light-mode [class*="text-purple-500"] {
+  color: #7e22ce !important;
+}
+
+html.light-mode [class*="text-amber-300"],
+html.light-mode [class*="text-amber-400"],
+html.light-mode [class*="text-amber-500"] {
+  color: #b45309 !important;
+}
+
+html.light-mode [class*="text-orange-300"],
+html.light-mode [class*="text-orange-400"],
+html.light-mode [class*="text-orange-500"] {
+  color: #c2410c !important;
+}
+
+html.light-mode [class*="text-rose-300"],
+html.light-mode [class*="text-rose-400"],
+html.light-mode [class*="text-rose-500"] {
+  color: #be123c !important;
+}
+
+/* 5. ボーダーカラー一括調整 */
+html.light-mode [class*="border-slate-"],
+html.light-mode [class*="border-gray-"] {
+  border-color: #e2e8f0 !important;
+}
+
+/* 6. テーブル全般のスタイル調整 */
+html.light-mode table {
+  background-color: #ffffff !important;
+}
+
+html.light-mode thead,
+html.light-mode thead tr,
+html.light-mode thead th {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html.light-mode tbody tr {
+  background-color: #ffffff !important;
+}
+
+html.light-mode tbody tr:hover {
+  background-color: #f8fafc !important;
+}
+
+html.light-mode td {
+  color: #0f172a !important;
+  border-color: #f1f5f9 !important;
+}
+
+html.light-mode td.sticky,
+html.light-mode th.sticky {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* チーム平均・特別強調行 */
+html.light-mode tr.bg-amber-500\/10,
+html.light-mode tr.bg-amber-500\/10 td {
+  background-color: #fef3c7 !important;
+  color: #78350f !important;
+}
+
+html.light-mode tr.bg-amber-500\/10 td.sticky {
+  background-color: #fde68a !important;
+  color: #78350f !important;
+}
+
+/* 7. フォーム・入力コントロール */
+html.light-mode select,
+html.light-mode input[type="text"],
+html.light-mode input[type="number"],
+html.light-mode input[type="date"] {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+/* 8. グラフ・散布図 Tooltip, Grid, Bar, Text */
+html.light-mode .recharts-default-tooltip,
+html.light-mode .recharts-tooltip-wrapper > div {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+}
+
+html.light-mode .recharts-cartesian-grid line {
+  stroke: #e2e8f0 !important;
+}
+
+html.light-mode .recharts-text,
+html.light-mode .recharts-cartesian-axis-tick-value,
+html.light-mode svg text {
+  fill: #334155 !important;
+}
+
+/* Recharts の棒グラフ（投球数など）をソフトなライトグレーに */
+html.light-mode .recharts-bar-rectangle path,
+html.light-mode .recharts-bar-rectangle rect,
+html.light-mode .recharts-bar path,
+html.light-mode .recharts-bar rect {
+  fill: #cbd5e1 !important;
+}
+
+

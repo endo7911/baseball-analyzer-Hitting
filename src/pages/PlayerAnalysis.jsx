@@ -17,10 +17,11 @@ import {
 } from '../utils/dataHelpers';
 import PlayerProfile from '../components/PlayerProfile';
 import PitcherProfile from '../components/PitcherProfile';
-import { Users, User, Settings2, Info, Target, Activity } from 'lucide-react';
-import { SHOW_PITCHER_MODULE } from '../config';
+import BodyCompPlayerProfile from '../components/BodyCompPlayerProfile';
+import { Users, User, Settings2, Info, Target, Activity, Dumbbell } from 'lucide-react';
+import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from '../config';
 
-function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedData, initialPlayer, initialTeam, initialSource }) {
+function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedData, bodyCompData, initialPlayer, initialTeam, initialSource }) {
   const rapsodoMergedData = useMemo(() => {
     const sRows = savantData?.data || [];
     const pRows = savantPitchingData?.data || [];
@@ -33,8 +34,8 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
   }, [savantData, savantPitchingData]);
 
   const defaultSource = useMemo(() => {
+    if (initialSource === 'body_comp' || initialSource === 'bodyComp') return 'body_comp';
     if (initialSource === 'savant') {
-      // Legacy: auto-detect which Rapsodo data exists
       if (savantData?.data?.length > 0) return 'rapsodo_batting';
       if (savantPitchingData?.data?.length > 0) return 'rapsodo_pitching';
     }
@@ -43,15 +44,19 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
     if (savantData?.data?.length > 0) return 'rapsodo_batting';
     if (savantPitchingData?.data?.length > 0) return 'rapsodo_pitching';
     if (blastData?.data?.length > 0) return 'blast';
+    if (bodyCompData?.data?.length > 0) return 'body_comp';
     return 'combined';
-  }, [initialSource, savantData, savantPitchingData, blastData, combinedData]);
+  }, [initialSource, savantData, savantPitchingData, blastData, combinedData, bodyCompData]);
 
   const [sourceType, setSourceType] = useState(defaultSource);
-  const [analysisMode, setAnalysisMode] = useState('hitting'); // 'hitting' | 'pitching'
+  const [analysisMode, setAnalysisMode] = useState(
+    defaultSource === 'body_comp' ? 'body_comp' : (defaultSource === 'rapsodo_pitching' ? 'pitching' : 'hitting')
+  );
 
   // Auto-switch sourceType if activeData is empty but another source has data
   useEffect(() => {
     const getActive = (t) => {
+      if (t === 'body_comp') return bodyCompData?.data?.length ? bodyCompData : combinedData;
       if (t === 'rapsodo_batting') return savantData?.data?.length ? savantData : combinedData;
       if (t === 'rapsodo_pitching') return savantPitchingData;
       if (t === 'blast') return blastData?.data?.length ? blastData : combinedData;
@@ -59,14 +64,18 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
     };
     const active = getActive(sourceType);
     if (!active?.data?.length) {
-      if (combinedData?.data?.length && analysisMode !== 'pitching') setSourceType('combined');
+      if (bodyCompData?.data?.length && analysisMode === 'body_comp') setSourceType('body_comp');
+      else if (combinedData?.data?.length && analysisMode !== 'pitching') setSourceType('combined');
       else if (savantData?.data?.length) setSourceType('rapsodo_batting');
       else if (savantPitchingData?.data?.length) setSourceType('rapsodo_pitching');
       else if (blastData?.data?.length) setSourceType('blast');
     }
-  }, [savantData, savantPitchingData, blastData, combinedData, sourceType, analysisMode]);
+  }, [savantData, savantPitchingData, blastData, combinedData, bodyCompData, sourceType, analysisMode]);
 
   const activeData = useMemo(() => {
+    if (analysisMode === 'body_comp' || sourceType === 'body_comp') {
+      return bodyCompData?.data?.length ? bodyCompData : (combinedData?.data?.length ? combinedData : savantData);
+    }
     if (analysisMode === 'pitching' || sourceType === 'rapsodo_pitching') {
       return savantPitchingData?.data?.length ? savantPitchingData : (rapsodoMergedData || combinedData);
     }
@@ -77,8 +86,8 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
       return blastData?.data?.length ? blastData : combinedData;
     }
     return combinedData?.data?.length ? combinedData : (savantData?.data?.length ? savantData : blastData);
-  }, [analysisMode, sourceType, savantData, savantPitchingData, blastData, combinedData, rapsodoMergedData]);
-  
+  }, [analysisMode, sourceType, savantData, savantPitchingData, blastData, combinedData, bodyCompData, rapsodoMergedData]);
+
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState(initialTeam || '');
   const [players, setPlayers] = useState([]);
@@ -90,6 +99,14 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
   const [profileStartDate, setProfileStartDate] = useState('');
   const [profileEndDate, setProfileEndDate] = useState('');
   const [showNameKeyConfig, setShowNameKeyConfig] = useState(false);
+
+  useEffect(() => {
+    if (initialSource === 'body_comp' || initialSource === 'bodyComp') {
+      setSourceType('body_comp');
+      setAnalysisMode('body_comp');
+    }
+  }, [initialSource]);
+
   const headers = useMemo(() => {
     const set = new Set(activeData?.headers || []);
     if (activeData?.data && activeData.data.length > 0) {
@@ -155,7 +172,6 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
       } else if (initialPlayer && teamPlayers.includes(initialPlayer)) {
         setSelectedPlayer(initialPlayer);
       } else if (teamPlayers.length > 0) {
-        // Auto-select first available player!
         setSelectedPlayer(teamPlayers[0]);
       } else {
         setSelectedPlayer('');
@@ -236,6 +252,7 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
 
   // Automatically adjust mode if player only has pitching or only has hitting
   useEffect(() => {
+    if (analysisMode === 'body_comp' || sourceType === 'body_comp') return;
     if (!SHOW_PITCHER_MODULE) {
       setAnalysisMode('hitting');
     } else if (playerCapabilities.hasPitching && !playerCapabilities.hasHitting) {
@@ -243,7 +260,7 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
     } else if (playerCapabilities.hasHitting && !playerCapabilities.hasPitching) {
       setAnalysisMode('hitting');
     }
-  }, [playerCapabilities]);
+  }, [playerCapabilities, analysisMode, sourceType]);
 
   const nameHeaderOptions = useMemo(() => {
     if (!headers || headers.length === 0) return [];
@@ -259,7 +276,7 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
         <h2 className="text-4xl font-extrabold text-white mb-2 flex items-center gap-3">
           <User className="w-10 h-10 text-blue-400" /> 個人分析
         </h2>
-        <p className="text-slate-400 text-lg">選手を選択して個人の打撃レポートを表示します。</p>
+        <p className="text-slate-400 text-lg">選手を選択して個人の各種レポートを表示します。</p>
       </header>
 
       {/* Analysis Settings Card */}
@@ -281,6 +298,9 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
             )}
             {savantPitchingData?.data?.length > 0 && (
               <button onClick={() => { setSourceType('rapsodo_pitching'); setAnalysisMode('pitching'); }} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${analysisMode === 'pitching' ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>Rapsodo 投手</button>
+            )}
+            {SHOW_BODY_COMP_MODULE && (bodyCompData?.data?.length > 0 || combinedData?.data?.length > 0 || savantData?.data?.length > 0) && (
+              <button onClick={() => { setSourceType('body_comp'); setAnalysisMode('body_comp'); }} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${analysisMode === 'body_comp' || sourceType === 'body_comp' ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>体組成</button>
             )}
           </div>
         </div>
@@ -406,9 +426,11 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
       </div>
 
       {/* Selected Player Report Area */}
-      {selectedPlayer && rawPlayerEvents.length > 0 ? (
+      {selectedPlayer ? (
         <div className="space-y-6">
-          {SHOW_PITCHER_MODULE && analysisMode === 'pitching' ? (
+          {SHOW_BODY_COMP_MODULE && (analysisMode === 'body_comp' || sourceType === 'body_comp') ? (
+            <BodyCompPlayerProfile playerName={selectedPlayer} teamName={selectedTeam} bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} />
+          ) : SHOW_PITCHER_MODULE && analysisMode === 'pitching' ? (
             <PitcherProfile pitcherName={selectedPlayer} events={rawPlayerEvents} startDate={profileStartDate} endDate={profileEndDate} />
           ) : (
             <PlayerProfile playerName={selectedPlayer} stats={playerStats} isCombined={sourceType === 'combined'} sourceType={sourceType} startDate={profileStartDate} endDate={profileEndDate} />
