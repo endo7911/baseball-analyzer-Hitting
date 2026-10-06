@@ -1171,7 +1171,7 @@ function App() {
     return true;
   };
 
-  // 6-second background check & instant storage event listener for active user permissions/status
+  // Lightweight event-driven status check (on tab focus, view change & local storage updates)
   useEffect(() => {
     if (!user) return;
 
@@ -1181,15 +1181,16 @@ function App() {
       }
     };
 
-    window.addEventListener('storage', handleStorageChange);
-
-    const intervalId = setInterval(() => {
+    const handleFocus = () => {
       checkAccountStatus();
-    }, 6000);
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
-      clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
     };
   }, [user, activeView]);
 
