@@ -30,12 +30,16 @@ function Sidebar({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
+  const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
+  const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
+
   const allMenuItems = [
     { id: 'upload', label: 'データ読み込み', icon: UploadCloud, mobileHidden: true },
     { id: 'cloud', label: 'クラウド管理', icon: HardDrive, mobileHidden: true },
-    ...(SHOW_BODY_COMP_MODULE ? [{ id: 'bodyComp', label: '体組成分析', icon: Dumbbell, disabled: !hasData }] : []),
-    { id: 'team', label: '打撃分析', icon: Users, disabled: !hasData },
-    ...(SHOW_PITCHER_MODULE ? [{ id: 'pitcher', label: '投手分析', icon: Target, disabled: !hasData }] : []),
+    ...(SHOW_BODY_COMP_MODULE && allowBodyComp ? [{ id: 'bodyComp', label: '体組成分析', icon: Dumbbell, disabled: !hasData }] : []),
+    ...(allowHitting ? [{ id: 'team', label: '打撃分析', icon: Users, disabled: !hasData }] : []),
+    ...(SHOW_PITCHER_MODULE && allowPitching ? [{ id: 'pitcher', label: '投手分析', icon: Target, disabled: !hasData }] : []),
     { id: 'player', label: '個人分析', icon: User, disabled: !hasData },
     { id: 'game', label: '試合スタッツ', icon: Trophy, disabled: !hasData },
     { id: 'custom', label: 'カスタムグラフ', icon: LineChart, disabled: !hasData },

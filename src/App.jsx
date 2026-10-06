@@ -1112,11 +1112,15 @@ function App() {
       savantFiles, savantPitchingFiles, blastFiles, combinedFiles, bodyCompFiles, updateDataState,
       setActiveView, saveToCloud, syncState, profile, fetchFromCloud
     };
+    const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
+    const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
+    const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
+
     switch (activeView) {
       case 'upload':   return <UploadPage {...uploadProps} />;
-      case 'team':     return <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
-      case 'pitcher':  return SHOW_PITCHER_MODULE ? <PitcherAnalysis savantData={savantPitchingData} blastData={null} combinedData={null} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} /> : <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
-      case 'bodyComp': return SHOW_BODY_COMP_MODULE ? <BodyCompAnalysis bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} setActiveView={setActiveView} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source: source || 'body_comp' }); setActiveView('player'); }} /> : <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} />;
+      case 'team':     return allowHitting ? <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} /> : <UploadPage {...uploadProps} />;
+      case 'pitcher':  return (SHOW_PITCHER_MODULE && allowPitching) ? <PitcherAnalysis savantData={savantPitchingData} blastData={null} combinedData={null} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} /> : <UploadPage {...uploadProps} />;
+      case 'bodyComp': return (SHOW_BODY_COMP_MODULE && allowBodyComp) ? <BodyCompAnalysis bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} setActiveView={setActiveView} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source: source || 'body_comp' }); setActiveView('player'); }} /> : <UploadPage {...uploadProps} />;
       case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} bodyCompData={bodyCompData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} />;
       case 'game':     return <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'custom':   return <CustomCharts savantData={savantData} blastData={blastData} combinedData={combinedData} />;
@@ -1133,19 +1137,23 @@ function App() {
       const globalUsers = await getGlobalUsers();
       const targetEmail = (user.email || profile?.email || '').toLowerCase();
       const latest = globalUsers.find(u => (u.id && u.id === user.id) || (u.email && u.email.toLowerCase() === targetEmail));
-      if (latest && latest.is_disabled === true) {
-        localStorage.removeItem('mockUser');
-        localStorage.removeItem('mockProfile');
-        try {
-          await supabase.auth.signOut();
-        } catch (e) {}
-        setUser(null);
-        setProfile(null);
-        alert('このアカウントは管理者により停止されました。');
-        return false;
+      if (latest) {
+        if (latest.is_disabled === true) {
+          localStorage.removeItem('mockUser');
+          localStorage.removeItem('mockProfile');
+          sessionStorage.removeItem('mockUser');
+          sessionStorage.removeItem('mockProfile');
+          try {
+            await supabase.auth.signOut();
+          } catch (e) {}
+          setUser(null);
+          setProfile(null);
+          alert('このアカウントは管理者により停止されました。');
+          return false;
+        }
+        setProfile(prev => ({ ...(prev || {}), ...latest }));
       }
     } catch (e) {
-      // Safe fallback: network error or fetch fail NEVER logs out an active user
       console.warn("Account status check skipped:", e);
     }
     return true;

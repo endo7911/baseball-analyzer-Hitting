@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { getGlobalUsers, saveGlobalUsers, hashPassword } from '../lib/userSync';
-import { Users, Plus, Trash2, Shield, RefreshCw, CheckCircle2, XCircle, Ban, PlayCircle, Key, Clock, Copy, Check } from 'lucide-react';
+import { Users, Plus, Trash2, Shield, RefreshCw, CheckCircle2, XCircle, Ban, PlayCircle, Key, Clock, Copy, Check, Target, Dumbbell } from 'lucide-react';
 
 function AdminPanel() {
   const [users, setUsers] = useState([]);
@@ -159,6 +159,51 @@ function AdminPanel() {
       setUsers(updatedUsers);
     } catch (e) {
       console.error("Update team error:", e);
+    }
+  };
+
+  const toggleModulePermission = async (user, moduleKey) => {
+    try {
+      const currentUsers = await getGlobalUsers();
+      const updatedUsers = currentUsers.map(u => {
+        if (u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase()) {
+          const curPerms = u.permissions || {
+            hitting: u.allow_hitting !== false,
+            pitching: u.allow_pitching !== false,
+            bodyComp: u.allow_body_comp !== false
+          };
+          const newPerms = {
+            ...curPerms,
+            [moduleKey]: !curPerms[moduleKey]
+          };
+          return {
+            ...u,
+            allow_hitting: newPerms.hitting,
+            allow_pitching: newPerms.pitching,
+            allow_body_comp: newPerms.bodyComp,
+            permissions: newPerms
+          };
+        }
+        return u;
+      });
+
+      await saveGlobalUsers(updatedUsers);
+      setUsers(updatedUsers);
+
+      const savedProfile = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile');
+      if (savedProfile) {
+        try {
+          const p = JSON.parse(savedProfile);
+          if (p.email?.toLowerCase() === user.email.toLowerCase()) {
+            const updated = updatedUsers.find(u => u.email.toLowerCase() === user.email.toLowerCase());
+            if (updated) {
+              sessionStorage.setItem('mockProfile', JSON.stringify({ ...p, ...updated }));
+            }
+          }
+        } catch (err) {}
+      }
+    } catch (e) {
+      console.error("Toggle module permission error:", e);
     }
   };
 
@@ -398,7 +443,7 @@ function AdminPanel() {
                   <p className="text-xs text-slate-400 truncate mt-0.5">{user.email}</p>
                 </div>
 
-                <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+                <div className="flex items-center gap-2.5 flex-wrap">
                   <div className="relative">
                     <input
                       list="team-list"
@@ -411,8 +456,71 @@ function AdminPanel() {
                         }
                       }}
                       placeholder="チーム未割当"
-                      className="bg-slate-900 border border-slate-700 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-purple-500 w-32 transition-all"
+                      className="bg-slate-900 border border-slate-700 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-purple-500 w-28 transition-all"
                     />
+                  </div>
+
+                  {/* Page Display Permission Toggles (Hitting, Pitching, Body Comp) */}
+                  <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700/70">
+                    {/* Hitting */}
+                    <button
+                      type="button"
+                      onClick={() => toggleModulePermission(user, 'hitting')}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+                        user.allow_hitting !== false && user.permissions?.hitting !== false
+                          ? 'bg-blue-600/25 text-blue-300 border-blue-500/40 hover:bg-blue-600/40'
+                          : 'bg-slate-800 text-slate-500 border-slate-700/60 hover:text-slate-400 opacity-60'
+                      }`}
+                      title="「打撃分析」ページの表示/非表示を切り替え"
+                    >
+                      <Users className="w-3 h-3 text-blue-400" />
+                      <span>打撃</span>
+                      <span className={`text-[9px] px-1 rounded font-black ${
+                        user.allow_hitting !== false && user.permissions?.hitting !== false ? 'bg-blue-500/30 text-blue-200' : 'bg-slate-700 text-slate-400'
+                      }`}>
+                        {user.allow_hitting !== false && user.permissions?.hitting !== false ? 'ON' : 'OFF'}
+                      </span>
+                    </button>
+
+                    {/* Pitching */}
+                    <button
+                      type="button"
+                      onClick={() => toggleModulePermission(user, 'pitching')}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+                        user.allow_pitching !== false && user.permissions?.pitching !== false
+                          ? 'bg-amber-600/25 text-amber-300 border-amber-500/40 hover:bg-amber-600/40'
+                          : 'bg-slate-800 text-slate-500 border-slate-700/60 hover:text-slate-400 opacity-60'
+                      }`}
+                      title="「投手分析」ページの表示/非表示を切り替え"
+                    >
+                      <Target className="w-3 h-3 text-amber-400" />
+                      <span>投手</span>
+                      <span className={`text-[9px] px-1 rounded font-black ${
+                        user.allow_pitching !== false && user.permissions?.pitching !== false ? 'bg-amber-500/30 text-amber-200' : 'bg-slate-700 text-slate-400'
+                      }`}>
+                        {user.allow_pitching !== false && user.permissions?.pitching !== false ? 'ON' : 'OFF'}
+                      </span>
+                    </button>
+
+                    {/* Body Comp */}
+                    <button
+                      type="button"
+                      onClick={() => toggleModulePermission(user, 'bodyComp')}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+                        user.allow_body_comp !== false && user.permissions?.bodyComp !== false
+                          ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/40 hover:bg-cyan-600/40'
+                          : 'bg-slate-800 text-slate-500 border-slate-700/60 hover:text-slate-400 opacity-60'
+                      }`}
+                      title="「体組成分析」ページの表示/非表示を切り替え"
+                    >
+                      <Dumbbell className="w-3 h-3 text-cyan-400" />
+                      <span>体組成</span>
+                      <span className={`text-[9px] px-1 rounded font-black ${
+                        user.allow_body_comp !== false && user.permissions?.bodyComp !== false ? 'bg-cyan-500/30 text-cyan-200' : 'bg-slate-700 text-slate-400'
+                      }`}>
+                        {user.allow_body_comp !== false && user.permissions?.bodyComp !== false ? 'ON' : 'OFF'}
+                      </span>
+                    </button>
                   </div>
 
                   {/* Issue Temporary Password Button */}
