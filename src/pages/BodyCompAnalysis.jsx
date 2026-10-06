@@ -88,7 +88,7 @@ const BodyScatter = ({ records, xKey, yKey, teamAvg, color = '#06b6d4', xMax, yM
   );
 };
 
-function BodyCompAnalysis({ bodyCompData, blastData, combinedData, onViewPlayer }) {
+function BodyCompAnalysis({ bodyCompData, blastData, combinedData, onViewPlayer, setActiveView }) {
   const rows = bodyCompData?.data || [];
 
   const teams = useMemo(() => Array.from(new Set(rows.map(getBodyTeam))).sort(), [rows]);
@@ -178,10 +178,26 @@ function BodyCompAnalysis({ bodyCompData, blastData, combinedData, onViewPlayer 
         <header className="mb-8">
           <h2 className="text-3xl font-extrabold text-white mb-2 flex items-center gap-3"><Dumbbell className="w-8 h-8 text-cyan-400" />体組成分析</h2>
         </header>
-        <div className="flex flex-col items-center justify-center py-20 text-slate-500 border-2 border-dashed border-slate-700 rounded-2xl bg-slate-800/30">
-          <Dumbbell className="w-16 h-16 mb-4 opacity-30" />
-          <p className="text-lg font-bold">体組成データがまだ読み込まれていません</p>
-          <p className="text-sm mt-1">「データ読み込み」の「体組成データ」からCSVを読み込んでください</p>
+        <div className="bg-gradient-to-br from-cyan-950/40 via-slate-900 to-slate-900 border border-cyan-500/30 rounded-3xl p-12 text-center shadow-2xl space-y-4 my-6">
+          <div className="w-16 h-16 bg-cyan-500/10 border border-cyan-500/30 rounded-2xl flex items-center justify-center mx-auto text-cyan-400 shadow-lg shadow-cyan-500/10">
+            <Dumbbell className="w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="text-xl font-extrabold text-cyan-300 mb-1">体組成データがまだ読み込まれていません</h3>
+            <p className="text-sm text-slate-400 max-w-md mx-auto leading-relaxed mt-2">
+              「データ読み込み」画面の「体組成データ (Body Composition)」からCSVファイルをアップロードしてください。
+            </p>
+          </div>
+          {setActiveView && (
+            <div className="pt-2">
+              <button 
+                onClick={() => setActiveView('upload')}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-extrabold shadow-lg shadow-cyan-900/30 transition-all transform hover:scale-105 cursor-pointer"
+              >
+                データ読み込みへ進む →
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );

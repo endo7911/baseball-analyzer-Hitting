@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   BookOpen, UploadCloud, HardDrive, Users, User, Trophy, LineChart, 
   HelpCircle, ChevronDown, ChevronRight, CheckCircle2, ShieldCheck, 
-  Sparkles, FileText, Activity, Sliders, Maximize2, MousePointer, Filter, ArrowUpDown, Layers
+  Sparkles, FileText, Activity, Sliders, Maximize2, MousePointer, Filter, ArrowUpDown, Layers, Dumbbell
 } from 'lucide-react';
 
 function GuidePage({ setActiveView }) {
