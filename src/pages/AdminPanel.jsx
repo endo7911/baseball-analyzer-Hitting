@@ -163,18 +163,38 @@ function AdminPanel() {
   };
 
   const toggleModulePermission = async (user, moduleKey) => {
+    const curPerms = user.permissions || {
+      hitting: user.allow_hitting !== false,
+      pitching: user.allow_pitching !== false,
+      bodyComp: user.allow_body_comp !== false
+    };
+    const currentStatus = curPerms[moduleKey] !== false;
+    const newStatus = !currentStatus;
+
+    const moduleLabels = {
+      hitting: '打撃分析',
+      pitching: '投手分析',
+      bodyComp: '体組成分析'
+    };
+    const label = moduleLabels[moduleKey] || moduleKey;
+    const actionText = newStatus ? 'オン（表示）' : 'オフ（非表示）';
+
+    if (!window.confirm(`「${user.display_name || user.email}」の【${label}】ページの表示を${actionText}に変更しますか？`)) {
+      return;
+    }
+
     try {
       const currentUsers = await getGlobalUsers();
       const updatedUsers = currentUsers.map(u => {
         if (u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase()) {
-          const curPerms = u.permissions || {
+          const userPerms = u.permissions || {
             hitting: u.allow_hitting !== false,
             pitching: u.allow_pitching !== false,
             bodyComp: u.allow_body_comp !== false
           };
           const newPerms = {
-            ...curPerms,
-            [moduleKey]: !curPerms[moduleKey]
+            ...userPerms,
+            [moduleKey]: newStatus
           };
           return {
             ...u,
@@ -202,6 +222,9 @@ function AdminPanel() {
           }
         } catch (err) {}
       }
+
+      setMessage({ type: 'success', text: `「${user.display_name || user.email}」の【${label}】を${actionText}に設定しました。` });
+      setTimeout(() => setMessage(null), 3000);
     } catch (e) {
       console.error("Toggle module permission error:", e);
     }

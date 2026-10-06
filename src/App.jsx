@@ -1151,13 +1151,47 @@ function App() {
           alert('このアカウントは管理者により停止されました。');
           return false;
         }
-        setProfile(prev => ({ ...(prev || {}), ...latest }));
+
+        setProfile(prev => {
+          const updated = { ...(prev || {}), ...latest };
+          const allowHitting = updated.allow_hitting !== false && updated.permissions?.hitting !== false;
+          const allowPitching = updated.allow_pitching !== false && updated.permissions?.pitching !== false;
+          const allowBodyComp = updated.allow_body_comp !== false && updated.permissions?.bodyComp !== false;
+
+          if (activeView === 'team' && !allowHitting) setActiveView('upload');
+          if (activeView === 'pitcher' && (!SHOW_PITCHER_MODULE || !allowPitching)) setActiveView('upload');
+          if (activeView === 'bodyComp' && (!SHOW_BODY_COMP_MODULE || !allowBodyComp)) setActiveView('upload');
+
+          return updated;
+        });
       }
     } catch (e) {
       console.warn("Account status check skipped:", e);
     }
     return true;
   };
+
+  // 6-second background check & instant storage event listener for active user permissions/status
+  useEffect(() => {
+    if (!user) return;
+
+    const handleStorageChange = (e) => {
+      if (!e.key || e.key === 'mockUsersList' || e.key === 'mockProfile') {
+        checkAccountStatus();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    const intervalId = setInterval(() => {
+      checkAccountStatus();
+    }, 6000);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(intervalId);
+    };
+  }, [user, activeView]);
 
   const handleViewChange = async (view) => { 
     const isOk = await checkAccountStatus();
