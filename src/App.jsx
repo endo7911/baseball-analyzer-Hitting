@@ -520,6 +520,7 @@ function App() {
       const currentTeamName = profile?.team_name || profile?.team_id || 'Team A';
       const currentTeamId = profile?.team_id || profile?.team_name || 'Team A';
       const currentUserId = user?.id || profile?.id || null;
+      const isAdmin = profile?.role === 'admin' || user?.user_metadata?.role === 'admin';
 
       const isUUID = (str) => {
         if (!str || typeof str !== 'string') return false;
