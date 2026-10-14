@@ -7,37 +7,52 @@
 -- ==============================================================================
 
 -- ------------------------------------------------------------------------------
--- 1. カラムの存在保証 (user_id, team_id, team_name, upload_id, file_name)
+-- 1. カラムの存在保証と型変換 (UUID型からTEXT型への変換を行い、日本語や非UUIDの混入エラー22P02を防止)
 -- ------------------------------------------------------------------------------
 ALTER TABLE IF EXISTS public.baseball_data ADD COLUMN IF NOT EXISTS user_id TEXT;
 ALTER TABLE IF EXISTS public.baseball_data ADD COLUMN IF NOT EXISTS team_id TEXT;
 ALTER TABLE IF EXISTS public.baseball_data ADD COLUMN IF NOT EXISTS team_name TEXT;
 ALTER TABLE IF EXISTS public.baseball_data ADD COLUMN IF NOT EXISTS upload_id TEXT;
 ALTER TABLE IF EXISTS public.baseball_data ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE IF EXISTS public.baseball_data ALTER COLUMN team_id TYPE TEXT USING team_id::text;
+ALTER TABLE IF EXISTS public.baseball_data ALTER COLUMN user_id TYPE TEXT USING user_id::text;
 
 ALTER TABLE IF EXISTS public.savant_data ADD COLUMN IF NOT EXISTS user_id TEXT;
 ALTER TABLE IF EXISTS public.savant_data ADD COLUMN IF NOT EXISTS team_id TEXT;
 ALTER TABLE IF EXISTS public.savant_data ADD COLUMN IF NOT EXISTS team_name TEXT;
 ALTER TABLE IF EXISTS public.savant_data ADD COLUMN IF NOT EXISTS upload_id TEXT;
 ALTER TABLE IF EXISTS public.savant_data ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE IF EXISTS public.savant_data ALTER COLUMN team_id TYPE TEXT USING team_id::text;
+ALTER TABLE IF EXISTS public.savant_data ALTER COLUMN user_id TYPE TEXT USING user_id::text;
 
 ALTER TABLE IF EXISTS public.blast_data ADD COLUMN IF NOT EXISTS user_id TEXT;
 ALTER TABLE IF EXISTS public.blast_data ADD COLUMN IF NOT EXISTS team_id TEXT;
 ALTER TABLE IF EXISTS public.blast_data ADD COLUMN IF NOT EXISTS team_name TEXT;
 ALTER TABLE IF EXISTS public.blast_data ADD COLUMN IF NOT EXISTS upload_id TEXT;
 ALTER TABLE IF EXISTS public.blast_data ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE IF EXISTS public.blast_data ALTER COLUMN team_id TYPE TEXT USING team_id::text;
+ALTER TABLE IF EXISTS public.blast_data ALTER COLUMN user_id TYPE TEXT USING user_id::text;
 
 ALTER TABLE IF EXISTS public.pitching_data ADD COLUMN IF NOT EXISTS user_id TEXT;
 ALTER TABLE IF EXISTS public.pitching_data ADD COLUMN IF NOT EXISTS team_id TEXT;
 ALTER TABLE IF EXISTS public.pitching_data ADD COLUMN IF NOT EXISTS team_name TEXT;
 ALTER TABLE IF EXISTS public.pitching_data ADD COLUMN IF NOT EXISTS upload_id TEXT;
 ALTER TABLE IF EXISTS public.pitching_data ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE IF EXISTS public.pitching_data ALTER COLUMN team_id TYPE TEXT USING team_id::text;
+ALTER TABLE IF EXISTS public.pitching_data ALTER COLUMN user_id TYPE TEXT USING user_id::text;
 
 ALTER TABLE IF EXISTS public.body_comp_data ADD COLUMN IF NOT EXISTS user_id TEXT;
 ALTER TABLE IF EXISTS public.body_comp_data ADD COLUMN IF NOT EXISTS team_id TEXT;
 ALTER TABLE IF EXISTS public.body_comp_data ADD COLUMN IF NOT EXISTS team_name TEXT;
 ALTER TABLE IF EXISTS public.body_comp_data ADD COLUMN IF NOT EXISTS upload_id TEXT;
 ALTER TABLE IF EXISTS public.body_comp_data ADD COLUMN IF NOT EXISTS file_name TEXT;
+DO $$
+BEGIN
+  IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'body_comp_data') THEN
+    ALTER TABLE public.body_comp_data ALTER COLUMN team_id TYPE TEXT USING team_id::text;
+    ALTER TABLE public.body_comp_data ALTER COLUMN user_id TYPE TEXT USING user_id::text;
+  END IF;
+END $$;
 
 -- ------------------------------------------------------------------------------
 -- 2. 権限付与 (anon, authenticated 双方にテーブル操作権限を付与)

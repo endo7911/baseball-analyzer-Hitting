@@ -480,6 +480,11 @@ function App() {
       const currentTeamId = profile?.team_id || profile?.team_name || 'Team A';
       const currentUserId = user?.id || profile?.id || null;
 
+      const isUUID = (str) => {
+        if (!str || typeof str !== 'string') return false;
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+      };
+
       console.log(`Starting cloud save for ${totalRows} rows to table ${table}...`);
 
       // Date parsing helper - flexible extraction of year/month/day
@@ -622,15 +627,36 @@ function App() {
             if (targetColumns.includes('file_name')) rowPayload.file_name = dataObj.filename;
             if (targetColumns.includes('upload_id')) rowPayload.upload_id = uploadId;
             if (targetColumns.includes('team_name')) rowPayload.team_name = finalRow.team_name || currentTeamName;
-            if (targetColumns.includes('team_id')) rowPayload.team_id = finalRow.team_id || currentTeamId;
-            if (targetColumns.includes('owner_id') && currentUserId) rowPayload.owner_id = currentUserId;
-            if (currentUserId) rowPayload.user_id = currentUserId;
+            if (targetColumns.includes('team_id')) {
+              const rawTId = finalRow.team_id || currentTeamId;
+              rowPayload.team_id = isUUID(rawTId) ? rawTId : null;
+            }
+            if (targetColumns.includes('owner_id') && currentUserId) {
+              rowPayload.owner_id = isUUID(currentUserId) ? currentUserId : null;
+            }
+            if (currentUserId) {
+              rowPayload.user_id = isUUID(currentUserId) ? currentUserId : null;
+            }
             if (targetColumns.includes('updated_at')) rowPayload.updated_at = new Date().toISOString();
 
             return rowPayload;
           });
 
           let { error } = await client.from(targetTable).insert(batch);
+
+          // Handle 22P02 (invalid input syntax for type uuid)
+          if (error && (error.code === '22P02' || (error.message && error.message.includes('type uuid')))) {
+            console.warn(`UUID type constraint error in ${targetTable}, retrying insert with null UUID fields`);
+            const safeBatch = batch.map(row => ({
+              ...row,
+              team_id: isUUID(row.team_id) ? row.team_id : null,
+              user_id: isUUID(row.user_id) ? row.user_id : null,
+              owner_id: isUUID(row.owner_id) ? row.owner_id : null
+            }));
+            const fbResult = await client.from(targetTable).insert(safeBatch);
+            error = fbResult.error;
+          }
+
           // If a metadata column does not exist yet on remote table, fallback without it
           if (error && error.message) {
             let fallbackBatch = [...batch];
@@ -673,8 +699,8 @@ function App() {
               file_name: dataObj.filename,
               upload_id: `${uploaderEmail}::up-${Date.now()}`,
               team_name: dbRow.team_name || getBodyTeam(row) || currentTeamName,
-              team_id: dbRow.team_id || currentTeamId,
-              user_id: currentUserId,
+              team_id: isUUID(dbRow.team_id || currentTeamId) ? (dbRow.team_id || currentTeamId) : null,
+              user_id: isUUID(currentUserId) ? currentUserId : null,
               player_name: dbRow.player_name || getBodyName(row) || 'Unknown Player',
               date: d
             };
@@ -720,8 +746,8 @@ function App() {
               file_name: `__bodycomp__::${dataObj.filename}`,
               player_name: name,
               team_name: team && team !== 'Unknown Team' ? team : currentTeamName,
-              team_id: currentTeamId,
-              user_id: currentUserId,
+              team_id: isUUID(currentTeamId) ? currentTeamId : null,
+              user_id: isUUID(currentUserId) ? currentUserId : null,
               game_date: d,
               date: d,
               upload_id: rowUploadId
