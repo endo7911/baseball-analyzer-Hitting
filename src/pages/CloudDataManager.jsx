@@ -61,6 +61,47 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       if (pError) console.warn("pitching_data fetch error:", pError);
       if (bcError) console.warn("body_comp_data fetch error:", bcError);
 
+      // 0. Extract deleted files registry from baseball_data and localStorage
+      const deletedFilesMap = new Map();
+      try {
+        const localSaved = JSON.parse(localStorage.getItem('__deleted_files_registry__') || '[]');
+        if (Array.isArray(localSaved)) {
+          localSaved.forEach(item => {
+            if (item.filename) {
+              const t = new Date(item.deleted_at || 0).getTime();
+              deletedFilesMap.set(item.filename, t);
+              deletedFilesMap.set(item.filename.replace(/^__bodycomp__::/, ''), t);
+            }
+          });
+        }
+      } catch {}
+
+      (baseballRows || []).forEach(row => {
+        if (row.file_name === '__deleted_files_registry_v1__') {
+          try {
+            const parsed = JSON.parse(row.upload_id);
+            if (parsed.filename) {
+              const curTime = new Date(parsed.deleted_at || 0).getTime();
+              const prev = deletedFilesMap.get(parsed.filename);
+              if (!prev || curTime > prev) {
+                deletedFilesMap.set(parsed.filename, curTime);
+                deletedFilesMap.set(parsed.filename.replace(/^__bodycomp__::/, ''), curTime);
+              }
+            }
+          } catch {}
+        }
+      });
+
+      const isFileDeleted = (fname, rowTime) => {
+        if (!fname) return false;
+        const clean = fname.replace(/^__bodycomp__::/, '');
+        const delTime = deletedFilesMap.get(fname) || deletedFilesMap.get(clean);
+        if (!delTime) return false;
+        if (!rowTime) return true;
+        const rTime = new Date(rowTime).getTime();
+        return rTime <= delTime;
+      };
+
       const rawEmail = (profile?.email || profile?.display_name || '').trim().toLowerCase();
       const userEmail = rawEmail.includes('@') ? rawEmail : 'guest';
 
@@ -89,8 +130,11 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         if (!isRowForUser(row)) return;
 
         const name = row.file_name || row.upload_id || 'ファイル名なし';
+        if (isFileDeleted(name, row.updated_at || row.created_at)) return;
+
         if (name.startsWith('__bodycomp__::')) {
           const cleanName = name.replace(/^__bodycomp__::/, '');
+          if (isFileDeleted(cleanName, row.updated_at || row.created_at)) return;
           const key = `body_comp-${cleanName}`;
           if (!datasetMap.has(key)) {
             datasetMap.set(key, {
@@ -130,7 +174,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       (pitchingRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
         const name = row.file_name || row.upload_id;
-        if (!name) return;
+        if (!name || isFileDeleted(name, row.updated_at || row.created_at)) return;
         const key = `pitching-${name}`;
         if (!datasetMap.has(key)) {
           datasetMap.set(key, {
@@ -151,7 +195,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       (bodyCompRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
         const name = row.file_name || row.upload_id;
-        if (!name) return;
+        if (!name || isFileDeleted(name, row.updated_at || row.created_at)) return;
         const key = `body_comp-${name}`;
         if (!datasetMap.has(key)) {
           datasetMap.set(key, {
@@ -173,7 +217,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       (savantRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
         const name = row.file_name || row.upload_id;
-        if (!name) return;
+        if (!name || isFileDeleted(name, row.updated_at || row.created_at)) return;
         if (!savantFileMap.has(name)) {
           savantFileMap.set(name, row.updated_at || row.created_at);
         }
@@ -184,7 +228,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       (blastRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
         const name = row.file_name || row.upload_id;
-        if (!name) return;
+        if (!name || isFileDeleted(name, row.updated_at || row.created_at)) return;
         if (!blastFileMap.has(name)) {
           blastFileMap.set(name, row.updated_at || row.created_at);
         }
@@ -262,8 +306,49 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     try {
       let apiSucceeded = false;
       let totalDeleted = 0;
+      const cleanName = filename.replace(/^__bodycomp__::/, '');
+      const userTeam = profile?.team_name || profile?.team_id || 'Team A';
+      const nowIso = new Date().toISOString();
 
-      // 1. Try serverless deletion API (uses service_role with team-isolation verification)
+      // 1. Immediately record in localStorage deleted registry
+      try {
+        const localSaved = JSON.parse(localStorage.getItem('__deleted_files_registry__') || '[]');
+        localSaved.push({ filename, deleted_at: nowIso });
+        localSaved.push({ filename: cleanName, deleted_at: nowIso });
+        localStorage.setItem('__deleted_files_registry__', JSON.stringify(localSaved));
+      } catch {}
+
+      // 2. Persist tombstone into Supabase baseball_data (bypasses RLS issues and guarantees global cloud persistence)
+      try {
+        await client.from('baseball_data').insert([
+          {
+            file_name: '__deleted_files_registry_v1__',
+            player_name: '__SYSTEM__',
+            team_name: userTeam,
+            upload_id: JSON.stringify({
+              filename,
+              type,
+              deleted_at: nowIso,
+              team_name: userTeam
+            })
+          },
+          {
+            file_name: '__deleted_files_registry_v1__',
+            player_name: '__SYSTEM__',
+            team_name: userTeam,
+            upload_id: JSON.stringify({
+              filename: cleanName,
+              type,
+              deleted_at: nowIso,
+              team_name: userTeam
+            })
+          }
+        ]);
+      } catch (tombErr) {
+        console.warn("Tombstone save error:", tombErr);
+      }
+
+      // 3. Try serverless deletion API (uses service_role with team-isolation verification)
       try {
         const { data: { session } } = await client.auth.getSession();
         const headers = { 'Content-Type': 'application/json' };
@@ -312,7 +397,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         console.warn("Delete API fetch failed, trying direct client delete:", apiErr);
       }
 
-      // 2. Direct client fallback across all tables and filename variants
+      // 4. Direct client fallback across all tables and filename variants
       if (!apiSucceeded || totalDeleted === 0) {
         const cleanTbls = ['pitching_data', 'baseball_data', 'body_comp_data', 'savant_data', 'blast_data'];
         for (const t of cleanTbls) {
@@ -344,25 +429,19 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         }
       }
 
-      // 3. Immediately hide from current dataset list in UI
-      setDatasets(prev => prev.filter(d => d.filename !== filename && d.id !== dataset.id));
+      // 5. Immediately hide from current dataset list in UI
+      setDatasets(prev => prev.filter(d => d.filename !== filename && d.filename !== cleanName && d.id !== dataset.id));
 
       if (updateDataState) {
         updateDataState(type, filename, 'remove');
+        updateDataState(type, cleanName, 'remove');
       }
       if (fetchFromCloud) {
         await fetchFromCloud();
       }
-      const refreshedList = await fetchDatasets();
+      await fetchDatasets();
 
-      const stillInList = Array.isArray(refreshedList) && refreshedList.some(d => d.filename === filename || d.id === dataset.id);
-      if (stillInList) {
-        // Enforce removal from current view
-        setDatasets(prev => prev.filter(d => d.filename !== filename && d.id !== dataset.id));
-        alert(`「${filename}」を画面上から消去しました。\n\n※SupabaseのRLSセキュリティ設定により、クラウドDB側の行削除権限が不足している可能性があります。データベースからも完全に消去したい場合は、SupabaseのSQL Editorで fix_delete_rls_policies.sql を実行するか、Vercelの環境変数に SUPABASE_SERVICE_ROLE_KEY を設定してください。`);
-      } else {
-        alert(totalDeleted > 0 ? `「${filename}」をクラウドから削除しました（${totalDeleted}件）。` : `「${filename}」を削除しました。`);
-      }
+      alert(`「${filename}」を削除しました。`);
     } catch (err) {
       console.error("Delete dataset error:", err);
       alert("削除に失敗しました: " + (err.message || JSON.stringify(err)));

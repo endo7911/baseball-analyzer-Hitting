@@ -537,6 +537,15 @@ function App() {
 
       console.log(`Starting cloud save for ${totalRows} rows to table ${table}...`);
 
+      // If this file was previously deleted, un-tombstone it in localStorage
+      try {
+        const localSaved = JSON.parse(localStorage.getItem('__deleted_files_registry__') || '[]');
+        if (Array.isArray(localSaved)) {
+          const updated = localSaved.filter(x => x.filename !== dataObj.filename && x.filename !== (dataObj.filename || '').replace(/^__bodycomp__::/, ''));
+          localStorage.setItem('__deleted_files_registry__', JSON.stringify(updated));
+        }
+      } catch {}
+
       // Date parsing helper - flexible extraction of year/month/day
       const parseJapaneseDate = (dateStr) => {
         if (!dateStr || typeof dateStr !== 'string') return null;
@@ -936,10 +945,64 @@ function App() {
       const currentTeamName = (profile?.team_name || profile?.team_id || '').trim().toLowerCase();
       const currentTeamId = (profile?.team_id || profile?.team_name || '').trim().toLowerCase();
 
+      // 0. Extract deleted files registry from baseball_data and localStorage
+      const deletedFilesMap = new Map();
+      try {
+        const localSaved = JSON.parse(localStorage.getItem('__deleted_files_registry__') || '[]');
+        if (Array.isArray(localSaved)) {
+          localSaved.forEach(item => {
+            if (item.filename) {
+              const t = new Date(item.deleted_at || 0).getTime();
+              deletedFilesMap.set(item.filename, t);
+              deletedFilesMap.set(item.filename.replace(/^__bodycomp__::/, ''), t);
+            }
+          });
+        }
+      } catch {}
+
+      (combinedRaw || []).forEach(r => {
+        if (r?.file_name === '__deleted_files_registry_v1__') {
+          try {
+            const parsed = JSON.parse(r.upload_id);
+            if (parsed.filename) {
+              const curTime = new Date(parsed.deleted_at || 0).getTime();
+              const prev = deletedFilesMap.get(parsed.filename);
+              if (!prev || curTime > prev) {
+                deletedFilesMap.set(parsed.filename, curTime);
+                deletedFilesMap.set(parsed.filename.replace(/^__bodycomp__::/, ''), curTime);
+              }
+            }
+          } catch {}
+        }
+      });
+
+      const isRowDeleted = (row) => {
+        if (!row) return false;
+        const fName = String(row.file_name || '');
+        const cleanName = fName.replace(/^__bodycomp__::/, '');
+        const uId = String(row.upload_id || '');
+        const rowTime = new Date(row.updated_at || row.created_at || row.date || row.game_date || 0).getTime();
+
+        for (const [delName, delTime] of deletedFilesMap.entries()) {
+          if (
+            fName === delName || 
+            cleanName === delName || 
+            uId === delName || 
+            uId.endsWith(`::${delName}`) || 
+            uId.includes(`::${delName}::`)
+          ) {
+            if (!rowTime || rowTime <= delTime) return true;
+          }
+        }
+        return false;
+      };
+
       const filterByUserEmail = (rows) => {
         if (!Array.isArray(rows)) return [];
         return rows.filter(row => {
           if (!row) return false;
+          if (isRowDeleted(row)) return false;
+
           const uId = String(row.upload_id || '').toLowerCase();
           const tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
           const tId = String(row.team_id || '').toLowerCase();
