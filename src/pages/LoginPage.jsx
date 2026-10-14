@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { getGlobalUsers, verifyPassword } from '../lib/userSync';
+import { getGlobalUsers, verifyPassword, changeUserPassword } from '../lib/userSync';
 import { recordSecurityLog } from '../lib/auditLogger';
 import { LogIn, Shield, Eye, EyeOff, KeyRound } from 'lucide-react';
 
@@ -40,27 +40,33 @@ function LoginPage({ onLogin }) {
     setPwSaving(true);
 
     try {
-      // 1. Supabase Auth のパスワードを更新
-      const { error: updateErr } = await supabase.auth.updateUser({
-        password: newPw.trim()
-      });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        // 1. Supabase Auth のパスワードを更新
+        const { error: updateErr } = await supabase.auth.updateUser({
+          password: newPw.trim()
+        });
 
-      if (updateErr) {
-        console.error('Supabase password update failed:', updateErr);
-        setPwError('パスワード更新に失敗しました: ' + (updateErr.message || '時間をおいて再度お試しください。'));
-        setPwSaving(false);
-        return;
-      }
+        if (updateErr) {
+          console.error('Supabase password update failed:', updateErr);
+          setPwError('パスワード更新に失敗しました: ' + (updateErr.message || '時間をおいて再度お試しください。'));
+          setPwSaving(false);
+          return;
+        }
 
-      // 2. profiles テーブルの一時パスワード情報をクリア
-      if (pendingLogin?.userObj?.id) {
-        await supabase
-          .from('profiles')
-          .update({
-            temp_password_info: null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', pendingLogin.userObj.id);
+        // 2. profiles テーブルの一時パスワード情報をクリア
+        if (pendingLogin?.userObj?.id) {
+          await supabase
+            .from('profiles')
+            .update({
+              temp_password_info: null,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', pendingLogin.userObj.id);
+        }
+      } else {
+        // フォールバック: レガシー暗号化ストレージのパスワードを更新
+        await changeUserPassword(pendingLogin.userObj.email, newPw.trim());
       }
 
       // ログ記録

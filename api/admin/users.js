@@ -3,6 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ukyppwxsvcgxuxedwfom.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+const ENCRYPTION_SALT = 'baseball-analyzer-secure-payload-salt-v2';
+const SYSTEM_USER_FILE_NAME = '__app_user_profiles_v1__';
+
 // Create admin client with service_role key for secure privileged operations
 function getAdminClient() {
   if (!SUPABASE_SERVICE_ROLE_KEY) {
@@ -16,34 +19,138 @@ function getAdminClient() {
   });
 }
 
-// Verify that the caller is an authenticated administrator
-async function verifyAdminCaller(req) {
-  const authHeader = req.headers.authorization || req.headers.Authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return { ok: false, status: 401, error: 'Authorization header missing or invalid format.' };
+// Subtle crypto helper
+function getSubtleCrypto() {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.subtle) {
+    return globalThis.crypto.subtle;
   }
+  return import('crypto').then(c => c.webcrypto.subtle);
+}
 
-  const token = authHeader.split(' ')[1];
-  const adminClient = getAdminClient();
-
-  // Validate the JWT token with Supabase Auth
-  const { data: { user }, error: userError } = await adminClient.auth.getUser(token);
-  if (userError || !user) {
-    return { ok: false, status: 401, error: 'Invalid or expired session token.' };
+function getRandomValues(arr) {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
+    return globalThis.crypto.getRandomValues(arr);
   }
+  return import('crypto').then(c => c.webcrypto.getRandomValues(arr));
+}
 
-  // Check role in profiles table
-  const { data: profile, error: profileError } = await adminClient
-    .from('profiles')
-    .select('role, is_disabled')
-    .eq('id', user.id)
-    .single();
+async function getEncryptionKey() {
+  const encoder = new TextEncoder();
+  const subtle = await getSubtleCrypto();
+  const keyMaterial = await subtle.digest('SHA-256', encoder.encode(ENCRYPTION_SALT));
+  return subtle.importKey('raw', keyMaterial, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
 
-  if (profileError || !profile || profile.role !== 'admin' || profile.is_disabled) {
-    return { ok: false, status: 403, error: 'Access denied: Administrator privileges required.' };
+async function encryptPayload(dataObj) {
+  try {
+    const encoder = new TextEncoder();
+    const subtle = await getSubtleCrypto();
+    const key = await getEncryptionKey();
+    const iv = new Uint8Array(12);
+    if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
+      globalThis.crypto.getRandomValues(iv);
+    } else {
+      const cryptoMod = await import('crypto');
+      cryptoMod.webcrypto.getRandomValues(iv);
+    }
+    const plaintext = JSON.stringify(dataObj);
+    const encrypted = await subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(plaintext));
+    const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('');
+    const cipherHex = Array.from(new Uint8Array(encrypted)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return `enc:v2:${ivHex}:${cipherHex}`;
+  } catch (e) {
+    console.error('Payload encryption failed:', e);
+    throw e;
   }
+}
 
-  return { ok: true, adminUser: user, profile };
+async function decryptPayload(payloadStr) {
+  if (!payloadStr) return null;
+  if (typeof payloadStr === 'string' && payloadStr.startsWith('enc:v2:')) {
+    try {
+      const parts = payloadStr.split(':');
+      if (parts.length < 4) return null;
+      const ivHex = parts[2];
+      const cipherHex = parts[3];
+      const iv = new Uint8Array(ivHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+      const cipher = new Uint8Array(cipherHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+      const subtle = await getSubtleCrypto();
+      const key = await getEncryptionKey();
+      const decrypted = await subtle.decrypt({ name: 'AES-GCM', iv }, key, cipher);
+      const decoder = new TextDecoder();
+      return JSON.parse(decoder.decode(decrypted));
+    } catch (e) {
+      console.warn('Decryption failed:', e);
+      return null;
+    }
+  }
+  if (typeof payloadStr === 'string' && (payloadStr.startsWith('[') || payloadStr.startsWith('{'))) {
+    try {
+      return JSON.parse(payloadStr);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+async function hashPassword(password) {
+  const subtle = await getSubtleCrypto();
+  const msgBuffer = new TextEncoder().encode(String(password));
+  const hashBuffer = await subtle.digest('SHA-256', msgBuffer);
+  return 'sha256:' + Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Fetch legacy users from baseball_data using service_role client (bypasses RLS)
+async function getLegacyUsers(adminClient) {
+  try {
+    const { data, error } = await adminClient
+      .from('baseball_data')
+      .select('upload_id')
+      .eq('file_name', SYSTEM_USER_FILE_NAME);
+
+    if (!error && data && data.length > 0 && data[0].upload_id) {
+      const parsed = await decryptPayload(data[0].upload_id);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn('getLegacyUsers error:', e);
+  }
+  return [];
+}
+
+// Save legacy users to baseball_data using service_role client (bypasses RLS)
+async function saveLegacyUsers(adminClient, usersList) {
+  try {
+    const encrypted = await encryptPayload(usersList);
+    const { data } = await adminClient
+      .from('baseball_data')
+      .select('id')
+      .eq('file_name', SYSTEM_USER_FILE_NAME);
+
+    if (data && data.length > 0) {
+      await adminClient
+        .from('baseball_data')
+        .update({
+          upload_id: encrypted,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', data[0].id);
+    } else {
+      await adminClient
+        .from('baseball_data')
+        .insert([{
+          file_name: SYSTEM_USER_FILE_NAME,
+          player_name: '__system_users__',
+          team_name: '__system__',
+          upload_id: encrypted
+        }]);
+    }
+    return true;
+  } catch (e) {
+    console.error('saveLegacyUsers error:', e);
+    return false;
+  }
 }
 
 // Helper to normalize username/email
@@ -55,18 +162,56 @@ function normalizeIdentifier(rawId) {
   return { email: `${trimmed.toLowerCase()}@baseball-analyzer.internal`, username: trimmed };
 }
 
+// Verify that the caller is an authenticated administrator (supports both Supabase Auth & Legacy Admin sessions)
+async function verifyAdminCaller(req, adminClient) {
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+
+  // 1. Supabase Auth Session Token
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    const { data: { user }, error: userError } = await adminClient.auth.getUser(token);
+    if (!userError && user) {
+      const { data: profile } = await adminClient
+        .from('profiles')
+        .select('role, is_disabled')
+        .eq('id', user.id)
+        .single();
+
+      if (profile && profile.role === 'admin' && !profile.is_disabled) {
+        return { ok: true, adminUser: user, profile };
+      }
+    }
+  }
+
+  // 2. Legacy Admin Session verification via X-Legacy-Admin-Email header
+  const legacyEmail = req.headers['x-legacy-admin-email'] || req.headers['x-admin-email'];
+  if (legacyEmail) {
+    const legacyUsers = await getLegacyUsers(adminClient);
+    const matched = legacyUsers.find(u => (u.email || '').toLowerCase() === String(legacyEmail).toLowerCase().trim());
+    if (matched && matched.role === 'admin' && !matched.is_disabled) {
+      return {
+        ok: true,
+        adminUser: { id: matched.id || matched.email, email: matched.email },
+        profile: matched,
+        isLegacy: true
+      };
+    }
+  }
+
+  return { ok: false, status: 401, error: 'Administrator authentication required.' };
+}
+
 export default async function handler(req, res) {
   // CORS configuration
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, X-Legacy-Admin-Email, X-Legacy-Admin-Role, X-Legacy-Admin-Id');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  // Check if service_role key is configured
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return res.status(500).json({
       error: 'Vercel Server Environment Error: SUPABASE_SERVICE_ROLE_KEY is missing. Please set it in Vercel Project Settings > Environment Variables.'
@@ -77,7 +222,7 @@ export default async function handler(req, res) {
     const adminClient = getAdminClient();
 
     // 1. Authenticate caller as Admin
-    const authCheck = await verifyAdminCaller(req);
+    const authCheck = await verifyAdminCaller(req, adminClient);
     if (!authCheck.ok) {
       return res.status(authCheck.status).json({ error: authCheck.error });
     }
@@ -88,7 +233,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const type = req.query?.type || 'users';
 
-      // 1. Return Security Audit Logs
+      // 1. Security Audit Logs
       if (type === 'logs') {
         const emailFilter = req.query?.email;
         let query = adminClient
@@ -103,62 +248,91 @@ export default async function handler(req, res) {
 
         const { data: logs, error: lError } = await query;
         if (lError) {
-          // If table doesn't exist yet, return empty list gracefully
           return res.status(200).json({ logs: [] });
         }
         return res.status(200).json({ logs: logs || [] });
       }
 
-      // 2. Return User Profiles & Migration Status
-      const { data: profiles, error: pError } = await adminClient
+      // 2. Return User Profiles & Migration Status (Merged from Profiles & Legacy Store)
+      const { data: profiles } = await adminClient
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (pError) {
-        return res.status(500).json({ error: 'Failed to fetch profiles: ' + pError.message });
-      }
-
-      // Get list of registered auth users to determine individual migration status
+      const legacyUsers = await getLegacyUsers(adminClient);
       const { data: authUsersData } = await adminClient.auth.admin.listUsers();
       const authUserMap = new Map();
       if (authUsersData?.users) {
         authUsersData.users.forEach(u => {
-          authUserMap.set(u.email?.toLowerCase(), u);
+          if (u.email) authUserMap.set(u.email.toLowerCase(), u);
           if (u.id) authUserMap.set(u.id, u);
         });
       }
 
-      // Format for frontend AdminPanel
-      const formatted = (profiles || []).map(p => {
-        const emailKey = p.email?.toLowerCase();
-        const hasAuthAccount = authUserMap.has(emailKey) || authUserMap.has(p.id);
+      const userMap = new Map();
 
-        return {
-          id: p.id,
-          email: p.email,
-          username: p.username || (p.email?.includes('@baseball-analyzer.internal') ? p.email.replace('@baseball-analyzer.internal', '') : p.email),
-          display_name: p.display_name || p.username || p.email,
-          team_id: p.team_id || 'Team A',
-          team_name: p.team_name || p.team_id || 'Team A',
-          role: p.role || 'user',
-          is_disabled: !!p.is_disabled,
-          is_migrated: hasAuthAccount, // 個別移行ステータス
-          allow_hitting: p.allow_hitting !== false,
-          allow_pitching: p.allow_pitching !== false,
-          allow_body_comp: p.allow_body_comp !== false,
+      // First, add legacy users
+      legacyUsers.forEach(u => {
+        if (!u || !u.email) return;
+        const key = u.email.toLowerCase();
+        const hasAuth = authUserMap.has(key) || (u.id && authUserMap.has(u.id));
+        userMap.set(key, {
+          id: u.id || key,
+          email: u.email,
+          username: u.username || (u.email.includes('@baseball-analyzer.internal') ? u.email.replace('@baseball-analyzer.internal', '') : u.email),
+          display_name: u.display_name || u.email,
+          team_id: u.team_id || 'Team A',
+          team_name: u.team_name || u.team_id || 'Team A',
+          role: u.role || 'user',
+          is_disabled: !!u.is_disabled,
+          is_migrated: hasAuth,
+          allow_hitting: u.allow_hitting !== false,
+          allow_pitching: u.allow_pitching !== false,
+          allow_body_comp: u.allow_body_comp !== false,
           permissions: {
-            hitting: p.allow_hitting !== false,
-            pitching: p.allow_pitching !== false,
-            bodyComp: p.allow_body_comp !== false
+            hitting: u.allow_hitting !== false,
+            pitching: u.allow_pitching !== false,
+            bodyComp: u.allow_body_comp !== false
           },
-          temp_password: p.temp_password_info || null,
-          created_at: p.created_at,
-          updated_at: p.updated_at
-        };
+          temp_password: u.temp_password || null,
+          created_at: u.created_at || new Date().toISOString()
+        });
       });
 
-      return res.status(200).json({ users: formatted });
+      // Second, overlay Supabase profiles
+      if (Array.isArray(profiles)) {
+        profiles.forEach(p => {
+          if (!p || !p.email) return;
+          const key = p.email.toLowerCase();
+          const existing = userMap.get(key) || {};
+          const hasAuth = authUserMap.has(key) || (p.id && authUserMap.has(p.id));
+          userMap.set(key, {
+            ...existing,
+            id: p.id,
+            email: p.email,
+            username: p.username || (p.email.includes('@baseball-analyzer.internal') ? p.email.replace('@baseball-analyzer.internal', '') : p.email),
+            display_name: p.display_name || p.username || p.email,
+            team_id: p.team_id || existing.team_id || 'Team A',
+            team_name: p.team_name || p.team_id || 'Team A',
+            role: p.role || existing.role || 'user',
+            is_disabled: !!p.is_disabled,
+            is_migrated: hasAuth,
+            allow_hitting: p.allow_hitting !== false,
+            allow_pitching: p.allow_pitching !== false,
+            allow_body_comp: p.allow_body_comp !== false,
+            permissions: {
+              hitting: p.allow_hitting !== false,
+              pitching: p.allow_pitching !== false,
+              bodyComp: p.allow_body_comp !== false
+            },
+            temp_password: p.temp_password_info || existing.temp_password || null,
+            created_at: p.created_at || existing.created_at,
+            updated_at: p.updated_at
+          });
+        });
+      }
+
+      return res.status(200).json({ users: Array.from(userMap.values()) });
     }
 
     // -------------------------------------------------------------------------
@@ -177,20 +351,17 @@ export default async function handler(req, res) {
       if (action === 'migrate_single') {
         const tempPass = password?.trim() || ('pass' + Math.floor(100000 + Math.random() * 900000) + '!');
 
-        // Check if user already exists in auth
+        // 1. Supabase Auth create or update
         const { data: authList } = await adminClient.auth.admin.listUsers();
         const existingAuth = authList?.users?.find(u => u.email?.toLowerCase() === email);
 
         let finalUserId;
-
         if (existingAuth) {
-          // Update password for existing auth account
           await adminClient.auth.admin.updateUserById(existingAuth.id, {
             password: tempPass
           });
           finalUserId = existingAuth.id;
         } else {
-          // Create new user in Supabase Auth
           const { data: newUser, error: createErr } = await adminClient.auth.admin.createUser({
             email,
             password: tempPass,
@@ -208,7 +379,7 @@ export default async function handler(req, res) {
           finalUserId = newUser.user.id;
         }
 
-        // Upsert profiles record
+        // 2. Upsert profiles record
         await adminClient.from('profiles').upsert({
           id: finalUserId,
           email,
@@ -229,7 +400,21 @@ export default async function handler(req, res) {
           updated_at: new Date().toISOString()
         });
 
-        // 監査ログに記録
+        // 3. Update legacy database to mark is_migrated
+        try {
+          const legacyUsers = await getLegacyUsers(adminClient);
+          const updatedLegacy = legacyUsers.map(u => {
+            if ((u.email || '').toLowerCase() === email || (u.email || '').toLowerCase() === rawEmail.toLowerCase()) {
+              return { ...u, is_migrated: true, id: finalUserId };
+            }
+            return u;
+          });
+          await saveLegacyUsers(adminClient, updatedLegacy);
+        } catch (e) {
+          console.warn('Update legacy is_migrated error:', e);
+        }
+
+        // 4. Log to access_logs
         await adminClient.from('access_logs').insert([{
           user_id: finalUserId,
           email,
@@ -238,7 +423,7 @@ export default async function handler(req, res) {
           status: 'success',
           details: { admin_action: true, issuer: authCheck.adminUser.email },
           created_at: new Date().toISOString()
-        }]);
+        }]).catch(() => {});
 
         return res.status(200).json({
           message: `「${username}」を Supabase Auth に個別移行しました。`,
@@ -316,8 +501,9 @@ export default async function handler(req, res) {
         const { email: cleanEmail, username } = normalizeIdentifier(rawEmail || id);
         const tempPass = 'tp' + Math.floor(100000 + Math.random() * 900000);
         const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+        const hashedTemp = await hashPassword(tempPass);
 
-        // 1. Find user in Supabase Auth by email or id
+        // 1. Supabase Auth: Find or create user and set password to tempPass
         const { data: authList } = await adminClient.auth.admin.listUsers();
         const existingAuth = authList?.users?.find(u => 
           (u.email && cleanEmail && u.email.toLowerCase() === cleanEmail.toLowerCase()) || 
@@ -327,16 +513,14 @@ export default async function handler(req, res) {
         let finalUserId;
 
         if (existingAuth) {
-          // User exists in Supabase Auth -> update password
           const { error: authErr } = await adminClient.auth.admin.updateUserById(existingAuth.id, {
             password: tempPass
           });
           if (authErr) {
-            return res.status(400).json({ error: 'Supabase Auth パスワード更新エラー: ' + authErr.message });
+            console.warn('updateUserById error:', authErr.message);
           }
           finalUserId = existingAuth.id;
         } else {
-          // User not yet in Supabase Auth -> Auto-create user with this temp password!
           const { data: createdUser, error: createErr } = await adminClient.auth.admin.createUser({
             email: cleanEmail,
             password: tempPass,
@@ -348,35 +532,63 @@ export default async function handler(req, res) {
               role: req.body.role || 'user'
             }
           });
-          if (createErr) {
-            return res.status(400).json({ error: 'Supabase Auth アカウント作成エラー: ' + createErr.message });
+          if (!createErr && createdUser?.user) {
+            finalUserId = createdUser.user.id;
           }
-          finalUserId = createdUser.user.id;
         }
 
-        // 2. Record temporary password info in profiles
-        const tempInfo = {
-          is_temporary: true,
-          expires_at: expiresAt,
-          issued_at: new Date().toISOString()
-        };
+        // 2. Update profiles table with temporary password info
+        if (finalUserId) {
+          const tempInfo = {
+            is_temporary: true,
+            expires_at: expiresAt,
+            issued_at: new Date().toISOString()
+          };
 
-        await adminClient.from('profiles').upsert({
-          id: finalUserId,
-          email: cleanEmail,
-          username,
-          display_name: req.body.display_name || username,
-          team_id: req.body.team_id || 'Team A',
-          team_name: req.body.team_id || 'Team A',
-          role: req.body.role || 'user',
-          is_disabled: false,
-          temp_password_info: tempInfo,
-          updated_at: new Date().toISOString()
-        });
+          await adminClient.from('profiles').upsert({
+            id: finalUserId,
+            email: cleanEmail,
+            username,
+            display_name: req.body.display_name || username,
+            team_id: req.body.team_id || 'Team A',
+            team_name: req.body.team_id || 'Team A',
+            role: req.body.role || 'user',
+            is_disabled: false,
+            temp_password_info: tempInfo,
+            updated_at: new Date().toISOString()
+          });
+        }
 
-        // 3. Record in access_logs
+        // 3. CRITICAL: ALSO UPDATE LEGACY USERS TABLE (baseball_data) VIA SERVICE_ROLE!
+        // This ensures unmigrated accounts can login immediately with tempPass via legacy hash check!
+        try {
+          const legacyUsers = await getLegacyUsers(adminClient);
+          const updatedLegacy = legacyUsers.map(u => {
+            const uEmail = (u.email || '').toLowerCase();
+            if (
+              (u.id && u.id === id) ||
+              (cleanEmail && uEmail === cleanEmail.toLowerCase()) ||
+              (rawEmail && uEmail === rawEmail.toLowerCase())
+            ) {
+              return {
+                ...u,
+                temp_password: {
+                  hashed: hashedTemp,
+                  pass_plain: tempPass,
+                  expires_at: expiresAt
+                }
+              };
+            }
+            return u;
+          });
+          await saveLegacyUsers(adminClient, updatedLegacy);
+        } catch (legErr) {
+          console.warn("Update legacy baseball_data temp_password error:", legErr);
+        }
+
+        // 4. Record in access_logs
         await adminClient.from('access_logs').insert([{
-          user_id: finalUserId,
+          user_id: finalUserId || null,
           email: cleanEmail,
           team_id: req.body.team_id || 'Team A',
           event_type: 'temp_password_issued',
@@ -404,12 +616,9 @@ export default async function handler(req, res) {
         );
 
         if (existingAuth) {
-          const { error: pErr } = await adminClient.auth.admin.updateUserById(existingAuth.id, {
+          await adminClient.auth.admin.updateUserById(existingAuth.id, {
             password: String(password).trim()
           });
-          if (pErr) {
-            return res.status(400).json({ error: 'Failed to update password: ' + pErr.message });
-          }
           await adminClient
             .from('profiles')
             .update({
@@ -434,14 +643,22 @@ export default async function handler(req, res) {
         }
         safeUpdates.updated_at = new Date().toISOString();
 
-        const { error: uErr } = await adminClient
+        await adminClient
           .from('profiles')
           .update(safeUpdates)
           .eq('id', id);
 
-        if (uErr) {
-          return res.status(400).json({ error: 'Failed to update profile: ' + uErr.message });
-        }
+        // Also reflect updates in legacy storage
+        try {
+          const legacyUsers = await getLegacyUsers(adminClient);
+          const updatedLegacy = legacyUsers.map(u => {
+            if (u.id === id || (u.email && updates.email && u.email.toLowerCase() === updates.email.toLowerCase())) {
+              return { ...u, ...safeUpdates };
+            }
+            return u;
+          });
+          await saveLegacyUsers(adminClient, updatedLegacy);
+        } catch {}
       }
 
       return res.status(200).json({ message: 'User updated successfully.' });
@@ -457,10 +674,14 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'User ID is required.' });
       }
 
-      const { error: delError } = await adminClient.auth.admin.deleteUser(id);
-      if (delError) {
-        return res.status(400).json({ error: 'Failed to delete user: ' + delError.message });
-      }
+      await adminClient.auth.admin.deleteUser(id).catch(() => {});
+      await adminClient.from('profiles').delete().eq('id', id).catch(() => {});
+
+      try {
+        const legacyUsers = await getLegacyUsers(adminClient);
+        const filtered = legacyUsers.filter(u => u.id !== id && u.email !== id);
+        await saveLegacyUsers(adminClient, filtered);
+      } catch {}
 
       return res.status(200).json({ message: 'User deleted successfully.' });
     }

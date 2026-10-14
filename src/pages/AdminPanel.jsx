@@ -45,6 +45,20 @@ function AdminPanel() {
     if (session?.access_token) {
       headers['Authorization'] = `Bearer ${session.access_token}`;
     }
+
+    // Attach admin verification headers for legacy admin session
+    try {
+      const rawProfile = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile') || localStorage.getItem('baseball_current_user');
+      if (rawProfile) {
+        const p = typeof rawProfile === 'string' && (rawProfile.startsWith('{') || rawProfile.startsWith('[')) ? JSON.parse(rawProfile) : rawProfile;
+        if (p?.email) {
+          headers['X-Legacy-Admin-Email'] = p.email;
+          headers['X-Legacy-Admin-Role'] = p.role || 'admin';
+          headers['X-Legacy-Admin-Id'] = p.id || '';
+        }
+      }
+    } catch {}
+
     const options = { method, headers };
     if (body) options.body = JSON.stringify(body);
 
@@ -185,31 +199,29 @@ function AdminPanel() {
   const issueTempPassword = async (user) => {
     setLoading(true);
     try {
-      if (serverApiActive) {
-        try {
-          const res = await callAdminApi('PUT', {
-            id: user.id || user.email,
-            email: user.email,
-            display_name: user.display_name,
-            team_id: user.team_id,
-            role: user.role,
-            action: 'temp_password'
-          });
+      try {
+        const res = await callAdminApi('PUT', {
+          id: user.id || user.email,
+          email: user.email,
+          display_name: user.display_name,
+          team_id: user.team_id,
+          role: user.role,
+          action: 'temp_password'
+        });
 
-          setTempModal({
-            email: user.email,
-            name: user.display_name || user.email,
-            pass: res.tempPassword,
-            expiresAt: res.expiresAt ? '有効期限: 発行から30分間' : '初回ログイン時に新パスワードを設定可能'
-          });
-          setMessage({ type: 'success', text: `「${user.display_name || user.email}」に一時パスワードを発行しました。` });
-          await fetchUsers();
-          setLoading(false);
-          setTimeout(() => setMessage(null), 4000);
-          return;
-        } catch (apiErr) {
-          console.warn("Server API temp_password failed, falling back to direct storage:", apiErr);
-        }
+        setTempModal({
+          email: user.email,
+          name: user.display_name || user.email,
+          pass: res.tempPassword,
+          expiresAt: res.expiresAt ? '有効期限: 発行から30分間' : '初回ログイン時に新パスワードを設定可能'
+        });
+        setMessage({ type: 'success', text: `「${user.display_name || user.email}」に一時パスワードを発行しました。` });
+        await fetchUsers();
+        setLoading(false);
+        setTimeout(() => setMessage(null), 4000);
+        return;
+      } catch (apiErr) {
+        console.warn("Server API temp_password failed, falling back to direct storage:", apiErr);
       }
 
       // Legacy direct fallback (guarantees temporary password generation never fails!)
