@@ -1488,7 +1488,7 @@ function App() {
       case 'game':     return <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'custom':   return <CustomCharts savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'cloud':    return <CloudDataManager updateDataState={updateDataState} profile={profile} syncState={syncState} fetchFromCloud={fetchFromCloud} />;
-      case 'guide':    return <GuidePage setActiveView={setActiveView} currentUser={currentUser} profile={profile} />;
+      case 'guide':    return <GuidePage setActiveView={setActiveView} user={user} profile={profile} />;
       case 'admin':    return profile?.role === 'admin' ? <AdminPanel /> : null;
       default:         return <UploadPage {...uploadProps} />;
     }

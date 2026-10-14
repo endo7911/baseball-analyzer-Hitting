@@ -7,7 +7,9 @@ import {
 } from 'lucide-react';
 import InquiryPage from './InquiryPage';
 
-function GuidePage({ setActiveView, currentUser, profile }) {
+function GuidePage({ setActiveView, user, profile, currentUser }) {
+  const activeUser = user || currentUser || profile;
+  const activeProfile = profile || user || currentUser;
   const [activeTab, setActiveTab] = useState('analysis');
   const [openFaq, setOpenFaq] = useState(null);
 
@@ -452,7 +454,7 @@ function GuidePage({ setActiveView, currentUser, profile }) {
 
       {/* Tab 6: Inquiry & Contact Page */}
       {activeTab === 'inquiry' && (
-        <InquiryPage user={currentUser || profile} profile={profile || currentUser} />
+        <InquiryPage user={activeUser} profile={activeProfile} />
       )}
     </div>
   );
