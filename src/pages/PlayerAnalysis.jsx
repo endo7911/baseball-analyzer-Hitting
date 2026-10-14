@@ -21,7 +21,11 @@ import BodyCompPlayerProfile from '../components/BodyCompPlayerProfile';
 import { Users, User, Settings2, Info, Target, Activity, Dumbbell } from 'lucide-react';
 import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from '../config';
 
-function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedData, bodyCompData, initialPlayer, initialTeam, initialSource }) {
+function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedData, bodyCompData, initialPlayer, initialTeam, initialSource, profile }) {
+  const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
+  const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
+  const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
+
   const rapsodoMergedData = useMemo(() => {
     const sRows = savantData?.data || [];
     const pRows = savantPitchingData?.data || [];
@@ -253,14 +257,14 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
   // Automatically adjust mode if player only has pitching or only has hitting
   useEffect(() => {
     if (analysisMode === 'body_comp' || sourceType === 'body_comp') return;
-    if (!SHOW_PITCHER_MODULE) {
+    if (!SHOW_PITCHER_MODULE || !allowPitching) {
       setAnalysisMode('hitting');
     } else if (playerCapabilities.hasPitching && !playerCapabilities.hasHitting) {
       setAnalysisMode('pitching');
     } else if (playerCapabilities.hasHitting && !playerCapabilities.hasPitching) {
       setAnalysisMode('hitting');
     }
-  }, [playerCapabilities, analysisMode, sourceType]);
+  }, [playerCapabilities, analysisMode, sourceType, allowPitching]);
 
   const nameHeaderOptions = useMemo(() => {
     if (!headers || headers.length === 0) return [];
@@ -287,19 +291,19 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
             <h3 className="text-xl font-bold">分析設定</h3>
           </div>
           <div className="bg-slate-900/50 p-1 rounded-2xl border border-blue-500/20 flex flex-wrap self-start md:self-center gap-0.5">
-            {combinedData?.data?.length > 0 && (
+            {allowHitting && combinedData?.data?.length > 0 && (
               <button onClick={() => { setSourceType('combined'); setAnalysisMode('hitting'); }} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${analysisMode === 'hitting' && sourceType === 'combined' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>統合データ</button>
             )}
-            {(savantData?.data?.length > 0 || combinedData?.data?.length > 0) && (
+            {allowHitting && (savantData?.data?.length > 0 || combinedData?.data?.length > 0) && (
               <button onClick={() => { setSourceType('rapsodo_batting'); setAnalysisMode('hitting'); }} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${analysisMode === 'hitting' && sourceType === 'rapsodo_batting' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>Rapsodo 打撃</button>
             )}
-            {(blastData?.data?.length > 0 || combinedData?.data?.length > 0) && (
+            {allowHitting && (blastData?.data?.length > 0 || combinedData?.data?.length > 0) && (
               <button onClick={() => { setSourceType('blast'); setAnalysisMode('hitting'); }} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${analysisMode === 'hitting' && sourceType === 'blast' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>Blast</button>
             )}
-            {savantPitchingData?.data?.length > 0 && (
+            {SHOW_PITCHER_MODULE && allowPitching && savantPitchingData?.data?.length > 0 && (
               <button onClick={() => { setSourceType('rapsodo_pitching'); setAnalysisMode('pitching'); }} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${analysisMode === 'pitching' ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>Rapsodo 投手</button>
             )}
-            {SHOW_BODY_COMP_MODULE && (bodyCompData?.data?.length > 0 || combinedData?.data?.length > 0 || savantData?.data?.length > 0) && (
+            {SHOW_BODY_COMP_MODULE && allowBodyComp && (bodyCompData?.data?.length > 0 || combinedData?.data?.length > 0 || savantData?.data?.length > 0) && (
               <button onClick={() => { setSourceType('body_comp'); setAnalysisMode('body_comp'); }} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${analysisMode === 'body_comp' || sourceType === 'body_comp' ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>体組成</button>
             )}
           </div>
@@ -428,9 +432,9 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
       {/* Selected Player Report Area */}
       {selectedPlayer ? (
         <div className="space-y-6">
-          {SHOW_BODY_COMP_MODULE && (analysisMode === 'body_comp' || sourceType === 'body_comp') ? (
+          {SHOW_BODY_COMP_MODULE && allowBodyComp && (analysisMode === 'body_comp' || sourceType === 'body_comp') ? (
             <BodyCompPlayerProfile playerName={selectedPlayer} teamName={selectedTeam} bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} />
-          ) : SHOW_PITCHER_MODULE && analysisMode === 'pitching' ? (
+          ) : SHOW_PITCHER_MODULE && allowPitching && analysisMode === 'pitching' ? (
             <PitcherProfile pitcherName={selectedPlayer} events={rawPlayerEvents} startDate={profileStartDate} endDate={profileEndDate} />
           ) : (
             <PlayerProfile playerName={selectedPlayer} stats={playerStats} isCombined={sourceType === 'combined'} sourceType={sourceType} startDate={profileStartDate} endDate={profileEndDate} />

@@ -319,18 +319,67 @@ function AdminPanel() {
     }
 
     try {
-      if (serverApiActive && user.id) {
-        const updateField = moduleKey === 'hitting' ? 'allow_hitting' : (moduleKey === 'pitching' ? 'allow_pitching' : 'allow_body_comp');
+      const updateField = moduleKey === 'hitting' ? 'allow_hitting' : (moduleKey === 'pitching' ? 'allow_pitching' : 'allow_body_comp');
+      const targetId = user.id || user.email;
+
+      if (serverApiActive && targetId) {
         await callAdminApi('PUT', {
-          id: user.id,
-          updates: { [updateField]: newStatus }
+          id: targetId,
+          email: user.email,
+          updates: { 
+            [updateField]: newStatus,
+            email: user.email 
+          }
         });
-        setMessage({ type: 'success', text: `「${user.display_name || user.email}」の【${label}】を${actionText}に設定しました。` });
-        await fetchUsers();
-        setTimeout(() => setMessage(null), 3000);
       }
+
+      // Direct profiles table update fallback if Supabase client available
+      try {
+        if (user.id) {
+          await supabase
+            .from('profiles')
+            .update({ [updateField]: newStatus, updated_at: new Date().toISOString() })
+            .eq('id', user.id);
+        } else if (user.email) {
+          await supabase
+            .from('profiles')
+            .update({ [updateField]: newStatus, updated_at: new Date().toISOString() })
+            .eq('email', user.email.toLowerCase().trim());
+        }
+      } catch (sbErr) {
+        console.warn("Direct profiles update non-fatal:", sbErr);
+      }
+
+      // Also update local/global storage fallback
+      try {
+        const globalUsers = await getGlobalUsers();
+        const updatedUsers = globalUsers.map(u => {
+          if ((user.id && u.id === user.id) || (user.email && u.email?.toLowerCase() === user.email?.toLowerCase())) {
+            return {
+              ...u,
+              [updateField]: newStatus,
+              permissions: {
+                ...(u.permissions || {}),
+                [moduleKey]: newStatus
+              }
+            };
+          }
+          return u;
+        });
+        await saveGlobalUsers(updatedUsers);
+      } catch (err) {
+        console.warn("Local user sync non-fatal:", err);
+      }
+
+      // Notify App to refresh account status in real-time
+      window.dispatchEvent(new CustomEvent('accountStatusRefresh'));
+
+      setMessage({ type: 'success', text: `「${user.display_name || user.email}」の【${label}】を${actionText}に設定しました。` });
+      await fetchUsers();
+      setTimeout(() => setMessage(null), 3000);
     } catch (e) {
       console.error("Toggle module permission error:", e);
+      alert(`権限の変更に失敗しました: ${e.message}`);
     }
   };
 

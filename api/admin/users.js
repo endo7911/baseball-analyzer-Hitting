@@ -649,18 +649,43 @@ export default async function handler(req, res) {
             safeUpdates[k] = updates[k];
           }
         }
-        safeUpdates.updated_at = new Date().toISOString();
+        const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+        const targetEmail = (updates.email || req.body.email || (typeof id === 'string' && id.includes('@') ? id : '')).toLowerCase().trim();
 
-        await adminClient
-          .from('profiles')
-          .update(safeUpdates)
-          .eq('id', id);
+        if (id && isUUID(id)) {
+          await adminClient
+            .from('profiles')
+            .update(safeUpdates)
+            .eq('id', id);
+        } else if (targetEmail) {
+          await adminClient
+            .from('profiles')
+            .update(safeUpdates)
+            .eq('email', targetEmail);
+        }
+
+        // Also update Supabase Auth user_metadata if auth user found
+        try {
+          let authId = id && isUUID(id) ? id : null;
+          if (!authId && targetEmail) {
+            const { data: authList } = await adminClient.auth.admin.listUsers();
+            const found = authList?.users?.find(u => u.email?.toLowerCase() === targetEmail);
+            if (found) authId = found.id;
+          }
+          if (authId) {
+            await adminClient.auth.admin.updateUserById(authId, {
+              user_metadata: safeUpdates
+            });
+          }
+        } catch (authErr) {
+          console.warn("Auth user_metadata update non-fatal error:", authErr);
+        }
 
         // Also reflect updates in legacy storage
         try {
           const legacyUsers = await getLegacyUsers(adminClient);
           const updatedLegacy = legacyUsers.map(u => {
-            if (u.id === id || (u.email && updates.email && u.email.toLowerCase() === updates.email.toLowerCase())) {
+            if (u.id === id || (u.email && targetEmail && u.email.toLowerCase() === targetEmail)) {
               return { ...u, ...safeUpdates };
             }
             return u;

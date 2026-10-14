@@ -11,6 +11,10 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
   const [isLoading, setIsLoading] = React.useState(false);
   const fileInputRefs = useRef({});
 
+  const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
+  const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
+  const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
+
   const handleLoadSampleData = () => {
     const players = [
       { name: '山田 太郎', grade: '3年', team: 'Aチーム', baseBs: 142, baseEv: 155, baseAa: 12.5, baseLa: 24 },
@@ -401,18 +405,20 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
-          <button
-            onClick={() => downloadCSVTemplate('combined')}
-            className="flex items-center justify-between p-3.5 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/40 rounded-xl text-left transition-all group"
-          >
-            <div>
-              <p className="text-xs font-bold text-emerald-300">1ファイル統合</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">速度・角度・名前・学年</p>
-            </div>
-            <span className="text-xs font-bold text-emerald-400 group-hover:translate-y-0.5 transition-transform">↓ DL</span>
-          </button>
+          {allowHitting && (
+            <button
+              onClick={() => downloadCSVTemplate('combined')}
+              className="flex items-center justify-between p-3.5 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/40 rounded-xl text-left transition-all group"
+            >
+              <div>
+                <p className="text-xs font-bold text-emerald-300">1ファイル統合</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">速度・角度・名前・学年</p>
+              </div>
+              <span className="text-xs font-bold text-emerald-400 group-hover:translate-y-0.5 transition-transform">↓ DL</span>
+            </button>
+          )}
 
-          {SHOW_BODY_COMP_MODULE && (
+          {SHOW_BODY_COMP_MODULE && allowBodyComp && (
             <button
               onClick={() => downloadCSVTemplate('body_comp')}
               className="flex items-center justify-between p-3.5 bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-500/40 rounded-xl text-left transition-all group"
@@ -425,7 +431,7 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
             </button>
           )}
 
-          {SHOW_PITCHER_MODULE && (
+          {SHOW_PITCHER_MODULE && allowPitching && (
             <button
               onClick={() => downloadCSVTemplate('savant_pitching')}
               className="flex items-center justify-between p-3.5 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/40 rounded-xl text-left transition-all group"
@@ -438,57 +444,63 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
             </button>
           )}
 
-          <button
-            onClick={() => downloadCSVTemplate('savant')}
-            className="flex items-center justify-between p-3.5 bg-blue-950/40 hover:bg-blue-900/60 border border-blue-500/40 rounded-xl text-left transition-all group"
-          >
-            <div>
-              <p className="text-xs font-bold text-blue-300">Rapsodo 打撃</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">ExitVelocity・LaunchAngle</p>
-            </div>
-            <span className="text-xs font-bold text-blue-400 group-hover:translate-y-0.5 transition-transform">↓ DL</span>
-          </button>
+          {allowHitting && (
+            <button
+              onClick={() => downloadCSVTemplate('savant')}
+              className="flex items-center justify-between p-3.5 bg-blue-950/40 hover:bg-blue-900/60 border border-blue-500/40 rounded-xl text-left transition-all group"
+            >
+              <div>
+                <p className="text-xs font-bold text-blue-300">Rapsodo 打撃</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">ExitVelocity・LaunchAngle</p>
+              </div>
+              <span className="text-xs font-bold text-blue-400 group-hover:translate-y-0.5 transition-transform">↓ DL</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => downloadCSVTemplate('blast')}
-            className="flex items-center justify-between p-3.5 bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/40 rounded-xl text-left transition-all group"
-          >
-            <div>
-              <p className="text-xs font-bold text-purple-300">Blast Motion</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">バット速度・アッパー等</p>
-            </div>
-            <span className="text-xs font-bold text-purple-400 group-hover:translate-y-0.5 transition-transform">↓ DL</span>
-          </button>
+          {allowHitting && (
+            <button
+              onClick={() => downloadCSVTemplate('blast')}
+              className="flex items-center justify-between p-3.5 bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/40 rounded-xl text-left transition-all group"
+            >
+              <div>
+                <p className="text-xs font-bold text-purple-300">Blast Motion</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">バット速度・アッパー等</p>
+              </div>
+              <span className="text-xs font-bold text-purple-400 group-hover:translate-y-0.5 transition-transform">↓ DL</span>
+            </button>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl">
         {/* Combined Card */}
-        <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h3 className="text-xl font-bold text-white flex items-center mb-1">
-                <span className="bg-emerald-500 w-3 h-6 rounded-full mr-3"></span>
-                1ファイル統合データ
-              </h3>
-              <p className="text-xs text-slate-400">打撃・名前・学年統合CSV</p>
+        {allowHitting && (
+          <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center mb-1">
+                  <span className="bg-emerald-500 w-3 h-6 rounded-full mr-3"></span>
+                  1ファイル統合データ
+                </h3>
+                <p className="text-xs text-slate-400">打撃・名前・学年統合CSV</p>
+              </div>
+              <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-emerald-900/20 whitespace-nowrap">
+                ファイルを選択
+                <input 
+                  ref={el => fileInputRefs.current['combined'] = el} 
+                  type="file" 
+                  accept=".csv" 
+                  className="hidden" 
+                  onChange={(e) => handleFileUpload(e, 'combined')} 
+                />
+              </label>
             </div>
-            <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-emerald-900/20 whitespace-nowrap">
-              ファイルを選択
-              <input 
-                ref={el => fileInputRefs.current['combined'] = el} 
-                type="file" 
-                accept=".csv" 
-                className="hidden" 
-                onChange={(e) => handleFileUpload(e, 'combined')} 
-              />
-            </label>
+            {renderDataView(combinedFiles, 'combined')}
           </div>
-          {renderDataView(combinedFiles, 'combined')}
-        </div>
+        )}
 
         {/* Body Comp Card (Conditional - Cyan theme) */}
-        {SHOW_BODY_COMP_MODULE && (
+        {SHOW_BODY_COMP_MODULE && allowBodyComp && (
           <div className="bg-slate-800/40 p-6 rounded-2xl border border-cyan-500/30">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-white flex items-center">
@@ -511,7 +523,7 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         )}
 
         {/* Rapsodo Pitching Card (Conditional) */}
-        {SHOW_PITCHER_MODULE && (
+        {SHOW_PITCHER_MODULE && allowPitching && (
           <div className="bg-slate-800/40 p-6 rounded-2xl border border-amber-500/30">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-white flex items-center">
@@ -534,62 +546,72 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         )}
 
         {/* Rapsodo Hitting Card */}
-        <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold text-white flex items-center">
-              <span className="bg-blue-500 w-3 h-6 rounded-full mr-3"></span>
-              Rapsodo 打撃データ (Hitting)
-            </h3>
-            <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20">
-              ファイルを選択
-              <input 
-                ref={el => fileInputRefs.current['savant'] = el} 
-                type="file" 
-                accept=".csv" 
-                className="hidden" 
-                onChange={(e) => handleFileUpload(e, 'savant')} 
-              />
-            </label>
+        {allowHitting && (
+          <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-white flex items-center">
+                <span className="bg-blue-500 w-3 h-6 rounded-full mr-3"></span>
+                Rapsodo 打撃データ (Hitting)
+              </h3>
+              <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20">
+                ファイルを選択
+                <input 
+                  ref={el => fileInputRefs.current['savant'] = el} 
+                  type="file" 
+                  accept=".csv" 
+                  className="hidden" 
+                  onChange={(e) => handleFileUpload(e, 'savant')} 
+                />
+              </label>
+            </div>
+            {renderDataView(savantFiles, 'savant')}
           </div>
-          {renderDataView(savantFiles, 'savant')}
-        </div>
+        )}
 
         {/* Blast Card */}
-        <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold text-white flex items-center">
-              <span className="bg-purple-500 w-3 h-6 rounded-full mr-3"></span>
-              Blast Data (バット計測)
-            </h3>
-            <label className="cursor-pointer bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-purple-900/20">
-              ファイルを選択
-              <input 
-                ref={el => fileInputRefs.current['blast'] = el} 
-                type="file" 
-                accept=".csv" 
-                className="hidden" 
-                onChange={(e) => handleFileUpload(e, 'blast')} 
-              />
-            </label>
+        {allowHitting && (
+          <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-white flex items-center">
+                <span className="bg-purple-500 w-3 h-6 rounded-full mr-3"></span>
+                Blast Data (バット計測)
+              </h3>
+              <label className="cursor-pointer bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-purple-900/20">
+                ファイルを選択
+                <input 
+                  ref={el => fileInputRefs.current['blast'] = el} 
+                  type="file" 
+                  accept=".csv" 
+                  className="hidden" 
+                  onChange={(e) => handleFileUpload(e, 'blast')} 
+                />
+              </label>
+            </div>
+            {renderDataView(blastFiles, 'blast')}
           </div>
-          {renderDataView(blastFiles, 'blast')}
-        </div>
+        )}
       </div>
 
-      {(savantFiles.length > 0 || savantPitchingFiles.length > 0 || blastFiles.length > 0 || combinedFiles.length > 0 || bodyCompFiles.length > 0) && (
+      {(
+        (allowHitting && (savantFiles.length > 0 || blastFiles.length > 0 || combinedFiles.length > 0)) ||
+        (SHOW_PITCHER_MODULE && allowPitching && savantPitchingFiles.length > 0) ||
+        (SHOW_BODY_COMP_MODULE && allowBodyComp && bodyCompFiles.length > 0)
+      ) && (
         <div className="mt-10 p-6 bg-blue-900/20 border border-blue-500/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between">
           <div>
             <h4 className="text-lg font-bold text-blue-100 mb-1">データの準備ができました！</h4>
             <p className="text-blue-300 text-sm">左側のメニューから各分析画面に進んでください。</p>
           </div>
           <div className="flex flex-wrap items-center gap-3 mt-4 sm:mt-0">
-            <button 
-              onClick={() => setActiveView('team')}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-5 rounded-xl shadow-lg transition-transform transform hover:scale-105 text-sm"
-            >
-              打撃分析を見る
-            </button>
-            {SHOW_PITCHER_MODULE && (
+            {allowHitting && (
+              <button 
+                onClick={() => setActiveView('team')}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-5 rounded-xl shadow-lg transition-transform transform hover:scale-105 text-sm"
+              >
+                打撃分析を見る
+              </button>
+            )}
+            {SHOW_PITCHER_MODULE && allowPitching && (
               <button 
                 onClick={() => setActiveView('pitcher')}
                 className="bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-5 rounded-xl shadow-lg transition-transform transform hover:scale-105 text-sm"
@@ -597,7 +619,7 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
                 投手分析を見る
               </button>
             )}
-            {SHOW_BODY_COMP_MODULE && (
+            {SHOW_BODY_COMP_MODULE && allowBodyComp && (
               <button 
                 onClick={() => setActiveView('bodyComp')}
                 className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 px-5 rounded-xl shadow-lg transition-transform transform hover:scale-105 text-sm"

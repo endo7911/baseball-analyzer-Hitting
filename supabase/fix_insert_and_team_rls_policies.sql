@@ -54,6 +54,11 @@ BEGIN
   END IF;
 END $$;
 
+-- profiles テーブルのモジュール表示権限カラム保証
+ALTER TABLE IF EXISTS public.profiles ADD COLUMN IF NOT EXISTS allow_hitting BOOLEAN DEFAULT TRUE;
+ALTER TABLE IF EXISTS public.profiles ADD COLUMN IF NOT EXISTS allow_pitching BOOLEAN DEFAULT TRUE;
+ALTER TABLE IF EXISTS public.profiles ADD COLUMN IF NOT EXISTS allow_body_comp BOOLEAN DEFAULT TRUE;
+
 -- ------------------------------------------------------------------------------
 -- 2. 権限付与 (anon, authenticated 双方にテーブル操作権限を付与)
 -- ------------------------------------------------------------------------------

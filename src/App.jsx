@@ -92,13 +92,28 @@ function App() {
 
           if (isMounted) {
             setUser(authUser);
-            setProfile(profileData || {
+            const pData = profileData || {
               id: authUser.id,
               email: authUser.email,
               role: authUser.user_metadata?.role || 'user',
               team_id: authUser.user_metadata?.team_id || 'Team A',
               team_name: authUser.user_metadata?.team_id || 'Team A',
-              display_name: profileData?.display_name || authUser.email
+              display_name: authUser.email,
+              allow_hitting: authUser.user_metadata?.allow_hitting !== false,
+              allow_pitching: authUser.user_metadata?.allow_pitching !== false,
+              allow_body_comp: authUser.user_metadata?.allow_body_comp !== false,
+            };
+            setProfile({
+              ...pData,
+              allow_hitting: pData.allow_hitting !== false,
+              allow_pitching: pData.allow_pitching !== false,
+              allow_body_comp: pData.allow_body_comp !== false,
+              permissions: {
+                hitting: pData.allow_hitting !== false,
+                pitching: pData.allow_pitching !== false,
+                bodyComp: pData.allow_body_comp !== false,
+                ...(pData.permissions || {})
+              }
             });
             setAuthLoading(false);
           }
@@ -172,7 +187,29 @@ function App() {
           .eq('id', session.user.id)
           .single();
         setUser(session.user);
-        if (profileData) setProfile(profileData);
+        const pData = profileData || {
+          id: session.user.id,
+          email: session.user.email,
+          role: session.user.user_metadata?.role || 'user',
+          team_id: session.user.user_metadata?.team_id || 'Team A',
+          team_name: session.user.user_metadata?.team_id || 'Team A',
+          display_name: session.user.email,
+          allow_hitting: session.user.user_metadata?.allow_hitting !== false,
+          allow_pitching: session.user.user_metadata?.allow_pitching !== false,
+          allow_body_comp: session.user.user_metadata?.allow_body_comp !== false,
+        };
+        setProfile({
+          ...pData,
+          allow_hitting: pData.allow_hitting !== false,
+          allow_pitching: pData.allow_pitching !== false,
+          allow_body_comp: pData.allow_body_comp !== false,
+          permissions: {
+            hitting: pData.allow_hitting !== false,
+            pitching: pData.allow_pitching !== false,
+            bodyComp: pData.allow_body_comp !== false,
+            ...(pData.permissions || {})
+          }
+        });
       }
     });
 
@@ -1224,7 +1261,7 @@ function App() {
       case 'team':     return allowHitting ? <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} /> : <UploadPage {...uploadProps} />;
       case 'pitcher':  return (SHOW_PITCHER_MODULE && allowPitching) ? <PitcherAnalysis savantData={savantPitchingData} blastData={null} combinedData={null} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} /> : <UploadPage {...uploadProps} />;
       case 'bodyComp': return (SHOW_BODY_COMP_MODULE && allowBodyComp) ? <BodyCompAnalysis bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} setActiveView={setActiveView} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source: source || 'body_comp' }); setActiveView('player'); }} /> : <UploadPage {...uploadProps} />;
-      case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} bodyCompData={bodyCompData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} />;
+      case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} bodyCompData={bodyCompData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} profile={profile} />;
       case 'game':     return <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'custom':   return <CustomCharts savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'cloud':    return <CloudDataManager updateDataState={updateDataState} profile={profile} syncState={syncState} fetchFromCloud={fetchFromCloud} />;
@@ -1237,9 +1274,24 @@ function App() {
   const checkAccountStatus = async () => {
     if (!user) return true;
     try {
-      const globalUsers = await getGlobalUsers();
-      const targetEmail = (user.email || profile?.email || '').toLowerCase();
-      const latest = globalUsers.find(u => (u.id && u.id === user.id) || (u.email && u.email.toLowerCase() === targetEmail));
+      let latest = null;
+      if (user.id) {
+        try {
+          const { data: pData } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+          if (pData) latest = pData;
+        } catch {}
+      }
+
+      if (!latest) {
+        const globalUsers = await getGlobalUsers();
+        const targetEmail = (user.email || profile?.email || '').toLowerCase();
+        latest = globalUsers.find(u => (u.id && u.id === user.id) || (u.email && u.email.toLowerCase() === targetEmail));
+      }
+
       if (latest) {
         if (latest.is_disabled === true) {
           localStorage.removeItem('mockUser');
@@ -1265,7 +1317,17 @@ function App() {
           if (activeView === 'pitcher' && (!SHOW_PITCHER_MODULE || !allowPitching)) setActiveView('upload');
           if (activeView === 'bodyComp' && (!SHOW_BODY_COMP_MODULE || !allowBodyComp)) setActiveView('upload');
 
-          return updated;
+          return {
+            ...updated,
+            allow_hitting: allowHitting,
+            allow_pitching: allowPitching,
+            allow_body_comp: allowBodyComp,
+            permissions: {
+              hitting: allowHitting,
+              pitching: allowPitching,
+              bodyComp: allowBodyComp
+            }
+          };
         });
       }
     } catch (e) {
@@ -1279,7 +1341,7 @@ function App() {
     if (!user) return;
 
     const handleStorageChange = (e) => {
-      if (!e.key || e.key === 'mockUsersList' || e.key === 'mockProfile') {
+      if (!e.key || e.key === 'mockUsersList' || e.key === 'mockProfile' || e.key === 'accountStatusChanged') {
         checkAccountStatus();
       }
     };
@@ -1290,10 +1352,12 @@ function App() {
 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('focus', handleFocus);
+    window.addEventListener('accountStatusRefresh', checkAccountStatus);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('accountStatusRefresh', checkAccountStatus);
     };
   }, [user, activeView]);
 
