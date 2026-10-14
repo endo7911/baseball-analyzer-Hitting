@@ -18,8 +18,8 @@ function AccountModal({ isOpen, onClose, profile, onLogout }) {
     setError('');
     setSuccess('');
 
-    if (newPassword.trim().length < 8) {
-      setError('パスワードは8文字以上にしてください。');
+    if (!newPassword.trim()) {
+      setError('新しいパスワードを入力してください。');
       return;
     }
 
@@ -180,7 +180,7 @@ function AccountModal({ isOpen, onClose, profile, onLogout }) {
           )}
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-400 mb-1">新しいパスワード（8文字以上）</label>
+            <label className="block text-[11px] font-bold text-slate-400 mb-1">新しいパスワード</label>
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}

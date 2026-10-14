@@ -29,8 +29,8 @@ function LoginPage({ onLogin }) {
   const submitNewPassword = async (e) => {
     e.preventDefault();
     setPwError('');
-    if (newPw.trim().length < 8) {
-      setPwError('パスワードは8文字以上にしてください。');
+    if (!newPw.trim()) {
+      setPwError('新しいパスワードを入力してください。');
       return;
     }
     if (newPw !== newPw2) {
@@ -381,7 +381,7 @@ function LoginPage({ onLogin }) {
             {pwStep === 'ask' ? (
               <>
                 <p className="text-slate-400 text-sm mb-6 leading-relaxed">
-                  一時パスワードでログインしました。安全のため、新しい正式なパスワード（8文字以上）を設定することをおすすめします。
+                  一時パスワードでログインしました。安全のため、新しい正式なパスワードを設定することをおすすめします。
                 </p>
                 <div className="flex gap-2">
                   <button id="skip-new-password" onClick={skipNewPassword} className="flex-1 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-bold cursor-pointer">
@@ -394,7 +394,7 @@ function LoginPage({ onLogin }) {
               </>
             ) : (
               <form onSubmit={submitNewPassword} className="space-y-3">
-                <input id="new-password" type="password" value={newPw} onChange={(e) => { setNewPw(e.target.value); setPwError(''); }} placeholder="新しいパスワード（8文字以上）" className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
+                <input id="new-password" type="password" value={newPw} onChange={(e) => { setNewPw(e.target.value); setPwError(''); }} placeholder="新しいパスワード" className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
                 <input id="new-password-confirm" type="password" value={newPw2} onChange={(e) => { setNewPw2(e.target.value); setPwError(''); }} placeholder="もう一度入力" className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
                 {pwError && <div className="text-red-400 text-xs">{pwError}</div>}
                 <div className="flex gap-2 pt-2">

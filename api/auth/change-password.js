@@ -142,8 +142,8 @@ export default async function handler(req, res) {
     const adminClient = getAdminClient();
     const { email: rawEmail, newPassword } = req.body || {};
 
-    if (!newPassword || newPassword.trim().length < 8) {
-      return res.status(400).json({ error: 'パスワードは8文字以上にしてください。' });
+    if (!newPassword || !newPassword.trim()) {
+      return res.status(400).json({ error: '新しいパスワードを入力してください。' });
     }
 
     // 1. Verify caller identity
@@ -188,6 +188,9 @@ export default async function handler(req, res) {
       });
       if (authErr) {
         console.warn('Supabase Auth updateUserById error:', authErr.message);
+        if (authErr.message && (authErr.message.toLowerCase().includes('characters') || authErr.message.toLowerCase().includes('short'))) {
+          return res.status(400).json({ error: '認証サービスの制限: ' + authErr.message });
+        }
       }
       callerUserId = existingAuth.id;
 
