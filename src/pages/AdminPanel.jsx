@@ -185,9 +185,13 @@ function AdminPanel() {
   const issueTempPassword = async (user) => {
     setLoading(true);
     try {
-      if (serverApiActive && user.id) {
+      if (serverApiActive) {
         const res = await callAdminApi('PUT', {
-          id: user.id,
+          id: user.id || user.email,
+          email: user.email,
+          display_name: user.display_name,
+          team_id: user.team_id,
+          role: user.role,
           action: 'temp_password'
         });
 
@@ -195,9 +199,9 @@ function AdminPanel() {
           email: user.email,
           name: user.display_name || user.email,
           pass: res.tempPassword,
-          expiresAt: res.expiresAt
+          expiresAt: res.expiresAt ? '有効期限: 発行から30分間' : '初回ログイン時に新パスワードを設定可能'
         });
-        setMessage({ type: 'success', text: `「${user.display_name || user.email}」に30分間有効の一時パスワードを発行しました。` });
+        setMessage({ type: 'success', text: `「${user.display_name || user.email}」に一時パスワードを発行しました。` });
         await fetchUsers();
         setLoading(false);
         setTimeout(() => setMessage(null), 4000);
@@ -205,7 +209,8 @@ function AdminPanel() {
       }
     } catch (e) {
       console.error("Issue temp password error:", e);
-      setMessage({ type: 'error', text: '一時パスワードの発行に失敗しました。' });
+      alert(`一時パスワードの発行に失敗しました: ${e.message}`);
+      setMessage({ type: 'error', text: `発行失敗: ${e.message}` });
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(null), 4000);

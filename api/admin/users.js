@@ -310,18 +310,48 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'User ID is required.' });
       }
 
-      // Special action: Issue temporary password
+      // Special action: Issue temporary password (works for both migrated and unmigrated accounts!)
       if (action === 'temp_password') {
+        const rawEmail = (req.body.email || '').trim();
+        const { email: cleanEmail, username } = normalizeIdentifier(rawEmail || id);
         const tempPass = 'tp' + Math.floor(100000 + Math.random() * 900000);
         const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-        // 1. Update password in Supabase Auth
-        const { error: authErr } = await adminClient.auth.admin.updateUserById(id, {
-          password: tempPass
-        });
+        // 1. Find user in Supabase Auth by email or id
+        const { data: authList } = await adminClient.auth.admin.listUsers();
+        const existingAuth = authList?.users?.find(u => 
+          (u.email && cleanEmail && u.email.toLowerCase() === cleanEmail.toLowerCase()) || 
+          (id && u.id === id)
+        );
 
-        if (authErr) {
-          return res.status(400).json({ error: 'Failed to set temporary password: ' + authErr.message });
+        let finalUserId;
+
+        if (existingAuth) {
+          // User exists in Supabase Auth -> update password
+          const { error: authErr } = await adminClient.auth.admin.updateUserById(existingAuth.id, {
+            password: tempPass
+          });
+          if (authErr) {
+            return res.status(400).json({ error: 'Supabase Auth パスワード更新エラー: ' + authErr.message });
+          }
+          finalUserId = existingAuth.id;
+        } else {
+          // User not yet in Supabase Auth -> Auto-create user with this temp password!
+          const { data: createdUser, error: createErr } = await adminClient.auth.admin.createUser({
+            email: cleanEmail,
+            password: tempPass,
+            email_confirm: true,
+            user_metadata: {
+              username,
+              display_name: req.body.display_name || username,
+              team_id: req.body.team_id || 'Team A',
+              role: req.body.role || 'user'
+            }
+          });
+          if (createErr) {
+            return res.status(400).json({ error: 'Supabase Auth アカウント作成エラー: ' + createErr.message });
+          }
+          finalUserId = createdUser.user.id;
         }
 
         // 2. Record temporary password info in profiles
@@ -331,13 +361,29 @@ export default async function handler(req, res) {
           issued_at: new Date().toISOString()
         };
 
-        await adminClient
-          .from('profiles')
-          .update({
-            temp_password_info: tempInfo,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', id);
+        await adminClient.from('profiles').upsert({
+          id: finalUserId,
+          email: cleanEmail,
+          username,
+          display_name: req.body.display_name || username,
+          team_id: req.body.team_id || 'Team A',
+          team_name: req.body.team_id || 'Team A',
+          role: req.body.role || 'user',
+          is_disabled: false,
+          temp_password_info: tempInfo,
+          updated_at: new Date().toISOString()
+        });
+
+        // 3. Record in access_logs
+        await adminClient.from('access_logs').insert([{
+          user_id: finalUserId,
+          email: cleanEmail,
+          team_id: req.body.team_id || 'Team A',
+          event_type: 'temp_password_issued',
+          status: 'warning',
+          details: { issuer: authCheck.adminUser.email, expires_at: expiresAt },
+          created_at: new Date().toISOString()
+        }]).catch(() => {});
 
         return res.status(200).json({
           message: 'Temporary password issued.',
@@ -348,19 +394,30 @@ export default async function handler(req, res) {
 
       // Password update / reset
       if (password) {
-        const { error: pErr } = await adminClient.auth.admin.updateUserById(id, {
-          password: String(password).trim()
-        });
-        if (pErr) {
-          return res.status(400).json({ error: 'Failed to update password: ' + pErr.message });
+        const rawEmail = (req.body.email || '').trim();
+        const { email: cleanEmail } = normalizeIdentifier(rawEmail || id);
+
+        const { data: authList } = await adminClient.auth.admin.listUsers();
+        const existingAuth = authList?.users?.find(u => 
+          (u.email && cleanEmail && u.email.toLowerCase() === cleanEmail.toLowerCase()) || 
+          (id && u.id === id)
+        );
+
+        if (existingAuth) {
+          const { error: pErr } = await adminClient.auth.admin.updateUserById(existingAuth.id, {
+            password: String(password).trim()
+          });
+          if (pErr) {
+            return res.status(400).json({ error: 'Failed to update password: ' + pErr.message });
+          }
+          await adminClient
+            .from('profiles')
+            .update({
+              temp_password_info: null,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingAuth.id);
         }
-        await adminClient
-          .from('profiles')
-          .update({
-            temp_password_info: null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', id);
       }
 
       // Standard profile field updates
