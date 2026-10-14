@@ -123,19 +123,20 @@ async function getLegacyUsers(adminClient) {
 async function saveLegacyUsers(adminClient, usersList) {
   try {
     const encrypted = await encryptPayload(usersList);
-    const { data } = await adminClient
+    const { data, error } = await adminClient
       .from('baseball_data')
-      .select('id')
-      .eq('file_name', SYSTEM_USER_FILE_NAME);
+      .select('file_name')
+      .eq('file_name', SYSTEM_USER_FILE_NAME)
+      .limit(1);
 
-    if (data && data.length > 0) {
+    if (!error && data && data.length > 0) {
       await adminClient
         .from('baseball_data')
         .update({
           upload_id: encrypted,
           updated_at: new Date().toISOString()
         })
-        .eq('id', data[0].id);
+        .eq('file_name', SYSTEM_USER_FILE_NAME);
     } else {
       await adminClient
         .from('baseball_data')
@@ -152,6 +153,7 @@ async function saveLegacyUsers(adminClient, usersList) {
     return false;
   }
 }
+
 
 // Helper to normalize username/email
 function normalizeIdentifier(rawId) {
@@ -350,18 +352,39 @@ export default async function handler(req, res) {
       // Single User Migration Action (個別アカウント移行)
       if (action === 'migrate_single') {
         const tempPass = password?.trim() || ('pass' + Math.floor(100000 + Math.random() * 900000) + '!');
+        let finalUserId = null;
 
-        // 1. Supabase Auth create or update
-        const { data: authList } = await adminClient.auth.admin.listUsers();
-        const existingAuth = authList?.users?.find(u => u.email?.toLowerCase() === email);
+        // 1. Check if user already exists in profiles
+        try {
+          const { data: pData } = await adminClient
+            .from('profiles')
+            .select('id')
+            .eq('email', email)
+            .maybeSingle();
 
-        let finalUserId;
-        if (existingAuth) {
-          await adminClient.auth.admin.updateUserById(existingAuth.id, {
-            password: tempPass
-          });
-          finalUserId = existingAuth.id;
-        } else {
+          if (pData?.id) {
+            finalUserId = pData.id;
+            try {
+              await adminClient.auth.admin.updateUserById(finalUserId, {
+                password: tempPass,
+                email_confirm: true,
+                user_metadata: {
+                  username,
+                  display_name: display_name?.trim() || username,
+                  team_id: team_id?.trim() || 'Team A',
+                  role: role || 'user'
+                }
+              });
+            } catch (uErr) {
+              console.warn('updateUserById error:', uErr?.message || uErr);
+            }
+          }
+        } catch (findErr) {
+          console.warn('Profile search error:', findErr?.message);
+        }
+
+        // 2. If not found in profiles, create user directly in Supabase Auth
+        if (!finalUserId) {
           const { data: newUser, error: createErr } = await adminClient.auth.admin.createUser({
             email,
             password: tempPass,
@@ -373,34 +396,60 @@ export default async function handler(req, res) {
               role: role || 'user'
             }
           });
-          if (createErr) {
-            return res.status(400).json({ error: createErr.message });
+
+          if (!createErr && newUser?.user?.id) {
+            finalUserId = newUser.user.id;
+          } else {
+            // User may already be registered in Auth but not in profiles
+            console.log('Create user failed or already exists:', createErr?.message);
+            const { data: authList } = await adminClient.auth.admin.listUsers();
+            const existingAuth = authList?.users?.find(u => u.email?.toLowerCase() === email);
+            if (existingAuth?.id) {
+              finalUserId = existingAuth.id;
+              try {
+                await adminClient.auth.admin.updateUserById(finalUserId, {
+                  password: tempPass,
+                  email_confirm: true
+                });
+              } catch (uErr) {
+                console.warn('updateUserById error on retry:', uErr?.message);
+              }
+            } else if (createErr) {
+              return res.status(400).json({ error: createErr.message });
+            }
           }
-          finalUserId = newUser.user.id;
         }
 
-        // 2. Upsert profiles record
-        await adminClient.from('profiles').upsert({
-          id: finalUserId,
-          email,
-          username,
-          display_name: display_name?.trim() || username,
-          team_id: team_id?.trim() || 'Team A',
-          team_name: team_id?.trim() || 'Team A',
-          role: role || 'user',
-          is_disabled: false,
-          allow_hitting: true,
-          allow_pitching: true,
-          allow_body_comp: true,
-          temp_password_info: {
-            is_initial: true,
-            pass_plain: tempPass,
-            issued_at: new Date().toISOString()
-          },
-          updated_at: new Date().toISOString()
-        });
+        if (!finalUserId) {
+          return res.status(500).json({ error: 'Supabase Authユーザーの作成または更新に失敗しました。' });
+        }
 
-        // 3. Update legacy database to mark is_migrated
+        // 3. Upsert profiles record
+        try {
+          await adminClient.from('profiles').upsert({
+            id: finalUserId,
+            email,
+            username,
+            display_name: display_name?.trim() || username,
+            team_id: team_id?.trim() || 'Team A',
+            team_name: team_id?.trim() || 'Team A',
+            role: role || 'user',
+            is_disabled: false,
+            allow_hitting: true,
+            allow_pitching: true,
+            allow_body_comp: true,
+            temp_password_info: {
+              is_initial: true,
+              pass_plain: tempPass,
+              issued_at: new Date().toISOString()
+            },
+            updated_at: new Date().toISOString()
+          });
+        } catch (pErr) {
+          console.error('profiles upsert error:', pErr);
+        }
+
+        // 4. Update legacy database to mark is_migrated (non-blocking)
         try {
           const legacyUsers = await getLegacyUsers(adminClient);
           const updatedLegacy = legacyUsers.map(u => {
@@ -414,7 +463,7 @@ export default async function handler(req, res) {
           console.warn('Update legacy is_migrated error:', e);
         }
 
-        // 4. Log to access_logs
+        // 5. Log to access_logs (non-blocking)
         try {
           await adminClient.from('access_logs').insert([{
             user_id: finalUserId,

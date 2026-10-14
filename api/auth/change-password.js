@@ -96,15 +96,16 @@ async function getLegacyUsers(adminClient) {
 async function saveLegacyUsers(adminClient, usersList) {
   try {
     const enc = await encryptPayload(usersList);
-    const { data } = await adminClient
+    const { data, error } = await adminClient
       .from('baseball_data')
-      .select('id')
-      .eq('file_name', SYSTEM_USER_FILE_NAME);
-    if (data && data.length > 0) {
+      .select('file_name')
+      .eq('file_name', SYSTEM_USER_FILE_NAME)
+      .limit(1);
+    if (!error && data && data.length > 0) {
       await adminClient.from('baseball_data').update({
         upload_id: enc,
         updated_at: new Date().toISOString()
-      }).eq('id', data[0].id);
+      }).eq('file_name', SYSTEM_USER_FILE_NAME);
     }
     return true;
   } catch {

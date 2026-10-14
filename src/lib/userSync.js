@@ -221,20 +221,20 @@ export async function saveGlobalUsers(usersList) {
 
   // 2. Persist to Supabase Cloud (AES-GCM encrypted payload)
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('baseball_data')
-      .select('id')
-      .eq('file_name', SYSTEM_USER_FILE_NAME);
+      .select('file_name')
+      .eq('file_name', SYSTEM_USER_FILE_NAME)
+      .limit(1);
 
-    if (data && data.length > 0) {
-      const rowId = data[0].id;
+    if (!error && data && data.length > 0) {
       await supabase
         .from('baseball_data')
         .update({
           upload_id: encryptedPayload,
           updated_at: new Date().toISOString()
         })
-        .eq('id', rowId);
+        .eq('file_name', SYSTEM_USER_FILE_NAME);
     } else {
       await supabase
         .from('baseball_data')
