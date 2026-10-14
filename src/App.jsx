@@ -288,7 +288,7 @@ function App() {
 
     // Define allowed columns matching exact Supabase schemas
     const SAVANT_COLUMNS = [
-      'game_date', 'pitcher_name', 'batter_name', 'pitch_name', 'release_speed', 'release_spin_rate', 
+      'game_date', 'pitcher_name', 'batter_name', 'player_name', 'pitch_name', 'release_speed', 'release_spin_rate', 
       'launch_speed', 'launch_angle', 'bat_speed', 'attack_angle', 'hit_distance_sc', 'events', 'description', 'zone', 'stand', 
       'p_throws', 'home_team', 'away_team', 'type', 'hit_location', 'bb_type', 'balls', 'strikes', 
       'game_year', 'pfx_x', 'pfx_z', 'plate_x', 'plate_z', 'on_3b', 'on_2b', 'on_1b', 
@@ -300,7 +300,7 @@ function App() {
     ];
     
     const BLAST_COLUMNS = [
-      'date', 'player_name', 'bat_speed', 'attack_angle', 'vertical_bat_angle', 'power', 
+      'date', 'player_name', 'batter_name', 'bat_speed', 'attack_angle', 'vertical_bat_angle', 'power', 
       'time_to_contact', 'peak_hand_speed', 'on_plane_efficiency', 'rotation_score', 
       'on_plane_score', 'connection_score', 'rotation_acceleration', 'connection_at_impact', 
       'connection_at_address', 'bat_angle', 'file_name', 'upload_id', 'user_id', 'team_id', 'team_name',
@@ -523,12 +523,11 @@ function App() {
       const totalRows = dataArray.length;
       const batchSize = 500;
       const uploaderEmail = (user?.email || profile?.email || 'guest').trim().toLowerCase();
-      const uploadId = `${uploaderEmail}::up-${Date.now()}`;
-
       const currentTeamName = profile?.team_name || profile?.team_id || 'Team A';
       const currentTeamId = profile?.team_id || profile?.team_name || 'Team A';
       const currentUserId = user?.id || profile?.id || null;
       const isAdmin = profile?.role === 'admin' || user?.user_metadata?.role === 'admin';
+      const uploadId = `${uploaderEmail}::team:${encodeURIComponent(currentTeamName)}::up-${Date.now()}`;
 
       const isUUID = (str) => {
         if (!str || typeof str !== 'string') return false;
@@ -537,13 +536,15 @@ function App() {
 
       console.log(`Starting cloud save for ${totalRows} rows to table ${table}...`);
 
-      // If this file was previously deleted, un-tombstone it in localStorage
+      // If this file was previously deleted, un-tombstone it in localStorage and DB
       try {
         const localSaved = JSON.parse(localStorage.getItem('__deleted_files_registry__') || '[]');
         if (Array.isArray(localSaved)) {
           const updated = localSaved.filter(x => x.filename !== dataObj.filename && x.filename !== (dataObj.filename || '').replace(/^__bodycomp__::/, ''));
           localStorage.setItem('__deleted_files_registry__', JSON.stringify(updated));
         }
+        // Also remove from deleted tombstones in baseball_data
+        client.from('baseball_data').delete().eq('file_name', '__deleted_files_registry_v1__').ilike('upload_id', `%"filename":"${dataObj.filename}"%`).then(() => {}).catch(() => {});
       } catch {}
 
       // Date parsing helper - flexible extraction of year/month/day
@@ -1085,7 +1086,18 @@ function App() {
         const fName = String(row.file_name || '');
         const cleanName = fName.replace(/^__bodycomp__::/, '');
         const uId = String(row.upload_id || '');
-        const rowTime = new Date(row.updated_at || row.created_at || row.date || row.game_date || 0).getTime();
+
+        let uploadTimestamp = 0;
+        const upMatch = uId.match(/::(?:up|bodycomp)::?(\d+)/);
+        if (upMatch && upMatch[1]) {
+          uploadTimestamp = parseInt(upMatch[1], 10);
+        }
+
+        const effectiveRowTime = Math.max(
+          uploadTimestamp,
+          row.updated_at ? new Date(row.updated_at).getTime() : 0,
+          row.created_at ? new Date(row.created_at).getTime() : 0
+        );
 
         for (const [delName, delTime] of deletedFilesMap.entries()) {
           if (
@@ -1095,7 +1107,11 @@ function App() {
             uId.endsWith(`::${delName}`) || 
             uId.includes(`::${delName}::`)
           ) {
-            if (!rowTime || rowTime <= delTime) return true;
+            if (effectiveRowTime > 0 && effectiveRowTime > delTime) {
+              // Row was re-uploaded after deletion: NOT deleted!
+              continue;
+            }
+            if (effectiveRowTime > 0 && effectiveRowTime <= delTime) return true;
           }
         }
         return false;
@@ -1108,8 +1124,16 @@ function App() {
           if (isRowDeleted(row)) return false;
 
           const uId = String(row.upload_id || '').toLowerCase();
-          const tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
+          let tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
           const tId = String(row.team_id || '').toLowerCase();
+
+          // Extract team encoded in upload_id if present (e.g. ::team:team%20a::)
+          if (!tName && uId.includes('::team:')) {
+            const match = uId.match(/::team:([^:]+)::/);
+            if (match && match[1]) {
+              try { tName = decodeURIComponent(match[1]).toLowerCase(); } catch {}
+            }
+          }
 
           // Skip system rows
           const fName = String(row.file_name || '').toLowerCase();
@@ -1118,22 +1142,27 @@ function App() {
           // Admin has access to all datasets
           if (isAdmin) return true;
 
-          // Team match
+          // Team match: team members see all data for their team
           if (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) return true;
           if (currentTeamId && (tId === currentTeamId || tName === currentTeamId)) return true;
 
           if (uId.includes('::')) {
             const uploader = uId.split('::')[0];
+            const uploaderUsername = uploader.split('@')[0];
+            const userUsername = uploaderEmail.split('@')[0];
             // Allow: own data, guest-uploaded
             if (
               uploader === uploaderEmail ||
+              uploaderUsername === userUsername ||
+              uploader === userUsername ||
+              uploaderUsername === uploaderEmail ||
               uploader === 'guest'
             ) return true;
             return false; // belongs to a different real user
           }
 
           // Rows tagged with another user's email in team_name
-          if (tName.includes('@') && tName !== uploaderEmail) {
+          if (tName.includes('@') && tName !== uploaderEmail && tName !== uploaderEmail.split('@')[0]) {
             return false;
           }
 
@@ -1255,23 +1284,25 @@ function App() {
         const uId = String(row.upload_id || '');
         let parsedVals = {};
         if (uId.includes('::bodycomp::')) {
-          const parts = uId.split('::');
-          const jsonPart = parts.slice(3).join('::');
+          const bodyCompIdx = uId.indexOf('::bodycomp::');
+          const remainder = uId.slice(bodyCompIdx + '::bodycomp::'.length);
+          const parts = remainder.split('::');
+          const jsonPart = parts.slice(1).join('::');
           if (jsonPart) {
             try {
               const p = JSON.parse(jsonPart);
               parsedVals = {
-                '身長': p.h, 'height': p.h,
-                '体重': p.w, 'weight': p.w,
-                '筋肉量': p.m, 'muscle_mass': p.m,
-                '体脂肪率': p.f, 'body_fat_pct': p.f,
+                '身長': p.h ?? p.height, 'height': p.h ?? p.height,
+                '体重': p.w ?? p.weight, 'weight': p.w ?? p.weight,
+                '筋肉量': p.m ?? p.muscle_mass, 'muscle_mass': p.m ?? p.muscle_mass,
+                '体脂肪率': p.f ?? p.body_fat_pct, 'body_fat_pct': p.f ?? p.body_fat_pct,
                 '基礎代謝量': p.bmr, 'bmr': p.bmr,
                 'BMI': p.bmi, 'bmi': p.bmi,
-                '体幹': p.t, 'trunk_muscle': p.t,
-                '左腕': p.la, 'left_arm_muscle': p.la,
-                '右腕': p.ra, 'right_arm_muscle': p.ra,
-                '左足': p.ll, 'left_leg_muscle': p.ll,
-                '右足': p.rl, 'right_leg_muscle': p.rl,
+                '体幹': p.t ?? p.trunk_muscle, 'trunk_muscle': p.t ?? p.trunk_muscle,
+                '左腕': p.la ?? p.left_arm_muscle, 'left_arm_muscle': p.la ?? p.left_arm_muscle,
+                '右腕': p.ra ?? p.right_arm_muscle, 'right_arm_muscle': p.ra ?? p.right_arm_muscle,
+                '左足': p.ll ?? p.left_leg_muscle, 'left_leg_muscle': p.ll ?? p.left_leg_muscle,
+                '右足': p.rl ?? p.right_leg_muscle, 'right_leg_muscle': p.rl ?? p.right_leg_muscle,
                 'FFMI': p.ffmi, 'ffmi': p.ffmi
               };
             } catch (e) {}
@@ -1415,8 +1446,8 @@ function App() {
       });
 
       const bcRaw = filterByUserEmail(bodyCompRaw);
-      const savantFilesCloud = groupIntoFiles(sRaw.filter(r => r?.file_name && !combinedFileNames.has(r.file_name)), 'savant');
-      const blastFilesCloud = groupIntoFiles(bRaw.filter(r => r?.file_name && !combinedFileNames.has(r.file_name)), 'blast');
+      const savantFilesCloud = groupIntoFiles(sRaw, 'savant');
+      const blastFilesCloud = groupIntoFiles(bRaw, 'blast');
       const pitchingFilesCloud = groupIntoFiles(pRaw, 'savant_pitching');
       const combinedFilesCloud = groupIntoFiles(combinedRawList, 'combined');
       const bodyCompFilesCloud = groupIntoFiles(allBcRows, 'body_comp');
@@ -1602,8 +1633,16 @@ function App() {
           // Data isolation: Admin sees all; Team members see team data or own uploads
           if (!isAdmin) {
             const uId = String(row.upload_id || '').toLowerCase();
-            const tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
+            let tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
             const tId = String(row.team_id || '').toLowerCase();
+
+            // Extract team encoded in upload_id if present (e.g. ::team:team%20a::)
+            if (!tName && uId.includes('::team:')) {
+              const match = uId.match(/::team:([^:]+)::/);
+              if (match && match[1]) {
+                try { tName = decodeURIComponent(match[1]).toLowerCase(); } catch {}
+              }
+            }
 
             const isTeamMatch = (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) ||
                                 (currentTeamId && (tId === currentTeamId || tName === currentTeamId));
@@ -1611,8 +1650,17 @@ function App() {
             if (!isTeamMatch) {
               if (uId.includes('::')) {
                 const uploader = uId.split('::')[0];
-                if (uploader !== userEmail && uploader !== 'guest') return;
-              } else if (tName.includes('@') && tName !== userEmail) {
+                const uploaderUsername = uploader.split('@')[0];
+                const userUsername = userEmail.split('@')[0];
+                const isUserMatch = (
+                  uploader === userEmail ||
+                  uploaderUsername === userUsername ||
+                  uploader === userUsername ||
+                  uploaderUsername === userEmail ||
+                  uploader === 'guest'
+                );
+                if (!isUserMatch) return;
+              } else if (tName.includes('@') && tName !== userEmail && tName !== userEmail.split('@')[0]) {
                 return;
               }
             }

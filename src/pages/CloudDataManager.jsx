@@ -92,32 +92,76 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         }
       });
 
-      const isFileDeleted = (fname, rowTime) => {
+      const isFileDeleted = (fname, rowTime, uploadId) => {
         if (!fname) return false;
         const clean = fname.replace(/^__bodycomp__::/, '');
         const delTime = deletedFilesMap.get(fname) || deletedFilesMap.get(clean);
         if (!delTime) return false;
-        if (!rowTime) return true;
-        const rTime = new Date(rowTime).getTime();
-        return rTime <= delTime;
+
+        let uploadTimestamp = 0;
+        const uId = String(uploadId || '');
+        const upMatch = uId.match(/::(?:up|bodycomp)::?(\d+)/);
+        if (upMatch && upMatch[1]) {
+          uploadTimestamp = parseInt(upMatch[1], 10);
+        }
+
+        const effectiveTime = Math.max(
+          uploadTimestamp,
+          rowTime ? new Date(rowTime).getTime() : 0
+        );
+
+        if (effectiveTime > 0 && effectiveTime > delTime) {
+          return false; // Re-uploaded after deletion
+        }
+        if (effectiveTime > 0 && effectiveTime <= delTime) {
+          return true;
+        }
+        return false;
       };
 
       const rawEmail = (profile?.email || profile?.display_name || '').trim().toLowerCase();
       const userEmail = rawEmail.includes('@') ? rawEmail : 'guest';
+      const userUsername = userEmail.split('@')[0];
+      const isAdmin = profile?.role === 'admin';
+      const currentTeamName = (profile?.team_name || profile?.team_id || '').trim().toLowerCase();
+      const currentTeamId = (profile?.team_id || profile?.team_name || '').trim().toLowerCase();
 
       const isRowForUser = (row) => {
         if (!row) return false;
+        // 1. Admin has access to all datasets across all teams
+        if (isAdmin) return true;
+
         const uId = String(row.upload_id || '').toLowerCase();
-        const tName = String(row.team_name || '').toLowerCase();
+        let tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
+        const tId = String(row.team_id || '').toLowerCase();
+
+        // Extract team encoded in upload_id if present (e.g. ::team:team%20a::)
+        if (!tName && uId.includes('::team:')) {
+          const match = uId.match(/::team:([^:]+)::/);
+          if (match && match[1]) {
+            try { tName = decodeURIComponent(match[1]).toLowerCase(); } catch {}
+          }
+        }
+
+        // 2. Team match: team members see all data for their team
+        if (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) return true;
+        if (currentTeamId && (tId === currentTeamId || tName === currentTeamId)) return true;
+
+        // 3. User upload match
         if (uId.includes('::')) {
           const emailPrefix = uId.split('::')[0];
+          const uploaderUsername = emailPrefix.split('@')[0];
           return (
             emailPrefix === userEmail || 
+            uploaderUsername === userUsername || 
+            emailPrefix === userUsername ||
+            uploaderUsername === userEmail ||
             emailPrefix === 'guest' || 
             userEmail === 'guest'
           );
         }
-        if (tName.includes('@') && tName !== userEmail && userEmail !== 'guest') {
+
+        if (tName.includes('@') && tName !== userEmail && tName !== userUsername && userEmail !== 'guest') {
           return false;
         }
         return true;
@@ -130,11 +174,11 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         if (!isRowForUser(row)) return;
 
         const name = row.file_name || row.upload_id || 'ファイル名なし';
-        if (isFileDeleted(name, row.updated_at || row.created_at)) return;
+        if (isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
 
         if (name.startsWith('__bodycomp__::')) {
           const cleanName = name.replace(/^__bodycomp__::/, '');
-          if (isFileDeleted(cleanName, row.updated_at || row.created_at)) return;
+          if (isFileDeleted(cleanName, row.updated_at || row.created_at, row.upload_id)) return;
           const key = `body_comp-${cleanName}`;
           if (!datasetMap.has(key)) {
             datasetMap.set(key, {
@@ -174,7 +218,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       (pitchingRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
         const name = row.file_name || row.upload_id;
-        if (!name || isFileDeleted(name, row.updated_at || row.created_at)) return;
+        if (!name || isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
         const key = `pitching-${name}`;
         if (!datasetMap.has(key)) {
           datasetMap.set(key, {
@@ -195,7 +239,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       (bodyCompRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
         const name = row.file_name || row.upload_id;
-        if (!name || isFileDeleted(name, row.updated_at || row.created_at)) return;
+        if (!name || isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
         const key = `body_comp-${name}`;
         if (!datasetMap.has(key)) {
           datasetMap.set(key, {
@@ -217,7 +261,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       (savantRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
         const name = row.file_name || row.upload_id;
-        if (!name || isFileDeleted(name, row.updated_at || row.created_at)) return;
+        if (!name || isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
         if (!savantFileMap.has(name)) {
           savantFileMap.set(name, row.updated_at || row.created_at);
         }
@@ -228,7 +272,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       (blastRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
         const name = row.file_name || row.upload_id;
-        if (!name || isFileDeleted(name, row.updated_at || row.created_at)) return;
+        if (!name || isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
         if (!blastFileMap.has(name)) {
           blastFileMap.set(name, row.updated_at || row.created_at);
         }

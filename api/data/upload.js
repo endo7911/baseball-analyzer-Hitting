@@ -177,93 +177,138 @@ async function verifyCaller(req, adminClient) {
   };
 }
 
-// Robust insert helper with automatic missing-column pruning & UUID retry
+// Robust insert helper with automatic missing-column pruning, chunking & UUID retry
 async function safeBatchInsert(adminClient, targetTable, rawRows) {
   if (!rawRows || rawRows.length === 0) return { count: 0, error: null };
 
   const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
-  let currentBatch = rawRows.map(r => ({ ...r }));
-  let maxAttempts = 10;
-  let lastError = null;
+  const CHUNK_SIZE = 500;
+  let totalInserted = 0;
 
-  while (maxAttempts > 0) {
-    maxAttempts--;
-    const { error } = await adminClient.from(targetTable).insert(currentBatch);
-    if (!error) {
-      return { count: currentBatch.length, error: null };
-    }
+  for (let cIdx = 0; cIdx < rawRows.length; cIdx += CHUNK_SIZE) {
+    let currentBatch = rawRows.slice(cIdx, cIdx + CHUNK_SIZE).map(r => ({ ...r }));
+    let maxAttempts = 10;
+    let lastError = null;
+    let batchInserted = false;
 
-    lastError = error;
-    console.warn(`safeBatchInsert attempt error on ${targetTable}:`, error.message, error.code);
-
-    // 1. Handle UUID type error (22P02)
-    if (error.code === '22P02' || (error.message && error.message.includes('type uuid'))) {
-      currentBatch = currentBatch.map(row => ({
-        ...row,
-        user_id: isUUID(row.user_id) ? row.user_id : null,
-        team_id: isUUID(row.team_id) ? row.team_id : null,
-        owner_id: isUUID(row.owner_id) ? row.owner_id : null
-      }));
-      continue;
-    }
-
-    // 2. Extract missing column from error message
-    // e.g. "column \"launch_speed\" of relation \"blast_data\" does not exist"
-    // or "column \"on_plane_efficiency\" does not exist"
-    const colMatch = error.message?.match(/column ["']?([a-zA-Z0-9_]+)["']?.*does not exist/i) ||
-                     error.message?.match(/Could not find the ['"]?([a-zA-Z0-9_]+)['"]? column/i);
-
-    if (colMatch && colMatch[1]) {
-      const missingCol = colMatch[1];
-      console.log(`Pruning non-existent column "${missingCol}" from ${targetTable} batch and retrying...`);
-      currentBatch = currentBatch.map(({ [missingCol]: _, ...rest }) => rest);
-      continue;
-    }
-
-    // 3. Fallback: check standard metadata columns
-    let pruned = false;
-    ['user_id', 'team_id', 'team_name', 'owner_id', 'grade', 'launch_speed', 'launch_angle', 'hit_distance_sc'].forEach(col => {
-      if (error.message && (error.message.includes(`'${col}'`) || error.message.includes(`"${col}"`))) {
-        currentBatch = currentBatch.map(({ [col]: _, ...rest }) => rest);
-        pruned = true;
+    while (maxAttempts > 0) {
+      maxAttempts--;
+      const { error } = await adminClient.from(targetTable).insert(currentBatch);
+      if (!error) {
+        batchInserted = true;
+        totalInserted += currentBatch.length;
+        break;
       }
-    });
 
-    if (!pruned) {
-      break;
+      lastError = error;
+      console.warn(`safeBatchInsert attempt error on ${targetTable}:`, error.message, error.code);
+
+      // 1. Handle UUID type error (22P02)
+      if (error.code === '22P02' || (error.message && error.message.includes('type uuid'))) {
+        currentBatch = currentBatch.map(row => ({
+          ...row,
+          user_id: isUUID(row.user_id) ? row.user_id : null,
+          team_id: isUUID(row.team_id) ? row.team_id : null,
+          owner_id: isUUID(row.owner_id) ? row.owner_id : null
+        }));
+        continue;
+      }
+
+      // 2. Extract missing column from error message
+      const colMatch = error.message?.match(/column ["']?([a-zA-Z0-9_]+)["']?.*does not exist/i) ||
+                       error.message?.match(/Could not find the ['"]?([a-zA-Z0-9_]+)['"]? column/i);
+
+      if (colMatch && colMatch[1]) {
+        const missingCol = colMatch[1];
+        console.log(`Pruning non-existent column "${missingCol}" from ${targetTable} batch and retrying...`);
+        currentBatch = currentBatch.map(({ [missingCol]: _, ...rest }) => rest);
+        continue;
+      }
+
+      // 3. Fallback: check standard metadata columns
+      let pruned = false;
+      ['user_id', 'team_id', 'team_name', 'owner_id', 'grade', 'launch_speed', 'launch_angle', 'hit_distance_sc'].forEach(col => {
+        if (error.message && (error.message.includes(`'${col}'`) || error.message.includes(`"${col}"`))) {
+          currentBatch = currentBatch.map(({ [col]: _, ...rest }) => rest);
+          pruned = true;
+        }
+      });
+
+      if (!pruned) {
+        break;
+      }
+    }
+
+    if (!batchInserted) {
+      return { count: totalInserted, error: lastError };
     }
   }
 
-  return { count: 0, error: lastError };
+  return { count: totalInserted, error: null };
 }
 
 // Remove previously deleted file from deleted registry if re-uploaded
 async function unTombstoneFile(adminClient, filename) {
   try {
-    const { data } = await adminClient
-      .from('baseball_data')
-      .select('upload_id')
-      .eq('file_name', DELETED_REGISTRY_FILE_NAME)
-      .limit(1);
+    const cleanName = (filename || '').replace(/^__bodycomp__::/, '');
 
-    if (data && data.length > 0 && data[0].upload_id) {
-      const parsed = await decryptPayload(data[0].upload_id);
-      if (Array.isArray(parsed)) {
-        const cleanName = (filename || '').replace(/^__bodycomp__::/, '');
-        const updated = parsed.filter(item => {
-          const itemFile = typeof item === 'string' ? item : item?.filename;
-          return itemFile !== filename && itemFile !== cleanName;
+    // 1. Delete individual tombstone rows in baseball_data
+    try {
+      const { data: tombstones } = await adminClient
+        .from('baseball_data')
+        .select('id, upload_id')
+        .eq('file_name', DELETED_REGISTRY_FILE_NAME);
+
+      if (Array.isArray(tombstones) && tombstones.length > 0) {
+        const idsToDelete = [];
+        tombstones.forEach(t => {
+          try {
+            const parsed = typeof t.upload_id === 'string' ? JSON.parse(t.upload_id) : t.upload_id;
+            const tFile = parsed?.filename;
+            if (tFile === filename || tFile === cleanName || tFile === `__bodycomp__::${cleanName}`) {
+              idsToDelete.push(t.id);
+            }
+          } catch {}
         });
-        if (updated.length !== parsed.length) {
-          const enc = await encryptPayload(updated);
+
+        if (idsToDelete.length > 0) {
+          console.log(`unTombstoneFile: Deleting ${idsToDelete.length} tombstone rows for "${filename}"`);
           await adminClient
             .from('baseball_data')
-            .update({ upload_id: enc, updated_at: new Date().toISOString() })
-            .eq('file_name', DELETED_REGISTRY_FILE_NAME);
+            .delete()
+            .in('id', idsToDelete);
         }
       }
+    } catch (dbErr) {
+      console.warn('unTombstoneFile DB delete error:', dbErr);
     }
+
+    // 2. Also check encrypted registry if present
+    try {
+      const { data } = await adminClient
+        .from('baseball_data')
+        .select('upload_id')
+        .eq('file_name', DELETED_REGISTRY_FILE_NAME)
+        .limit(1);
+
+      if (data && data.length > 0 && data[0].upload_id && typeof data[0].upload_id === 'string' && data[0].upload_id.startsWith('enc:v2:')) {
+        const parsed = await decryptPayload(data[0].upload_id);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter(item => {
+            const itemFile = typeof item === 'string' ? item : item?.filename;
+            return itemFile !== filename && itemFile !== cleanName && itemFile !== `__bodycomp__::${cleanName}`;
+          });
+          if (updated.length !== parsed.length) {
+            const enc = await encryptPayload(updated);
+            await adminClient
+              .from('baseball_data')
+              .update({ upload_id: enc, updated_at: new Date().toISOString() })
+              .eq('file_name', DELETED_REGISTRY_FILE_NAME);
+          }
+        }
+      }
+    } catch {}
   } catch (e) {
     console.warn('unTombstoneFile error (non-fatal):', e);
   }
@@ -322,8 +367,8 @@ export default async function handler(req, res) {
 
     console.log(`[Upload API] Uploading ${rows.length} rows to ${targetTable} for file "${filename}" by ${uploaderEmail} (${userTeam})`);
 
-    // Prepare rows with standardized system metadata
-    const uploadId = `${uploaderEmail}::up-${Date.now()}`;
+    // Prepare rows with standardized system metadata (encoding team for cross-table visibility)
+    const uploadId = `${uploaderEmail}::team:${encodeURIComponent(userTeam)}::up-${Date.now()}`;
     const preparedRows = rows.map(r => {
       const copy = { ...r };
       copy.file_name = filename;
@@ -339,14 +384,39 @@ export default async function handler(req, res) {
     // 2. Fallback for body_comp: if body_comp_data table does not exist, insert into baseball_data
     if (type === 'body_comp' && result.error) {
       console.warn(`body_comp_data insert failed, falling back to baseball_data:`, result.error.message);
-      const fallbackRows = rows.map(r => ({
-        file_name: `__bodycomp__::${filename}`,
-        player_name: r.player_name || 'Unknown Player',
-        team_name: userTeam,
-        date: r.date || null,
-        game_date: r.date || null,
-        upload_id: `${uploaderEmail}::bodycomp::${Date.now()}::${JSON.stringify(r)}`
-      }));
+      const fallbackRows = rows.map(r => {
+        const payloadObj = {
+          h: r.height ?? r['身長'],
+          w: r.weight ?? r['体重'],
+          m: r.muscle_mass ?? r['筋肉量'],
+          f: r.body_fat_pct ?? r['体脂肪率'],
+          bmr: r.bmr ?? r['基礎代謝量'],
+          bmi: r.bmi ?? r['BMI'],
+          t: r.trunk_muscle ?? r['体幹'],
+          la: r.left_arm_muscle ?? r['左腕'],
+          ra: r.right_arm_muscle ?? r['右腕'],
+          ll: r.left_leg_muscle ?? r['左足'],
+          rl: r.right_leg_muscle ?? r['右足'],
+          ffmi: r.ffmi ?? r['FFMI'],
+          height: r.height ?? r['身長'],
+          weight: r.weight ?? r['体重'],
+          muscle_mass: r.muscle_mass ?? r['筋肉量'],
+          body_fat_pct: r.body_fat_pct ?? r['体脂肪率'],
+          trunk_muscle: r.trunk_muscle ?? r['体幹'],
+          left_arm_muscle: r.left_arm_muscle ?? r['左腕'],
+          right_arm_muscle: r.right_arm_muscle ?? r['右腕'],
+          left_leg_muscle: r.left_leg_muscle ?? r['左足'],
+          right_leg_muscle: r.right_leg_muscle ?? r['右足']
+        };
+        return {
+          file_name: `__bodycomp__::${filename}`,
+          player_name: r.player_name || 'Unknown Player',
+          team_name: userTeam,
+          date: r.date || null,
+          game_date: r.date || null,
+          upload_id: `${uploaderEmail}::team:${encodeURIComponent(userTeam)}::bodycomp::${Date.now()}::${JSON.stringify(payloadObj)}`
+        };
+      });
       result = await safeBatchInsert(adminClient, 'baseball_data', fallbackRows);
     }
 
