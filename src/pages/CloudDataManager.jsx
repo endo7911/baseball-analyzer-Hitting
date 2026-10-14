@@ -239,28 +239,63 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     setLoading(true);
     const client = getSupabase();
     try {
-      if (table === 'both') {
-        await client.from('savant_data').delete().eq('file_name', filename);
-        await client.from('blast_data').delete().eq('file_name', filename);
-      } else if (table === 'baseball_data') {
-        let query = client.from('baseball_data').delete().eq('file_name', filename);
-        // Only delete rows belonging to this user/team
-        const rawEmail = (profile?.email || profile?.display_name || '').trim().toLowerCase();
-        if (rawEmail && rawEmail.includes('@') && profile?.role !== 'admin') {
-          query = query.or(`upload_id.ilike.${rawEmail}%::%,team_name.eq.${profile?.team_name || ''}`);
+      // 1. Try serverless deletion API (uses service_role with team-isolation verification)
+      let apiSucceeded = false;
+      try {
+        const { data: { session } } = await client.auth.getSession();
+        const headers = { 'Content-Type': 'application/json' };
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`;
         }
-        const { error } = await query;
-        if (error) throw error;
-      } else if (table === 'pitching_data') {
-        const { error } = await client.from('pitching_data').delete().eq('file_name', filename);
-        if (error) throw error;
-      } else if (table === 'body_comp_data') {
-        const { error } = await client.from('body_comp_data').delete().eq('file_name', filename);
-        if (error) throw error;
-      } else {
-        const targetTable = table || (type === 'savant' ? 'savant_data' : 'blast_data');
-        const { error } = await client.from(targetTable).delete().eq('file_name', filename);
-        if (error) throw error;
+        if (profile?.email) {
+          headers['X-User-Email'] = profile.email;
+          headers['X-User-Team'] = profile.team_name || profile.team_id || '';
+          headers['X-User-Role'] = profile.role || 'user';
+        }
+
+        const res = await fetch('/api/data/delete', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ filename, table, type })
+        });
+
+        if (res.ok) {
+          apiSucceeded = true;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          console.warn("Delete API returned non-OK:", res.status, errData);
+        }
+      } catch (apiErr) {
+        console.warn("Delete API fetch failed, trying direct client delete:", apiErr);
+      }
+
+      // 2. Direct client fallback if API was unavailable
+      if (!apiSucceeded) {
+        if (table === 'both') {
+          const sRes = await client.from('savant_data').delete().eq('file_name', filename);
+          const bRes = await client.from('blast_data').delete().eq('file_name', filename);
+          if (sRes.error) throw sRes.error;
+          if (bRes.error) throw bRes.error;
+        } else if (table === 'baseball_data') {
+          let query = client.from('baseball_data').delete().eq('file_name', filename);
+          const rawEmail = (profile?.email || profile?.display_name || '').trim().toLowerCase();
+          if (rawEmail && rawEmail.includes('@') && profile?.role !== 'admin') {
+            query = query.or(`upload_id.ilike.${rawEmail}%::%,team_name.eq.${profile?.team_name || ''}`);
+          }
+          const { error } = await query;
+          if (error) throw error;
+        } else if (table === 'pitching_data') {
+          const { error } = await client.from('pitching_data').delete().eq('file_name', filename);
+          if (error) throw error;
+        } else if (table === 'body_comp_data') {
+          const { error } = await client.from('body_comp_data').delete().eq('file_name', filename);
+          if (error) throw error;
+          await client.from('baseball_data').delete().eq('file_name', `__bodycomp__::${filename}`);
+        } else {
+          const targetTable = table || (type === 'savant' ? 'savant_data' : 'blast_data');
+          const { error } = await client.from(targetTable).delete().eq('file_name', filename);
+          if (error) throw error;
+        }
       }
 
       if (updateDataState) {
