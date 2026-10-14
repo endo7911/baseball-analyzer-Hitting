@@ -798,17 +798,28 @@ function App() {
 
       const rawEmail = (user?.email || profile?.email || '').trim().toLowerCase();
       const uploaderEmail = rawEmail.includes('@') ? rawEmail : 'guest';
+      const isAdmin = profile?.role === 'admin';
+      const currentTeamName = (profile?.team_name || profile?.team_id || '').trim().toLowerCase();
+      const currentTeamId = (profile?.team_id || profile?.team_name || '').trim().toLowerCase();
 
       const filterByUserEmail = (rows) => {
         if (!Array.isArray(rows)) return [];
         return rows.filter(row => {
           if (!row) return false;
           const uId = String(row.upload_id || '').toLowerCase();
-          const tName = String(row.team_name || '').toLowerCase();
+          const tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
+          const tId = String(row.team_id || '').toLowerCase();
 
           // Skip system rows
           const fName = String(row.file_name || '').toLowerCase();
-          if (fName.startsWith('__')) return false;
+          if (fName.startsWith('__') && !fName.startsWith('__bodycomp__::')) return false;
+
+          // Admin has access to all datasets
+          if (isAdmin) return true;
+
+          // Team match
+          if (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) return true;
+          if (currentTeamId && (tId === currentTeamId || tName === currentTeamId)) return true;
 
           if (uId.includes('::')) {
             const uploader = uId.split('::')[0];
@@ -1096,6 +1107,9 @@ function App() {
 
     const rawEmail = (user?.email || profile?.email || '').trim().toLowerCase();
     const userEmail = rawEmail.includes('@') ? rawEmail : 'guest';
+    const isAdmin = profile?.role === 'admin';
+    const currentTeamName = (profile?.team_name || profile?.team_id || '').trim().toLowerCase();
+    const currentTeamId = (profile?.team_id || profile?.team_name || '').trim().toLowerCase();
 
     const allHeaders = new Set();
     const safeRows = [];
@@ -1132,21 +1146,23 @@ function App() {
             }
           }
 
-          // Data isolation: only include rows belonging to the logged-in user
-          const uId = String(row.upload_id || '').toLowerCase();
-          const tName = String(row.team_name || '').toLowerCase();
+          // Data isolation: Admin sees all; Team members see team data or own uploads
+          if (!isAdmin) {
+            const uId = String(row.upload_id || '').toLowerCase();
+            const tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
+            const tId = String(row.team_id || '').toLowerCase();
 
-          if (uId.includes('::')) {
-            const uploader = uId.split('::')[0];
-            if (
-              uploader !== userEmail &&
-              uploader !== 'guest'
-            ) return; // belongs to another user
-          } else if (
-            tName.includes('@') &&
-            tName !== userEmail
-          ) {
-            return; // team_name contains another user's email
+            const isTeamMatch = (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) ||
+                                (currentTeamId && (tId === currentTeamId || tName === currentTeamId));
+
+            if (!isTeamMatch) {
+              if (uId.includes('::')) {
+                const uploader = uId.split('::')[0];
+                if (uploader !== userEmail && uploader !== 'guest') return;
+              } else if (tName.includes('@') && tName !== userEmail) {
+                return;
+              }
+            }
           }
 
           safeRows.push(row);

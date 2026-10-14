@@ -101,83 +101,104 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const arrayBuffer = e.target.result;
+      try {
+        const arrayBuffer = e.target.result;
 
-      // UTF-8 (with / without BOM) and Shift-JIS (Excel on Japanese Windows) are both supported
-      const text = decodeCsvBuffer(arrayBuffer);
-
-      // Universal Header Row Detection for all CSV files (Blast, Rapsodo, Excel CSV exports)
-      const lines = text.split(/\r?\n/);
-      const headerIndex = findHeaderIndex(lines, type === 'body_comp' ? BODY_COMP_HEADER_KEYWORDS : []);
-
-      let csvText = text;
-      if (headerIndex > 0) {
-        csvText = lines.slice(headerIndex).join('\n');
-        console.log(`Header found at line ${headerIndex + 1}`);
-      }
-
-      // 体組成CSVは「部位別筋肉量」のような2行ヘッダーで出力されることがあるため、1行のヘッダーに統合する
-      if (type === 'body_comp') {
-        csvText = applyTwoRowHeader(csvText);
-      }
-
-      Papa.parse(csvText, {
-        header: true,
-        dynamicTyping: true,
-        skipEmptyLines: true,
-        complete: (results) => {
-          const headers = results.meta.fields || [];
-          const fileDate = parseAnyDate(file.name);
-
-          // Process and normalize rows
-          const rows = (results.data || []).map(row => {
-            if (!row) return row;
-            
-            // Normalize Date & backfill from filename if missing
-            const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS);
-            let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
-            if (!normD && fileDate) normD = fileDate;
-
-            if (normD) {
-              row.date = normD;
-              row.game_date = normD;
-            }
-
-            // Ensure launch_speed alias backfill
-            const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
-            if (evVal != null) {
-              row.launch_speed = evVal;
-            }
-
-            return row;
-          });
-
-          const isPitching = headers.some(h => ['Pitch Speed', 'PitchBallVelo', 'Spin Rate', 'Pitch Type', 'VB (trajectory)', 'HB (trajectory)', '球速', '回転数', '縦変化量'].includes(h));
-          const isHitting = headers.some(h => ['launch_speed', 'ExitVelocity', 'LaunchAngle', '打球速度', '打球角度'].includes(h));
-
-          if (type === 'savant' && isPitching && !isHitting) {
-            alert("※提示: 投球データが「Rapsodo 打撃」スロットに選択されました。「Rapsodo 投球データ」スロットを使用すると投手分析でより正確に表示されます。");
-          } else if (type === 'savant_pitching' && isHitting && !isPitching) {
-            alert("※提示: 打撃データが「Rapsodo 投球」スロットに選択されました。「Rapsodo 打撃データ」スロットをおすすめします。");
-          }
-
-          updateDataState(type, {
-            filename: file.name,
-            headers: headers,
-            data: rows
-          }, 'add');
-
-          if (fileInputRefs.current[type]) {
-            fileInputRefs.current[type].value = '';
-          }
-        },
-        error: (err) => {
-          console.error("Error parsing CSV:", err);
-          alert("CSVのパースに失敗しました。");
+        // UTF-8 (with / without BOM) and Shift-JIS (Excel on Japanese Windows) are both supported
+        const text = decodeCsvBuffer(arrayBuffer);
+        if (!text || text.trim() === '') {
+          alert(`「${file.name}」が空ファイルか、正しく読み取れませんでした。`);
+          return;
         }
-      });
+
+        // Universal Header Row Detection for all CSV files (Blast, Rapsodo, Excel CSV exports)
+        const lines = text.split(/\r?\n/);
+        const headerIndex = findHeaderIndex(lines, type === 'body_comp' ? BODY_COMP_HEADER_KEYWORDS : []);
+
+        let csvText = text;
+        if (headerIndex > 0) {
+          csvText = lines.slice(headerIndex).join('\n');
+          console.log(`Header found at line ${headerIndex + 1}`);
+        }
+
+        // 体組成CSVは「部位別筋肉量」のような2行ヘッダーで出力されることがあるため、1行のヘッダーに統合する
+        if (type === 'body_comp') {
+          csvText = applyTwoRowHeader(csvText);
+        }
+
+        Papa.parse(csvText, {
+          header: true,
+          dynamicTyping: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            const headers = results.meta.fields || [];
+            const fileDate = parseAnyDate(file.name);
+
+            // Process and normalize rows
+            const rows = (results.data || []).map(row => {
+              if (!row) return row;
+              
+              // Normalize Date & backfill from filename if missing
+              const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS);
+              let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
+              if (!normD && fileDate) normD = fileDate;
+
+              if (normD) {
+                row.date = normD;
+                row.game_date = normD;
+              }
+
+              // Ensure launch_speed alias backfill
+              const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
+              if (evVal != null) {
+                row.launch_speed = evVal;
+              }
+
+              return row;
+            }).filter(r => r && Object.keys(r).length > 0);
+
+            if (rows.length === 0) {
+              alert(`「${file.name}」に有効なデータ行が見つかりませんでした。フォーマットをご確認ください。`);
+              return;
+            }
+
+            const isPitching = headers.some(h => ['Pitch Speed', 'PitchBallVelo', 'Spin Rate', 'Pitch Type', 'VB (trajectory)', 'HB (trajectory)', '球速', '回転数', '縦変化量'].includes(h));
+            const isHitting = headers.some(h => ['launch_speed', 'ExitVelocity', 'LaunchAngle', '打球速度', '打球角度'].includes(h));
+
+            if (type === 'savant' && isPitching && !isHitting) {
+              alert("※提示: 投球データが「Rapsodo 打撃」スロットに選択されました。「Rapsodo 投球データ」スロットを使用すると投手分析でより正確に表示されます。");
+            } else if (type === 'savant_pitching' && isHitting && !isPitching) {
+              alert("※提示: 打撃データが「Rapsodo 投球」スロットに選択されました。「Rapsodo 打撃データ」スロットをおすすめします。");
+            }
+
+            console.log(`[handleFileUpload] Successfully parsed ${rows.length} rows for type ${type} from ${file.name}`);
+
+            updateDataState(type, {
+              filename: file.name,
+              headers: headers,
+              data: rows
+            }, 'add');
+
+            if (fileInputRefs.current[type]) {
+              fileInputRefs.current[type].value = '';
+            }
+          },
+          error: (err) => {
+            console.error("Error parsing CSV:", err);
+            alert("CSVのパースに失敗しました: " + (err?.message || JSON.stringify(err)));
+          }
+        });
+      } catch (readErr) {
+        console.error("Error processing file buffer:", readErr);
+        alert("ファイル処理中にエラーが発生しました: " + (readErr?.message || JSON.stringify(readErr)));
+      }
     };
     
+    reader.onerror = (e) => {
+      console.error("FileReader failed:", e);
+      alert("ファイルの読み込みに失敗しました。");
+    };
+
     reader.readAsArrayBuffer(file);
   };
 
