@@ -1203,7 +1203,7 @@ function TeamAnalysis({ savantData, blastData, combinedData, onViewPlayer }) {
                 <tbody className="divide-y divide-slate-700/60">
                   {sortedPlayers.map((p, i) => (
                     <tr key={i} className="hover:bg-slate-700/40 transition-colors">
-                      <td className="px-5 py-3.5 font-bold text-white text-base">{p.player}</td>
+                      <td className="px-5 py-3.5 font-bold text-white text-base whitespace-nowrap">{p.player}</td>
                       <td className="px-5 py-3.5 text-slate-400 font-mono">{p.swings} 回</td>
                       {hasBatData && <td className="px-5 py-3.5 font-bold text-blue-300 text-base">{p.avgBatSpeed.toFixed(1)} <span className="text-xs text-slate-500 font-normal">km/h</span></td>}
                       {hasBatData && <td className="px-5 py-3.5 font-bold text-blue-200 text-base">{p.maxBatSpeed.toFixed(1)} <span className="text-xs text-slate-500 font-normal">km/h</span></td>}

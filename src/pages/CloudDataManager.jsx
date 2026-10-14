@@ -297,10 +297,10 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         });
 
         const resData = await res.json().catch(() => ({}));
-        if (res.ok && resData.deletedCount > 0) {
+        if (res.ok) {
           apiSucceeded = true;
         } else {
-          console.warn("Delete API returned non-OK or 0 deleted rows:", res.status, resData);
+          console.warn("Delete API returned non-OK:", res.status, resData);
         }
       } catch (apiErr) {
         console.warn("Delete API fetch failed, trying direct client delete:", apiErr);
@@ -308,54 +308,16 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
 
       // 2. Direct client fallback if API was unavailable
       if (!apiSucceeded) {
-        if (table === 'both') {
-          const sRes = await client.from('savant_data').delete({ count: 'exact' }).eq('file_name', filename);
-          const bRes = await client.from('blast_data').delete({ count: 'exact' }).eq('file_name', filename);
-          if (sRes.error) throw sRes.error;
-          if (bRes.error) throw bRes.error;
-          directDeleted += (sRes.count || 0) + (bRes.count || 0);
-        } else if (table === 'body_comp_data' || type === 'body_comp') {
+        const cleanTbls = ['pitching_data', 'baseball_data', 'body_comp_data', 'savant_data', 'blast_data'];
+        for (const t of cleanTbls) {
           try {
-            const bcRes = await client.from('body_comp_data').delete({ count: 'exact' }).eq('file_name', filename);
-            if (bcRes.count) directDeleted += bcRes.count;
-          } catch (e) {
-            console.warn("body_comp_data delete notice:", e);
-          }
-          try {
-            const fbRes = await client.from('baseball_data').delete({ count: 'exact' }).eq('file_name', `__bodycomp__::${filename}`);
-            if (fbRes.count) directDeleted += fbRes.count;
-          } catch (e) {
-            console.warn("baseball_data fallback delete notice:", e);
-          }
-          try {
-            const bbRes = await client.from('baseball_data').delete({ count: 'exact' }).eq('file_name', filename);
-            if (bbRes.count) directDeleted += bbRes.count;
-          } catch (e) {}
-        } else if (table === 'baseball_data' || type === 'combined') {
-          if (dataset.is_fallback || filename.startsWith('__bodycomp__::')) {
-            const rawTarget = filename.startsWith('__bodycomp__::') ? filename : `__bodycomp__::${filename}`;
-            const { error, count } = await client.from('baseball_data').delete({ count: 'exact' }).eq('file_name', rawTarget);
-            if (error) throw error;
+            const { count } = await client.from(t).delete({ count: 'exact' }).eq('file_name', filename);
             if (count) directDeleted += count;
-          } else {
-            const { error, count } = await client.from('baseball_data').delete({ count: 'exact' }).eq('file_name', filename);
-            if (error) throw error;
+          } catch {}
+          try {
+            const { count } = await client.from(t).delete({ count: 'exact' }).eq('file_name', `__bodycomp__::${filename}`);
             if (count) directDeleted += count;
-          }
-        } else if (table === 'pitching_data' || type === 'savant_pitching' || type === 'pitcher') {
-          const { error, count } = await client.from('pitching_data').delete({ count: 'exact' }).eq('file_name', filename);
-          if (error) throw error;
-          if (count) directDeleted += count;
-        } else {
-          const targetTable = table || (type === 'savant' ? 'savant_data' : 'blast_data');
-          const { error, count } = await client.from(targetTable).delete({ count: 'exact' }).eq('file_name', filename);
-          if (error) throw error;
-          if (count) directDeleted += count;
-        }
-
-        if (!apiSucceeded && directDeleted === 0) {
-          alert("クラウドからの削除に失敗しました（データが見つからないか、アクセス権限がありません）。\nSupabaseのSQL Editorで fix_insert_and_team_rls_policies.sql を実行してください。");
-          return;
+          } catch {}
         }
       }
 

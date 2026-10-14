@@ -527,7 +527,7 @@ function PitcherProfile({ pitcherName, events = [], startDate = '', endDate = ''
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full filter blur-3xl pointer-events-none print:hidden"></div>
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 print:gap-2 relative z-10">
-          <div>
+          <div className="min-w-0 flex-1">
             {/* Print-Only Clean Header */}
             <div className="hidden print:block border-b-2 border-blue-600 pb-2 mb-2">
               <h1 className="text-2xl font-black text-slate-900">{pitcherName}</h1>
@@ -543,7 +543,7 @@ function PitcherProfile({ pitcherName, events = [], startDate = '', endDate = ''
             </div>
             
             {/* Pitcher Name on Line 1 */}
-            <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-white tracking-tight whitespace-nowrap overflow-hidden text-ellipsis max-w-full">
               {pitcherName}
             </h1>
             
@@ -1127,7 +1127,7 @@ function PitcherProfile({ pitcherName, events = [], startDate = '', endDate = ''
                   <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-emerald-400 print:text-[8px]">{p.spin > 0 ? Math.round(p.spin) : '-'}</td>
                   <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-emerald-300 print:text-[8px]">{p.spinEff > 0 ? Number(p.spinEff).toFixed(1) : '-'}</td>
                   <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-blue-300 print:text-[8px]">{p.spinClock}</td>
-                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-purple-400 print:text-[8px]">{p.gyroAngle != null && p.gyroAngle !== 0 ? `${Number(p.gyroAngle).toFixed(1)}°` : '-'}</td>
+                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-purple-400 print:text-[8px]">{p.gyroAngle != null && p.gyroAngle !== 0 ? Number(p.gyroAngle).toFixed(1) : '-'}</td>
                   <td className={`py-3 px-3 print:py-1 print:px-1 text-right font-mono print:text-[8px] ${p.vbTraj >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {p.vbTraj != null && p.vbTraj !== 0 ? (p.vbTraj > 0 ? `+${Number(p.vbTraj).toFixed(1)}` : Number(p.vbTraj).toFixed(1)) : '-'}
                   </td>

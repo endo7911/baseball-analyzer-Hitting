@@ -476,15 +476,15 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         {/* Combined Card */}
         {allowHitting && (
           <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50">
-            <div className="flex justify-between items-center mb-4">
-              <div>
+            <div className="flex justify-between items-center mb-4 gap-2">
+              <div className="min-w-0 flex-1 mr-2">
                 <h3 className="text-xl font-bold text-white flex items-center mb-1">
-                  <span className="bg-emerald-500 w-3 h-6 rounded-full mr-3"></span>
-                  1ファイル統合データ
+                  <span className="bg-emerald-500 w-3 h-6 rounded-full mr-3 shrink-0"></span>
+                  <span className="truncate">1ファイル統合データ</span>
                 </h3>
                 <p className="text-xs text-slate-400">打撃・名前・学年統合CSV</p>
               </div>
-              <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-emerald-900/20 whitespace-nowrap">
+              <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-emerald-900/20 whitespace-nowrap shrink-0">
                 ファイルを選択
                 <input 
                   ref={el => fileInputRefs.current['combined'] = el} 
@@ -502,12 +502,12 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         {/* Body Comp Card (Conditional - Cyan theme) */}
         {SHOW_BODY_COMP_MODULE && allowBodyComp && (
           <div className="bg-slate-800/40 p-6 rounded-2xl border border-cyan-500/30">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-white flex items-center">
-                <span className="bg-cyan-500 w-3 h-6 rounded-full mr-3"></span>
-                体組成データ (Body Composition)
+            <div className="flex justify-between items-center mb-6 gap-2">
+              <h3 className="text-xl font-bold text-white flex items-center min-w-0 flex-1 mr-2">
+                <span className="bg-cyan-500 w-3 h-6 rounded-full mr-3 shrink-0"></span>
+                <span className="truncate">体組成データ (Body Composition)</span>
               </h3>
-              <label className="cursor-pointer bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-900/20">
+              <label className="cursor-pointer bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-900/20 whitespace-nowrap shrink-0">
                 ファイルを選択
                 <input 
                   ref={el => fileInputRefs.current['body_comp'] = el} 
@@ -525,12 +525,12 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         {/* Rapsodo Pitching Card (Conditional) */}
         {SHOW_PITCHER_MODULE && allowPitching && (
           <div className="bg-slate-800/40 p-6 rounded-2xl border border-amber-500/30">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-white flex items-center">
-                <span className="bg-amber-500 w-3 h-6 rounded-full mr-3"></span>
-                Rapsodo 投球データ (Pitching)
+            <div className="flex justify-between items-center mb-6 gap-2">
+              <h3 className="text-xl font-bold text-white flex items-center min-w-0 flex-1 mr-2">
+                <span className="bg-amber-500 w-3 h-6 rounded-full mr-3 shrink-0"></span>
+                <span className="truncate">Rapsodo 投球データ (Pitching)</span>
               </h3>
-              <label className="cursor-pointer bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-amber-900/20">
+              <label className="cursor-pointer bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-amber-900/20 whitespace-nowrap shrink-0">
                 ファイルを選択
                 <input 
                   ref={el => fileInputRefs.current['savant_pitching'] = el} 
@@ -548,12 +548,12 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         {/* Rapsodo Hitting Card */}
         {allowHitting && (
           <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-white flex items-center">
-                <span className="bg-blue-500 w-3 h-6 rounded-full mr-3"></span>
-                Rapsodo 打撃データ (Hitting)
+            <div className="flex justify-between items-center mb-6 gap-2">
+              <h3 className="text-xl font-bold text-white flex items-center min-w-0 flex-1 mr-2">
+                <span className="bg-blue-500 w-3 h-6 rounded-full mr-3 shrink-0"></span>
+                <span className="truncate">Rapsodo 打撃データ (Hitting)</span>
               </h3>
-              <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20">
+              <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20 whitespace-nowrap shrink-0">
                 ファイルを選択
                 <input 
                   ref={el => fileInputRefs.current['savant'] = el} 
@@ -571,12 +571,12 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         {/* Blast Card */}
         {allowHitting && (
           <div className="bg-slate-800/40 p-6 rounded-2xl border border-slate-700/50">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-white flex items-center">
-                <span className="bg-purple-500 w-3 h-6 rounded-full mr-3"></span>
-                Blast Data (バット計測)
+            <div className="flex justify-between items-center mb-6 gap-2">
+              <h3 className="text-xl font-bold text-white flex items-center min-w-0 flex-1 mr-2">
+                <span className="bg-purple-500 w-3 h-6 rounded-full mr-3 shrink-0"></span>
+                <span className="truncate">Blast Data (バット計測)</span>
               </h3>
-              <label className="cursor-pointer bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-purple-900/20">
+              <label className="cursor-pointer bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-purple-900/20 whitespace-nowrap shrink-0">
                 ファイルを選択
                 <input 
                   ref={el => fileInputRefs.current['blast'] = el} 

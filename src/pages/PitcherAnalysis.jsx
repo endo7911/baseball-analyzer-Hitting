@@ -736,7 +736,7 @@ function PitcherAnalysis({ savantData, blastData, combinedData, initialTeam, ini
             <tbody className="divide-y divide-slate-800/60">
               {filteredPitchers.map(p => (
                 <tr key={p.name} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-4 px-3 font-bold text-white text-base print:py-1 print:px-1 print:text-[8px]">{p.name}</td>
+                  <td className="py-4 px-3 font-bold text-white text-base print:py-1 print:px-1 print:text-[8px] whitespace-nowrap">{p.name}</td>
                   <td className="py-4 px-3 text-center print:py-1 print:px-1 print:text-[8px]">
                     <span className={`px-2 py-0.5 text-xs print:text-[7pt] font-black rounded-md ${
                       p.hand === 'R' ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40' : 'bg-orange-600/30 text-orange-300 border border-orange-500/40'

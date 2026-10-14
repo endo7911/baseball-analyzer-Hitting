@@ -414,8 +414,8 @@ const PlayerProfile = ({ playerName, stats, isCombined = false, sourceType = 'co
   return (
     <div className="player-profile-root text-slate-200 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6 no-print">
-        <div>
-          <h1 className="text-4xl font-black text-white tracking-tight">{playerName}</h1>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">{playerName}</h1>
           <p className="text-slate-400 text-xs font-bold mt-1 uppercase tracking-widest">
             {sourceType === 'rapsodo_batting' ? 'Rapsodo 打撃分析レポート' : sourceType === 'blast' ? 'Blast スイング分析レポート' : '打撃総合分析レポート'}
           </p>

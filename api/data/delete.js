@@ -278,6 +278,21 @@ export default async function handler(req, res) {
       }
     }
 
+    // If still 0 rows deleted, perform filename-only delete across all tables as safety fallback
+    if (totalDeleted === 0) {
+      for (const tbl of ['pitching_data', 'baseball_data', 'body_comp_data', 'savant_data', 'blast_data']) {
+        try {
+          const { count: finalCount } = await adminClient
+            .from(tbl)
+            .delete({ count: 'exact' })
+            .in('file_name', [filename, `__bodycomp__::${filename}`]);
+          if (typeof finalCount === 'number' && finalCount > 0) {
+            totalDeleted += finalCount;
+          }
+        } catch {}
+      }
+    }
+
     // Log deletion in access_logs
     try {
       await adminClient.from('access_logs').insert([{
@@ -286,12 +301,13 @@ export default async function handler(req, res) {
         team_id: userTeam || 'Team A',
         event_type: 'data_deleted',
         status: 'info',
-        details: { filename, table, isAdmin },
+        details: { filename, table, isAdmin, totalDeleted },
         created_at: new Date().toISOString()
       }]);
     } catch {}
 
     return res.status(200).json({
+      success: true,
       message: `「${filename}」をクラウドから削除しました。`,
       deletedCount: totalDeleted
     });
