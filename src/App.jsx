@@ -253,7 +253,7 @@ function App() {
       'game_year', 'pfx_x', 'pfx_z', 'plate_x', 'plate_z', 'on_3b', 'on_2b', 'on_1b', 
       'outs_when_up', 'inning', 'inning_topbot', 'hc_x', 'hc_y', 'vx0', 'vy0', 'vz0', 
       'ax', 'ay', 'az', 'sz_top', 'sz_bot', 'effective_speed', 'release_extension', 
-      'game_pk', 'spin_axis', 'delta_home_win_exp', 'delta_run_exp', 'file_name', 'upload_id', 'user_id',
+      'game_pk', 'spin_axis', 'delta_home_win_exp', 'delta_run_exp', 'file_name', 'upload_id', 'user_id', 'team_id', 'team_name',
       'pitch_type', 'release_pos_x', 'release_pos_y', 'release_pos_z', 'vaa', 'haa',
       'attack_direction', 'estimated_woba_using_speedangle', 'pitcher', 'batter', 'swing_length'
     ];
@@ -262,7 +262,7 @@ function App() {
       'date', 'player_name', 'bat_speed', 'attack_angle', 'vertical_bat_angle', 'power', 
       'time_to_contact', 'peak_hand_speed', 'on_plane_efficiency', 'rotation_score', 
       'on_plane_score', 'connection_score', 'rotation_acceleration', 'connection_at_impact', 
-      'connection_at_address', 'bat_angle', 'file_name', 'upload_id', 'user_id',
+      'connection_at_address', 'bat_angle', 'file_name', 'upload_id', 'user_id', 'team_id', 'team_name',
       'launch_speed', 'launch_angle', 'hit_distance_sc'
     ];
 
@@ -271,7 +271,7 @@ function App() {
       'bat_speed', 'launch_speed', 'attack_angle', 'launch_angle', 'hit_distance_sc',
       'hc_x', 'on_plane_efficiency', 'connection_score', 'rotation_score',
       'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle',
-      'release_speed', 'file_name', 'upload_id', 'user_id'
+      'release_speed', 'file_name', 'upload_id', 'user_id', 'team_id'
     ];
 
     const PITCHING_COLUMNS = [
@@ -279,14 +279,14 @@ function App() {
       'pitch_type', 'pitch_name', 'release_speed', 'release_spin_rate',
       'spin_axis', 'spin_efficiency', 'gyro_angle', 'vb_traj', 'hb_traj',
       'release_pos_x', 'release_pos_z', 'vaa', 'p_throws',
-      'file_name', 'upload_id', 'user_id'
+      'file_name', 'upload_id', 'user_id', 'team_id'
     ];
 
     const BODY_COMP_COLUMNS = [
       'date', 'player_name', 'team_name', 'height', 'weight', 'muscle_mass',
       'body_fat_pct', 'bmr', 'bmi', 'trunk_muscle', 'left_arm_muscle',
       'right_arm_muscle', 'left_leg_muscle', 'right_leg_muscle', 'ffmi',
-      'file_name', 'upload_id', 'user_id'
+      'file_name', 'upload_id', 'user_id', 'team_id'
     ];
 
     const allowedColumns = table === 'savant_data' ? SAVANT_COLUMNS 
@@ -476,15 +476,9 @@ function App() {
       const uploaderEmail = (user?.email || profile?.email || 'guest').trim().toLowerCase();
       const uploadId = `${uploaderEmail}::up-${Date.now()}`;
 
-      // UUID validation helper for Postgres uuid column compatibility
-      const isUUID = (str) => {
-        if (!str) return false;
-        const regex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        return regex.test(str);
-      };
-
-      const validTeamId = isUUID(profile?.team_id) ? profile.team_id : null;
-      const validOwnerId = isUUID(user?.id) ? user.id : null;
+      const currentTeamName = profile?.team_name || profile?.team_id || 'Team A';
+      const currentTeamId = profile?.team_id || profile?.team_name || 'Team A';
+      const currentUserId = user?.id || profile?.id || null;
 
       console.log(`Starting cloud save for ${totalRows} rows to table ${table}...`);
 
@@ -627,22 +621,31 @@ function App() {
 
             if (targetColumns.includes('file_name')) rowPayload.file_name = dataObj.filename;
             if (targetColumns.includes('upload_id')) rowPayload.upload_id = uploadId;
-            if (targetColumns.includes('team_name')) rowPayload.team_name = finalRow.team_name || null;
-            if (targetColumns.includes('team_id') && validTeamId) rowPayload.team_id = validTeamId;
-            if (targetColumns.includes('owner_id') && validOwnerId) rowPayload.owner_id = validOwnerId;
-            if (validOwnerId) rowPayload.user_id = validOwnerId;
+            if (targetColumns.includes('team_name')) rowPayload.team_name = finalRow.team_name || currentTeamName;
+            if (targetColumns.includes('team_id')) rowPayload.team_id = finalRow.team_id || currentTeamId;
+            if (targetColumns.includes('owner_id') && currentUserId) rowPayload.owner_id = currentUserId;
+            if (currentUserId) rowPayload.user_id = currentUserId;
             if (targetColumns.includes('updated_at')) rowPayload.updated_at = new Date().toISOString();
 
             return rowPayload;
           });
 
           let { error } = await client.from(targetTable).insert(batch);
-          // If user_id column does not exist yet on remote table, fallback without user_id
-          if (error && error.message && error.message.includes('user_id')) {
-            console.warn(`user_id column not present in ${targetTable}, retrying insert without user_id`);
-            const fallbackBatch = batch.map(({ user_id, ...rest }) => rest);
-            const fbResult = await client.from(targetTable).insert(fallbackBatch);
-            error = fbResult.error;
+          // If a metadata column does not exist yet on remote table, fallback without it
+          if (error && error.message) {
+            let fallbackBatch = [...batch];
+            let needsRetry = false;
+            ['user_id', 'team_id', 'team_name', 'owner_id'].forEach(col => {
+              if (error.message.includes(`'${col}'`) || error.message.includes(`"${col}"`) || error.message.includes(`column "${col}"`)) {
+                console.warn(`${col} column not present in ${targetTable}, retrying insert without ${col}`);
+                fallbackBatch = fallbackBatch.map(({ [col]: _, ...rest }) => rest);
+                needsRetry = true;
+              }
+            });
+            if (needsRetry) {
+              const fbResult = await client.from(targetTable).insert(fallbackBatch);
+              error = fbResult.error;
+            }
           }
           if (error) {
             console.error(`Error inserting into ${targetTable} at batch ${i}:`, error);
@@ -669,7 +672,9 @@ function App() {
               ...dbRow,
               file_name: dataObj.filename,
               upload_id: `${uploaderEmail}::up-${Date.now()}`,
-              team_name: dbRow.team_name || getBodyTeam(row) || null,
+              team_name: dbRow.team_name || getBodyTeam(row) || currentTeamName,
+              team_id: dbRow.team_id || currentTeamId,
+              user_id: currentUserId,
               player_name: dbRow.player_name || getBodyName(row) || 'Unknown Player',
               date: d
             };
@@ -691,7 +696,7 @@ function App() {
           const fallbackRows = dataArray.map(row => {
             const values = extractBodyValues(row);
             const name = getBodyName(row) || row['選手名'] || row['Player'] || 'Unknown Player';
-            const team = getBodyTeam(row) || row['チーム名'] || row['Team'] || 'Unknown Team';
+            const team = getBodyTeam(row) || row['チーム名'] || row['Team'] || currentTeamName;
             const d = getBodyDate(row) || parseAnyDate(getRawDataValue(row, DEFAULT_DATE_KEYS)) || null;
 
             const payloadObj = {
@@ -714,7 +719,9 @@ function App() {
             return {
               file_name: `__bodycomp__::${dataObj.filename}`,
               player_name: name,
-              team_name: team,
+              team_name: team && team !== 'Unknown Team' ? team : currentTeamName,
+              team_id: currentTeamId,
+              user_id: currentUserId,
               game_date: d,
               date: d,
               upload_id: rowUploadId
