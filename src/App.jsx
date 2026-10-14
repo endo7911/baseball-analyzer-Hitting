@@ -744,7 +744,13 @@ function App() {
           }).filter(r => r.player_name);
 
           if (bodyCompDbRows.length > 0) {
-            const { error: bcErr } = await client.from('body_comp_data').insert(bodyCompDbRows);
+            let { error: bcErr } = await client.from('body_comp_data').insert(bodyCompDbRows);
+            if (bcErr && (bcErr.code === '22P02' || (bcErr.message && bcErr.message.includes('type uuid')))) {
+              console.warn("body_comp_data UUID constraint error, retrying without non-UUID user_id/team_id");
+              const sanitizedRows = bodyCompDbRows.map(r => ({ ...r, user_id: null, team_id: null }));
+              const retryRes = await client.from('body_comp_data').insert(sanitizedRows);
+              bcErr = retryRes.error;
+            }
             if (!bcErr) {
               savedToDedicated = true;
             } else {
@@ -793,7 +799,12 @@ function App() {
 
           for (let i = 0; i < fallbackRows.length; i += 500) {
             const batch = fallbackRows.slice(i, i + 500);
-            const { error: fbErr } = await client.from('baseball_data').insert(batch);
+            let { error: fbErr } = await client.from('baseball_data').insert(batch);
+            if (fbErr && (fbErr.code === '22P02' || (fbErr.message && fbErr.message.includes('type uuid')))) {
+              const sanitizedBatch = batch.map(r => ({ ...r, user_id: null, team_id: null }));
+              const retryRes = await client.from('baseball_data').insert(sanitizedBatch);
+              fbErr = retryRes.error;
+            }
             if (fbErr) throw fbErr;
           }
         }
@@ -810,7 +821,10 @@ function App() {
       await updateDataState(type, dataObj.id || dataObj.filename, 'remove');
     } catch (err) {
       console.warn("Cloud save unavailable, fallback to local storage:", err);
-      const currentFiles = type === 'savant' ? savantFiles : (type === 'blast' ? blastFiles : (type === 'savant_pitching' ? savantPitchingFiles : combinedFiles));
+      const currentFiles = type === 'savant' ? savantFiles 
+        : (type === 'blast' ? blastFiles 
+        : (type === 'savant_pitching' ? savantPitchingFiles 
+        : (type === 'body_comp' ? bodyCompFiles : combinedFiles)));
       const userKey = user?.id ? `user_${user.id}` : 'guest';
       await saveDatasetToLocalDB(`${userKey}_${type}`, currentFiles);
       alert(`「${dataObj.filename}」をクラウドへ保存中にエラーが発生したため、ローカル（ブラウザ）に保存しました。\n詳細: ${err?.message || err?.details || JSON.stringify(err)}`);
@@ -914,23 +928,43 @@ function App() {
       const pRaw = filterByUserEmail(pitchingRaw);
 
       // Dedicated body_comp_data rows
-      const bcDedicated = filterByUserEmail(bodyCompRaw);
+      const bcDedicated = filterByUserEmail(bodyCompRaw).map(row => ({
+        ...row,
+        '身長': row.height ?? row['身長'],
+        '体重': row.weight ?? row['体重'],
+        '筋肉量': row.muscle_mass ?? row['筋肉量'],
+        '体脂肪率': row.body_fat_pct ?? row['体脂肪率'],
+        '基礎代謝量': row.bmr ?? row['基礎代謝量'],
+        'BMI': row.bmi ?? row['BMI'],
+        '体幹': row.trunk_muscle ?? row['体幹'],
+        '左腕': row.left_arm_muscle ?? row['左腕'],
+        '右腕': row.right_arm_muscle ?? row['右腕'],
+        '左足': row.left_leg_muscle ?? row['左足'],
+        '右足': row.right_leg_muscle ?? row['右足'],
+        'FFMI': row.ffmi ?? row['FFMI'],
+        height: row.height ?? row['身長'],
+        weight: row.weight ?? row['体重'],
+        muscle_mass: row.muscle_mass ?? row['筋肉量'],
+        body_fat_pct: row.body_fat_pct ?? row['体脂肪率'],
+        bmr: row.bmr ?? row['基礎代謝量'],
+        bmi: row.bmi ?? row['BMI'],
+        trunk_muscle: row.trunk_muscle ?? row['体幹'],
+        left_arm_muscle: row.left_arm_muscle ?? row['左腕'],
+        right_arm_muscle: row.right_arm_muscle ?? row['右腕'],
+        left_leg_muscle: row.left_leg_muscle ?? row['左足'],
+        right_leg_muscle: row.right_leg_muscle ?? row['右足'],
+        ffmi: row.ffmi ?? row['FFMI'],
+      }));
 
       // Fallback body_comp rows stored in baseball_data (combinedRaw)
-      const bcFallback = (combinedRaw || []).filter(row => {
+      const bcFallbackRaw = (combinedRaw || []).filter(row => {
         if (!row) return false;
         const fName = String(row.file_name || '');
         const uId = String(row.upload_id || '').toLowerCase();
-        if (!fName.startsWith('__bodycomp__::') && !uId.includes('::bodycomp::')) return false;
+        return fName.startsWith('__bodycomp__::') || uId.includes('::bodycomp::');
+      });
 
-        if (uId.includes('::')) {
-          const uploader = uId.split('::')[0];
-          if (uploader === uploaderEmail || uploader === 'guest') {
-            return true;
-          }
-        }
-        return false;
-      }).map(row => {
+      const bcFallback = filterByUserEmail(bcFallbackRaw).map(row => {
         const cleanFileName = String(row.file_name || '').replace(/^__bodycomp__::/, '');
         const uId = String(row.upload_id || '');
         let parsedVals = {};
@@ -967,7 +1001,10 @@ function App() {
         };
       });
 
-      const allBcRows = [...bcDedicated, ...bcFallback];
+      // Avoid duplicating fallback rows if identical file already exists in dedicated
+      const dedicatedFiles = new Set(bcDedicated.map(r => r.file_name).filter(Boolean));
+      const filteredBcFallback = bcFallback.filter(r => !dedicatedFiles.has(r.file_name));
+      const allBcRows = [...bcDedicated, ...filteredBcFallback];
 
       // Helper to group flat rows into the "Files" format the app expects
       const groupIntoFiles = (rows, type) => {

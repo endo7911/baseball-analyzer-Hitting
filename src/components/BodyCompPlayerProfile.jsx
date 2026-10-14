@@ -3,7 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { Dumbbell, Calendar, Zap, TrendingUp, LineChart as ChartIcon } from 'lucide-react';
-import { fmt, calcFFMI, buildSwingSpeedMap, lookupSwingSpeed } from '../utils/bodyComp';
+import { fmt, calcFFMI, buildSwingSpeedMap, lookupSwingSpeed, extractBodyValues } from '../utils/bodyComp';
 
 function BodyCompPlayerProfile({ playerName, teamName, bodyCompData, blastData, combinedData }) {
   const [selectedMetric, setSelectedMetric] = useState('muscle'); // 'muscle' | 'fatPct' | 'ffmi' | 'weight'
@@ -30,18 +30,19 @@ function BodyCompPlayerProfile({ playerName, teamName, bodyCompData, blastData, 
   const history = playerRows
     .map(r => {
       const date = r.date || r.game_date || r['日付'] || r['測定日'] || '-';
-      const height = parseFloat(r['身長'] || r['height'] || 0) || null;
-      const weight = parseFloat(r['体重'] || r['weight'] || 0) || null;
-      const muscle = parseFloat(r['筋肉量'] || r['全身筋肉量'] || 0) || null;
-      const fatPct = parseFloat(r['体脂肪率'] || r['bodyfat'] || 0) || null;
-      const bmr = parseFloat(r['基礎代謝量'] || r['bmr'] || 0) || null;
-      const bmi = parseFloat(r['BMI'] || r['bmi'] || 0) || (height && weight ? weight / Math.pow(height / 100, 2) : null);
-      const trunk = parseFloat(r['体幹'] || r['体幹筋肉量'] || 0) || null;
-      const leftArm = parseFloat(r['左腕'] || r['左腕筋肉量'] || 0) || null;
-      const rightArm = parseFloat(r['右腕'] || r['右腕筋肉量'] || 0) || null;
-      const leftLeg = parseFloat(r['左足'] || r['左脚'] || 0) || null;
-      const rightLeg = parseFloat(r['右足'] || r['右脚'] || 0) || null;
-      const ffmi = calcFFMI(height, weight, fatPct);
+      const vals = extractBodyValues(r);
+      const height = vals.height ?? (parseFloat(r['身長'] || r['height'] || 0) || null);
+      const weight = vals.weight ?? (parseFloat(r['体重'] || r['weight'] || 0) || null);
+      const muscle = vals.muscle ?? (parseFloat(r['筋肉量'] || r['全身筋肉量'] || r['muscle_mass'] || 0) || null);
+      const fatPct = vals.fatPct ?? (parseFloat(r['体脂肪率'] || r['bodyfat'] || r['body_fat_pct'] || 0) || null);
+      const bmr = vals.bmr ?? (parseFloat(r['基礎代謝量'] || r['bmr'] || 0) || null);
+      const bmi = vals.bmi ?? (parseFloat(r['BMI'] || r['bmi'] || 0) || (height && weight ? weight / Math.pow(height / 100, 2) : null));
+      const trunk = vals.trunk ?? (parseFloat(r['体幹'] || r['体幹筋肉量'] || r['trunk_muscle'] || 0) || null);
+      const leftArm = vals.leftArm ?? (parseFloat(r['左腕'] || r['左腕筋肉量'] || r['left_arm_muscle'] || 0) || null);
+      const rightArm = vals.rightArm ?? (parseFloat(r['右腕'] || r['右腕筋肉量'] || r['right_arm_muscle'] || 0) || null);
+      const leftLeg = vals.leftLeg ?? (parseFloat(r['左足'] || r['左脚'] || r['left_leg_muscle'] || 0) || null);
+      const rightLeg = vals.rightLeg ?? (parseFloat(r['右足'] || r['右脚'] || r['right_leg_muscle'] || 0) || null);
+      const ffmi = vals.ffmi ?? calcFFMI(height, weight, fatPct);
 
       return { date, height, weight, muscle, fatPct, bmr, bmi, trunk, leftArm, rightArm, leftLeg, rightLeg, ffmi };
     })

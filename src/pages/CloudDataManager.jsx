@@ -89,6 +89,25 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         if (!isRowForUser(row)) return;
 
         const name = row.file_name || row.upload_id || 'ファイル名なし';
+        if (name.startsWith('__bodycomp__::')) {
+          const cleanName = name.replace(/^__bodycomp__::/, '');
+          const key = `body_comp-${cleanName}`;
+          if (!datasetMap.has(key)) {
+            datasetMap.set(key, {
+              id: key,
+              type: 'body_comp',
+              filename: cleanName,
+              updated_at: row.updated_at || row.created_at,
+              table: 'baseball_data',
+              is_legacy: false,
+              is_fallback: true,
+              count: 1
+            });
+          } else {
+            datasetMap.get(key).count += 1;
+          }
+          return;
+        }
         if (name.startsWith('__')) return;
         const key = `baseball-${name}`;
         if (!datasetMap.has(key)) {
@@ -276,21 +295,32 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
           const bRes = await client.from('blast_data').delete().eq('file_name', filename);
           if (sRes.error) throw sRes.error;
           if (bRes.error) throw bRes.error;
-        } else if (table === 'baseball_data') {
-          let query = client.from('baseball_data').delete().eq('file_name', filename);
-          const rawEmail = (profile?.email || profile?.display_name || '').trim().toLowerCase();
-          if (rawEmail && rawEmail.includes('@') && profile?.role !== 'admin') {
-            query = query.or(`upload_id.ilike.${rawEmail}%::%,team_name.eq.${profile?.team_name || ''}`);
+        } else if (table === 'body_comp_data' || type === 'body_comp') {
+          try {
+            await client.from('body_comp_data').delete().eq('file_name', filename);
+          } catch (e) {
+            console.warn("body_comp_data delete notice:", e);
           }
-          const { error } = await query;
-          if (error) throw error;
+          try {
+            await client.from('baseball_data').delete().eq('file_name', `__bodycomp__::${filename}`);
+          } catch (e) {
+            console.warn("baseball_data fallback delete notice:", e);
+          }
+          try {
+            await client.from('baseball_data').delete().eq('file_name', filename);
+          } catch (e) {}
+        } else if (table === 'baseball_data') {
+          if (dataset.is_fallback || filename.startsWith('__bodycomp__::')) {
+            const rawTarget = filename.startsWith('__bodycomp__::') ? filename : `__bodycomp__::${filename}`;
+            const { error } = await client.from('baseball_data').delete().eq('file_name', rawTarget);
+            if (error) throw error;
+          } else {
+            const { error } = await client.from('baseball_data').delete().eq('file_name', filename);
+            if (error) throw error;
+          }
         } else if (table === 'pitching_data') {
           const { error } = await client.from('pitching_data').delete().eq('file_name', filename);
           if (error) throw error;
-        } else if (table === 'body_comp_data') {
-          const { error } = await client.from('body_comp_data').delete().eq('file_name', filename);
-          if (error) throw error;
-          await client.from('baseball_data').delete().eq('file_name', `__bodycomp__::${filename}`);
         } else {
           const targetTable = table || (type === 'savant' ? 'savant_data' : 'blast_data');
           const { error } = await client.from(targetTable).delete().eq('file_name', filename);

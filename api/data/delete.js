@@ -98,10 +98,29 @@ async function verifyCaller(req, adminClient) {
     }
   }
 
-  // 2. Legacy Session caller verification
+  // 2. Caller verification by email (Supabase profiles or legacy storage)
   const emailHeader = req.headers['x-user-email'] || req.headers['x-legacy-admin-email'];
   if (emailHeader) {
     const cleanEmail = String(emailHeader).trim().toLowerCase();
+
+    // Check profiles table first
+    try {
+      const { data: profile } = await adminClient
+        .from('profiles')
+        .select('*')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+
+      if (profile && !profile.is_disabled) {
+        return {
+          ok: true,
+          user: { id: profile.id, email: profile.email },
+          profile,
+          isAdmin: profile.role === 'admin'
+        };
+      }
+    } catch {}
+
     const legacyUsers = await getLegacyUsers(adminClient);
     const matched = legacyUsers.find(u => (u.email || '').toLowerCase() === cleanEmail);
     if (matched && !matched.is_disabled) {
@@ -183,7 +202,7 @@ export default async function handler(req, res) {
 
         // Exact filename match or bodycomp prefix match
         if (tbl === 'baseball_data' && (table === 'body_comp_data' || type === 'body_comp')) {
-          q = q.or(`file_name.eq.${filename},file_name.eq.__bodycomp__::${filename}`);
+          q = q.in('file_name', [filename, `__bodycomp__::${filename}`]);
         } else {
           q = q.eq('file_name', filename);
         }
@@ -192,8 +211,9 @@ export default async function handler(req, res) {
         if (!isAdmin) {
           const conditions = [];
           if (userTeam) {
-            conditions.push(`team_name.eq.${userTeam}`);
-            conditions.push(`team_id.eq.${userTeam}`);
+            const escapedTeam = JSON.stringify(String(userTeam));
+            conditions.push(`team_name.eq.${escapedTeam}`);
+            conditions.push(`team_id.eq.${escapedTeam}`);
           }
           if (userEmail && userEmail.includes('@')) {
             conditions.push(`upload_id.ilike.${userEmail}::%`);

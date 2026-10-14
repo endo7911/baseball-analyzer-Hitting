@@ -9,15 +9,15 @@ import { getDataValue, BS_KEYS, parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS
 export const BODY_METRICS = [
   { key: 'height',   label: '身長',         unit: 'cm',    digits: 1, dbColumn: 'height',           aliases: ['身長', 'height', '身長cm', 'heightcm', 'bodyheight', 'stature'] },
   { key: 'weight',   label: '体重',         unit: 'kg',    digits: 1, dbColumn: 'weight',           aliases: ['体重', 'weight', '体重kg', 'weightkg', 'bodyweight', 'bodymass'] },
-  { key: 'muscle',   label: '筋肉量',       unit: 'kg',    digits: 1, dbColumn: 'muscle_mass',      aliases: ['筋肉量', '全身筋肉量', '骨格筋量', '骨格筋肉量', 'musclemass', 'muscle', '筋肉量kg', 'bodymusclemass', 'totalmusclemass', 'skeletalmusclemass', 'smm'] },
-  { key: 'fatPct',   label: '体脂肪率',     unit: '%',     digits: 1, dbColumn: 'body_fat_pct',     aliases: ['体脂肪率', 'bodyfat', 'bodyfat%', 'fat%', '体脂肪率%', 'bodyfatpct', 'bodyfatpercent', 'bodyfatpercentage', 'fatpercent', 'fatpercentage', 'percentbodyfat', 'pbf'] },
+  { key: 'muscle',   label: '筋肉量',       unit: 'kg',    digits: 1, dbColumn: 'muscle_mass',      aliases: ['筋肉量', '全身筋肉量', '骨格筋量', '骨格筋肉量', 'musclemass', 'muscle', 'muscle_mass', '筋肉量kg', 'bodymusclemass', 'totalmusclemass', 'skeletalmusclemass', 'smm'] },
+  { key: 'fatPct',   label: '体脂肪率',     unit: '%',     digits: 1, dbColumn: 'body_fat_pct',     aliases: ['体脂肪率', 'bodyfat', 'bodyfat%', 'fat%', '体脂肪率%', 'bodyfatpct', 'body_fat_pct', 'bodyfatpercent', 'bodyfatpercentage', 'fatpercent', 'fatpercentage', 'percentbodyfat', 'pbf'] },
   { key: 'bmr',      label: '基礎代謝量',   unit: 'kcal',  digits: 0, dbColumn: 'bmr',              aliases: ['基礎代謝量', '基礎代謝', 'bmr', '基礎代謝量kcal', 'basalmetabolicrate', 'basalmetabolism', 'basalmetabolic'] },
   { key: 'bmi',      label: 'BMI',          unit: 'kg/m²', digits: 1, dbColumn: 'bmi',              aliases: ['bmi', 'bodymassindex'] },
-  { key: 'trunk',    label: '体幹',         unit: 'kg',    digits: 1, group: 'part', dbColumn: 'trunk_muscle',     aliases: ['体幹', '体幹筋肉量', '部位別筋肉量体幹', '筋肉量体幹', 'trunk', 'trunkmuscle', 'trunkmusclemass', 'musclemasstrunk'] },
-  { key: 'leftArm',  label: '左腕',         unit: 'kg',    digits: 2, group: 'part', dbColumn: 'left_arm_muscle',  aliases: ['左腕', '左腕筋肉量', '部位別筋肉量左腕', '筋肉量左腕', 'leftarm', 'leftarmmuscle', 'leftarmmusclemass', 'musclemassleftarm'] },
-  { key: 'rightArm', label: '右腕',         unit: 'kg',    digits: 2, group: 'part', dbColumn: 'right_arm_muscle', aliases: ['右腕', '右腕筋肉量', '部位別筋肉量右腕', '筋肉量右腕', 'rightarm', 'rightarmmuscle', 'rightarmmusclemass', 'musclemassrightarm'] },
-  { key: 'leftLeg',  label: '左足',         unit: 'kg',    digits: 2, group: 'part', dbColumn: 'left_leg_muscle',  aliases: ['左足', '左脚', '左足筋肉量', '左脚筋肉量', '部位別筋肉量左足', '部位別筋肉量左脚', 'leftleg', 'leftlegmuscle', 'leftlegmusclemass', 'musclemassleftleg'] },
-  { key: 'rightLeg', label: '右足',         unit: 'kg',    digits: 2, group: 'part', dbColumn: 'right_leg_muscle', aliases: ['右足', '右脚', '右足筋肉量', '右脚筋肉量', '部位別筋肉量右足', '部位別筋肉量右脚', 'rightleg', 'rightlegmuscle', 'rightlegmusclemass', 'musclemassrightleg'] },
+  { key: 'trunk',    label: '体幹',         unit: 'kg',    digits: 1, group: 'part', dbColumn: 'trunk_muscle',     aliases: ['体幹', '体幹筋肉量', '部位別筋肉量体幹', '筋肉量体幹', 'trunk', 'trunkmuscle', 'trunk_muscle', 'trunkmusclemass', 'musclemasstrunk'] },
+  { key: 'leftArm',  label: '左腕',         unit: 'kg',    digits: 2, group: 'part', dbColumn: 'left_arm_muscle',  aliases: ['左腕', '左腕筋肉量', '部位別筋肉量左腕', '筋肉量左腕', 'leftarm', 'leftarmmuscle', 'left_arm_muscle', 'leftarmmusclemass', 'musclemassleftarm'] },
+  { key: 'rightArm', label: '右腕',         unit: 'kg',    digits: 2, group: 'part', dbColumn: 'right_arm_muscle', aliases: ['右腕', '右腕筋肉量', '部位別筋肉量右腕', '筋肉量右腕', 'rightarm', 'rightarmmuscle', 'right_arm_muscle', 'rightarmmusclemass', 'musclemassrightarm'] },
+  { key: 'leftLeg',  label: '左足',         unit: 'kg',    digits: 2, group: 'part', dbColumn: 'left_leg_muscle',  aliases: ['左足', '左脚', '左足筋肉量', '左脚筋肉量', '部位別筋肉量左足', '部位別筋肉量左脚', 'leftleg', 'leftlegmuscle', 'left_leg_muscle', 'leftlegmusclemass', 'musclemassleftleg'] },
+  { key: 'rightLeg', label: '右足',         unit: 'kg',    digits: 2, group: 'part', dbColumn: 'right_leg_muscle', aliases: ['右足', '右脚', '右足筋肉量', '右脚筋肉量', '部位別筋肉量右足', '部位別筋肉量右脚', 'rightleg', 'rightlegmuscle', 'right_leg_muscle', 'rightlegmusclemass', 'musclemassrightleg'] },
   { key: 'ffmi',     label: 'FFMI',         unit: '',      digits: 1, dbColumn: 'ffmi',             aliases: ['ffmi', '除脂肪量指数', '除脂肪指数', 'fatfreemassindex'] },
 ];
 
