@@ -260,16 +260,34 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     try {
       // 1. Try serverless deletion API (uses service_role with team-isolation verification)
       let apiSucceeded = false;
+      let directDeleted = 0;
       try {
         const { data: { session } } = await client.auth.getSession();
         const headers = { 'Content-Type': 'application/json' };
         if (session?.access_token) {
           headers['Authorization'] = `Bearer ${session.access_token}`;
         }
-        if (profile?.email) {
-          headers['X-User-Email'] = profile.email;
-          headers['X-User-Team'] = profile.team_name || profile.team_id || '';
-          headers['X-User-Role'] = profile.role || 'user';
+        
+        let callerEmail = profile?.email || '';
+        let callerRole = profile?.role || 'user';
+        let callerTeam = profile?.team_name || profile?.team_id || '';
+
+        if (!callerEmail) {
+          try {
+            const saved = sessionStorage.getItem('mockUser') || localStorage.getItem('mockUser');
+            if (saved) {
+              const u = JSON.parse(saved);
+              callerEmail = u.email || '';
+              callerRole = u.role || callerRole;
+              callerTeam = u.team_id || u.team_name || callerTeam;
+            }
+          } catch {}
+        }
+
+        if (callerEmail) {
+          headers['X-User-Email'] = callerEmail;
+          headers['X-User-Team'] = callerTeam;
+          headers['X-User-Role'] = callerRole;
         }
 
         const res = await fetch('/api/data/delete', {
@@ -278,11 +296,11 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
           body: JSON.stringify({ filename, table, type })
         });
 
-        if (res.ok) {
+        const resData = await res.json().catch(() => ({}));
+        if (res.ok && resData.deletedCount > 0) {
           apiSucceeded = true;
         } else {
-          const errData = await res.json().catch(() => ({}));
-          console.warn("Delete API returned non-OK:", res.status, errData);
+          console.warn("Delete API returned non-OK or 0 deleted rows:", res.status, resData);
         }
       } catch (apiErr) {
         console.warn("Delete API fetch failed, trying direct client delete:", apiErr);
@@ -291,40 +309,53 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       // 2. Direct client fallback if API was unavailable
       if (!apiSucceeded) {
         if (table === 'both') {
-          const sRes = await client.from('savant_data').delete().eq('file_name', filename);
-          const bRes = await client.from('blast_data').delete().eq('file_name', filename);
+          const sRes = await client.from('savant_data').delete({ count: 'exact' }).eq('file_name', filename);
+          const bRes = await client.from('blast_data').delete({ count: 'exact' }).eq('file_name', filename);
           if (sRes.error) throw sRes.error;
           if (bRes.error) throw bRes.error;
+          directDeleted += (sRes.count || 0) + (bRes.count || 0);
         } else if (table === 'body_comp_data' || type === 'body_comp') {
           try {
-            await client.from('body_comp_data').delete().eq('file_name', filename);
+            const bcRes = await client.from('body_comp_data').delete({ count: 'exact' }).eq('file_name', filename);
+            if (bcRes.count) directDeleted += bcRes.count;
           } catch (e) {
             console.warn("body_comp_data delete notice:", e);
           }
           try {
-            await client.from('baseball_data').delete().eq('file_name', `__bodycomp__::${filename}`);
+            const fbRes = await client.from('baseball_data').delete({ count: 'exact' }).eq('file_name', `__bodycomp__::${filename}`);
+            if (fbRes.count) directDeleted += fbRes.count;
           } catch (e) {
             console.warn("baseball_data fallback delete notice:", e);
           }
           try {
-            await client.from('baseball_data').delete().eq('file_name', filename);
+            const bbRes = await client.from('baseball_data').delete({ count: 'exact' }).eq('file_name', filename);
+            if (bbRes.count) directDeleted += bbRes.count;
           } catch (e) {}
-        } else if (table === 'baseball_data') {
+        } else if (table === 'baseball_data' || type === 'combined') {
           if (dataset.is_fallback || filename.startsWith('__bodycomp__::')) {
             const rawTarget = filename.startsWith('__bodycomp__::') ? filename : `__bodycomp__::${filename}`;
-            const { error } = await client.from('baseball_data').delete().eq('file_name', rawTarget);
+            const { error, count } = await client.from('baseball_data').delete({ count: 'exact' }).eq('file_name', rawTarget);
             if (error) throw error;
+            if (count) directDeleted += count;
           } else {
-            const { error } = await client.from('baseball_data').delete().eq('file_name', filename);
+            const { error, count } = await client.from('baseball_data').delete({ count: 'exact' }).eq('file_name', filename);
             if (error) throw error;
+            if (count) directDeleted += count;
           }
-        } else if (table === 'pitching_data') {
-          const { error } = await client.from('pitching_data').delete().eq('file_name', filename);
+        } else if (table === 'pitching_data' || type === 'savant_pitching' || type === 'pitcher') {
+          const { error, count } = await client.from('pitching_data').delete({ count: 'exact' }).eq('file_name', filename);
           if (error) throw error;
+          if (count) directDeleted += count;
         } else {
           const targetTable = table || (type === 'savant' ? 'savant_data' : 'blast_data');
-          const { error } = await client.from(targetTable).delete().eq('file_name', filename);
+          const { error, count } = await client.from(targetTable).delete({ count: 'exact' }).eq('file_name', filename);
           if (error) throw error;
+          if (count) directDeleted += count;
+        }
+
+        if (!apiSucceeded && directDeleted === 0) {
+          alert("クラウドからの削除に失敗しました（データが見つからないか、アクセス権限がありません）。\nSupabaseのSQL Editorで fix_insert_and_team_rls_policies.sql を実行してください。");
+          return;
         }
       }
 

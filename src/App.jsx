@@ -20,7 +20,11 @@ import './App.css';
 import { supabase, getSupabase } from './lib/supabase';
 import { getGlobalUsers } from './lib/userSync';
 import { saveDatasetToLocalDB, getDatasetFromLocalDB, clearLocalDB } from './lib/db';
-import { extractRowVal, toAsciiNumbers, parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS } from './utils/dataHelpers';
+import { 
+  extractRowVal, toAsciiNumbers, parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS,
+  getDataValue, PITCH_VELO_KEYS, SPIN_RATE_KEYS, SPIN_EFFICIENCY_KEYS,
+  VB_TRAJ_KEYS, HB_TRAJ_KEYS, RELEASE_HEIGHT_KEYS, RELEASE_SIDE_KEYS 
+} from './utils/dataHelpers';
 import { toBodyCompDbRow, extractBodyValues, getBodyName, getBodyTeam, getBodyDate } from './utils/bodyComp';
 
 function App() {
@@ -642,6 +646,36 @@ function App() {
               if (!filteredRow.player_name) {
                 filteredRow.player_name = filteredRow.pitcher_name;
               }
+
+              // Robust pitching metrics extraction & backfill
+              if (filteredRow.release_speed == null || filteredRow.release_speed === 0) {
+                const v = getDataValue(row, PITCH_VELO_KEYS);
+                if (v > 0) filteredRow.release_speed = v;
+              }
+              if (filteredRow.release_spin_rate == null || filteredRow.release_spin_rate === 0) {
+                const s = getDataValue(row, SPIN_RATE_KEYS);
+                if (s > 0) filteredRow.release_spin_rate = s;
+              }
+              if (filteredRow.spin_efficiency == null || filteredRow.spin_efficiency === 0) {
+                const eff = getDataValue(row, SPIN_EFFICIENCY_KEYS);
+                if (eff > 0) filteredRow.spin_efficiency = eff;
+              }
+              if (filteredRow.vb_traj == null || filteredRow.vb_traj === 0) {
+                const vb = getDataValue(row, VB_TRAJ_KEYS);
+                if (vb !== 0) filteredRow.vb_traj = vb;
+              }
+              if (filteredRow.hb_traj == null || filteredRow.hb_traj === 0) {
+                const hb = getDataValue(row, HB_TRAJ_KEYS);
+                if (hb !== 0) filteredRow.hb_traj = hb;
+              }
+              if (filteredRow.release_pos_z == null || filteredRow.release_pos_z === 0) {
+                const rz = getDataValue(row, RELEASE_HEIGHT_KEYS);
+                if (rz > 0) filteredRow.release_pos_z = rz;
+              }
+              if (filteredRow.release_pos_x == null || filteredRow.release_pos_x === 0) {
+                const rx = getDataValue(row, RELEASE_SIDE_KEYS);
+                if (rx !== 0) filteredRow.release_pos_x = rx;
+              }
             }
 
             let finalRow = { ...filteredRow };
@@ -663,7 +697,13 @@ function App() {
 
             if (targetColumns.includes('file_name')) rowPayload.file_name = dataObj.filename;
             if (targetColumns.includes('upload_id')) rowPayload.upload_id = uploadId;
-            if (targetColumns.includes('team_name')) rowPayload.team_name = finalRow.team_name || currentTeamName;
+            const detectedTeam = finalRow.team_name || row['チーム名'] || row['チーム'] || row['Team'] || row['team_name'];
+            if (targetColumns.includes('team_name')) {
+              const isGenericAdmin = isAdmin || currentTeamName === '管理者' || currentTeamName === 'admin' || currentTeamName === 'administrator';
+              rowPayload.team_name = (detectedTeam && String(detectedTeam).trim() !== '' && String(detectedTeam).trim() !== 'Unknown Team') 
+                ? String(detectedTeam).trim() 
+                : (isGenericAdmin ? 'Unknown Team' : currentTeamName);
+            }
             if (targetColumns.includes('team_id')) {
               const rawTId = finalRow.team_id || currentTeamId;
               rowPayload.team_id = isUUID(rawTId) ? rawTId : null;
@@ -925,7 +965,61 @@ function App() {
         return !fName.startsWith('__bodycomp__::') && !uId.includes('::bodycomp::');
       });
       const cRaw = filterByUserEmail(cRawHitting);
-      const pRaw = filterByUserEmail(pitchingRaw);
+      const pRaw = filterByUserEmail(pitchingRaw).map(row => {
+        const speed = row.release_speed ?? row['Pitch Speed'] ?? row['PitchSpeed'] ?? row['球速'];
+        const spin = row.release_spin_rate ?? row['Spin Rate'] ?? row['SpinRate'] ?? row['回転数'];
+        const eff = row.spin_efficiency ?? row['Spin Efficiency'] ?? row['SpinEfficiency'] ?? row['回転効率'];
+        const vb = row.vb_traj ?? row['VB (trajectory)'] ?? row['VB(trajectory)'] ?? row['縦変化量'];
+        const hb = row.hb_traj ?? row['HB (trajectory)'] ?? row['HB(trajectory)'] ?? row['横変化量'];
+        const rz = row.release_pos_z ?? row['Release Height'] ?? row['ReleaseHeight'] ?? row['リリース高度'];
+        const rx = row.release_pos_x ?? row['Release Side'] ?? row['ReleaseSide'] ?? row['リリース横'];
+        const pName = row.pitcher_name ?? row.player_name ?? row['投手名'] ?? row['選手名'] ?? row['Pitcher'];
+        const pType = row.pitch_type ?? row['Pitch Type'] ?? row['PitchType'] ?? row['球種'];
+        const pThrows = row.p_throws ?? row['Throws'] ?? row['利き腕'] ?? row['投球腕'];
+        const sAxis = row.spin_axis ?? row['Spin Direction'] ?? row['SpinDirection'] ?? row['回転軸'];
+        const gyro = row.gyro_angle ?? row['Gyro Angle'] ?? row['GyroAngle'] ?? row['ジャイロ角度'];
+        const vaaVal = row.vaa ?? row['VAA'] ?? row['垂直アプローチ角度'];
+
+        return {
+          ...row,
+          release_speed: speed,
+          'Pitch Speed': speed,
+          '球速': speed,
+          release_spin_rate: spin,
+          'Spin Rate': spin,
+          '回転数': spin,
+          spin_efficiency: eff,
+          'Spin Efficiency': eff,
+          '回転効率': eff,
+          vb_traj: vb,
+          'VB (trajectory)': vb,
+          '縦変化量': vb,
+          hb_traj: hb,
+          'HB (trajectory)': hb,
+          '横変化量': hb,
+          release_pos_z: rz,
+          'Release Height': rz,
+          'リリース高度': rz,
+          release_pos_x: rx,
+          'Release Side': rx,
+          'リリース横': rx,
+          pitcher_name: pName,
+          player_name: pName,
+          '投手名': pName,
+          '選手名': pName,
+          pitch_type: pType,
+          'Pitch Type': pType,
+          '球種': pType,
+          p_throws: pThrows,
+          'Throws': pThrows,
+          spin_axis: sAxis,
+          'Spin Direction': sAxis,
+          gyro_angle: gyro,
+          'Gyro Angle': gyro,
+          vaa: vaaVal,
+          'VAA': vaaVal
+        };
+      });
 
       // Dedicated body_comp_data rows
       const bcDedicated = filterByUserEmail(bodyCompRaw).map(row => ({
@@ -1033,6 +1127,24 @@ function App() {
           const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
           if (evVal != null) {
             row.launch_speed = evVal;
+          }
+
+          // Backfill pitching fields if present
+          if (type === 'savant_pitching' || row.pitcher_name || row['Pitch Speed'] || row.release_speed != null || row.vb_traj != null) {
+            const v = getDataValue(row, PITCH_VELO_KEYS);
+            if (v > 0) { row.release_speed = v; row['Pitch Speed'] = v; }
+            const s = getDataValue(row, SPIN_RATE_KEYS);
+            if (s > 0) { row.release_spin_rate = s; row['Spin Rate'] = s; }
+            const eff = getDataValue(row, SPIN_EFFICIENCY_KEYS);
+            if (eff > 0) { row.spin_efficiency = eff; row['Spin Efficiency'] = eff; }
+            const vb = getDataValue(row, VB_TRAJ_KEYS);
+            if (vb !== 0) { row.vb_traj = vb; row['VB (trajectory)'] = vb; }
+            const hb = getDataValue(row, HB_TRAJ_KEYS);
+            if (hb !== 0) { row.hb_traj = hb; row['HB (trajectory)'] = hb; }
+            const rz = getDataValue(row, RELEASE_HEIGHT_KEYS);
+            if (rz > 0) { row.release_pos_z = rz; row['Release Height'] = rz; }
+            const rx = getDataValue(row, RELEASE_SIDE_KEYS);
+            if (rx !== 0) { row.release_pos_x = rx; row['Release Side'] = rx; }
           }
 
           if (!grouped[fileName]) {
@@ -1214,7 +1326,20 @@ function App() {
     const allHeaders = new Set();
     const safeRows = [];
 
+    // Deduplicate files by filename (e.g. avoid duplicate counting if both local and cloud exist)
+    const seenFilenames = new Set();
+    const uniqueFiles = [];
     files.forEach(f => {
+      if (!f) return;
+      const fn = f.filename || f.id;
+      if (fn && seenFilenames.has(fn)) {
+        return;
+      }
+      if (fn) seenFilenames.add(fn);
+      uniqueFiles.push(f);
+    });
+
+    uniqueFiles.forEach(f => {
       if (f.headers && Array.isArray(f.headers)) f.headers.forEach(h => allHeaders.add(h));
       if (Array.isArray(f.data)) {
         f.data.forEach(row => {
@@ -1244,6 +1369,24 @@ function App() {
             if (evVal != null) {
               row.launch_speed = evVal;
             }
+          }
+
+          // Pitching metric backfill
+          if (row.pitcher_name || row['Pitch Speed'] || row.release_speed != null || row.vb_traj != null) {
+            const v = getDataValue(row, PITCH_VELO_KEYS);
+            if (v > 0) { row.release_speed = v; row['Pitch Speed'] = v; }
+            const s = getDataValue(row, SPIN_RATE_KEYS);
+            if (s > 0) { row.release_spin_rate = s; row['Spin Rate'] = s; }
+            const eff = getDataValue(row, SPIN_EFFICIENCY_KEYS);
+            if (eff > 0) { row.spin_efficiency = eff; row['Spin Efficiency'] = eff; }
+            const vb = getDataValue(row, VB_TRAJ_KEYS);
+            if (vb !== 0) { row.vb_traj = vb; row['VB (trajectory)'] = vb; }
+            const hb = getDataValue(row, HB_TRAJ_KEYS);
+            if (hb !== 0) { row.hb_traj = hb; row['HB (trajectory)'] = hb; }
+            const rz = getDataValue(row, RELEASE_HEIGHT_KEYS);
+            if (rz > 0) { row.release_pos_z = rz; row['Release Height'] = rz; }
+            const rx = getDataValue(row, RELEASE_SIDE_KEYS);
+            if (rx !== 0) { row.release_pos_x = rx; row['Release Side'] = rx; }
           }
 
           // Data isolation: Admin sees all; Team members see team data or own uploads
@@ -1278,11 +1421,11 @@ function App() {
     };
   };
 
-  const savantData = useMemo(() => mergeFiles([...savantFiles, ...cloudSavantFiles]), [savantFiles, cloudSavantFiles]);
-  const savantPitchingData = useMemo(() => mergeFiles([...savantPitchingFiles, ...cloudSavantPitchingFiles]), [savantPitchingFiles, cloudSavantPitchingFiles]);
-  const blastData = useMemo(() => mergeFiles([...blastFiles, ...cloudBlastFiles]), [blastFiles, cloudBlastFiles]);
-  const combinedData = useMemo(() => mergeFiles([...combinedFiles, ...cloudCombinedFiles]), [combinedFiles, cloudCombinedFiles]);
-  const bodyCompData = useMemo(() => mergeFiles([...bodyCompFiles, ...cloudBodyCompFiles]), [bodyCompFiles, cloudBodyCompFiles]);
+  const savantData = useMemo(() => mergeFiles([...cloudSavantFiles, ...savantFiles]), [savantFiles, cloudSavantFiles]);
+  const savantPitchingData = useMemo(() => mergeFiles([...cloudSavantPitchingFiles, ...savantPitchingFiles]), [savantPitchingFiles, cloudSavantPitchingFiles]);
+  const blastData = useMemo(() => mergeFiles([...cloudBlastFiles, ...blastFiles]), [blastFiles, cloudBlastFiles]);
+  const combinedData = useMemo(() => mergeFiles([...cloudCombinedFiles, ...combinedFiles]), [combinedFiles, cloudCombinedFiles]);
+  const bodyCompData = useMemo(() => mergeFiles([...cloudBodyCompFiles, ...bodyCompFiles]), [bodyCompFiles, cloudBodyCompFiles]);
 
   const renderActiveView = () => {
     const uploadProps = {
