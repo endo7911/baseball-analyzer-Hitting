@@ -222,18 +222,18 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
     return (
       <div className="flex flex-col h-48 border border-emerald-500/30 rounded-xl bg-emerald-900/10 p-4 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center">
-            <FileText className="w-5 h-5 text-emerald-400 mr-2" />
-            <span className="text-sm font-bold text-emerald-300">読込完了 ({files.length} ファイル)</span>
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 mb-2">
+          <div className="flex items-center min-w-0">
+            <FileText className="w-5 h-5 text-emerald-400 mr-2 shrink-0" />
+            <span className="text-sm font-bold text-emerald-300 truncate">読込完了 ({files.length} ファイル)</span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button 
               onClick={() => {
                 const targetView = typeLabel.toLowerCase().includes('body') ? 'bodyComp' : (typeLabel.toLowerCase().includes('pitching') ? 'pitcher' : (typeLabel.toLowerCase().includes('savant') || typeLabel.toLowerCase().includes('blast') ? 'player' : 'team'));
                 setActiveView(targetView);
               }}
-              className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md transition-all cursor-pointer"
+              className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md transition-all cursor-pointer whitespace-nowrap shrink-0"
             >
               分析を見る →
             </button>
@@ -246,12 +246,12 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
               }}
               disabled={syncState.saving}
               title="クラウドへ同期保存して枠をクリア"
-              className={`flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
                 syncState.saving ? 'bg-slate-700 text-slate-500 cursor-wait' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
               }`}
             >
-              <Save className={`w-3.5 h-3.5 ${syncState.saving ? 'animate-pulse' : ''}`} />
-              クラウド同期
+              <Save className={`w-3.5 h-3.5 shrink-0 ${syncState.saving ? 'animate-pulse' : ''}`} />
+              <span>クラウド同期</span>
             </button>
             <button 
               onClick={() => {
@@ -259,7 +259,7 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
                 updateDataState(fileType, null, 'clear');
               }}
               title="この枠の読み込みファイルをクリア"
-              className="px-2 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-rose-900/50 hover:text-rose-300 text-slate-400 border border-slate-700 transition-all"
+              className="px-2 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-rose-900/50 hover:text-rose-300 text-slate-400 border border-slate-700 transition-all shrink-0"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -386,10 +386,10 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
           <button 
             onClick={handleCloudSync}
             disabled={isLoading}
-            className="bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-slate-300 text-xs font-bold py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
+            className="bg-slate-700 hover:bg-slate-600 disabled:opacity-30 text-slate-300 text-xs font-bold py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap shrink-0"
           >
-            {isLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Cloud className="w-3 h-3" />}
-            クラウドから一括読込
+            {isLoading ? <RefreshCw className="w-3 h-3 animate-spin shrink-0" /> : <Cloud className="w-3 h-3 shrink-0" />}
+            <span>クラウドから一括読込</span>
           </button>
         </div>
       </header>

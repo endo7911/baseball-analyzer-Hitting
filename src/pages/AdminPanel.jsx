@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { getGlobalUsers, saveGlobalUsers, hashPassword } from '../lib/userSync';
+import { fetchInquiries } from '../lib/inquirySync';
+import AdminInquiries from '../components/AdminInquiries';
 import { 
   Users, Plus, Trash2, Shield, RefreshCw, CheckCircle2, XCircle, 
   Ban, PlayCircle, Key, Clock, Copy, Check, Target, Dumbbell, 
-  ArrowUpRight, AlertTriangle, ShieldAlert, Monitor, Activity, Eye, UserCheck
+  ArrowUpRight, AlertTriangle, ShieldAlert, Monitor, Activity, Eye, UserCheck,
+  MessageSquare
 } from 'lucide-react';
 
 function AdminPanel() {
-  const [activeTab, setActiveTab] = useState('users'); // 'users' | 'logs'
+  const [activeTab, setActiveTab] = useState('users'); // 'users' | 'inquiries' | 'logs'
+  const [openInquiriesCount, setOpenInquiriesCount] = useState(0);
   const [users, setUsers] = useState([]);
   const [logs, setLogs] = useState([]);
   const [teamInputs, setTeamInputs] = useState({});
@@ -28,13 +32,23 @@ function AdminPanel() {
   const [logAccountFilter, setLogAccountFilter] = useState('all');
   const [logTypeFilter, setLogTypeFilter] = useState('all');
 
+  const loadInquiriesCount = async () => {
+    try {
+      const list = await fetchInquiries();
+      setOpenInquiriesCount(list.filter(i => i.status === 'open').length);
+    } catch {}
+  };
+
   useEffect(() => { 
     fetchUsers(); 
+    loadInquiriesCount();
   }, []);
 
   useEffect(() => {
     if (activeTab === 'logs') {
       fetchLogs();
+    } else if (activeTab === 'inquiries') {
+      loadInquiriesCount();
     }
   }, [activeTab, logAccountFilter]);
 
@@ -469,6 +483,23 @@ function AdminPanel() {
         </button>
 
         <button
+          onClick={() => setActiveTab('inquiries')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer ${
+            activeTab === 'inquiries'
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+              : 'bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" />
+          問い合わせ対応
+          {openInquiriesCount > 0 && (
+            <span className="px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-black animate-pulse">
+              {openInquiriesCount}
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={() => setActiveTab('logs')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer ${
             activeTab === 'logs'
@@ -751,7 +782,14 @@ function AdminPanel() {
         </>
       )}
 
-      {/* TAB 2: SECURITY ACCESS & AUDIT LOGS */}
+      {/* TAB 2: INQUIRIES MANAGEMENT */}
+      {activeTab === 'inquiries' && (
+        <div className="space-y-4 animate-fadeIn">
+          <AdminInquiries />
+        </div>
+      )}
+
+      {/* TAB 3: SECURITY ACCESS & AUDIT LOGS */}
       {activeTab === 'logs' && (
         <div className="space-y-4 animate-fadeIn">
           {/* Filters Bar */}

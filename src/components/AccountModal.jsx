@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { changeUserPassword } from '../lib/userSync';
+import { changeUserPassword, getGlobalUsers, verifyPassword } from '../lib/userSync';
 import { User, Shield, KeyRound, Eye, EyeOff, Check, AlertCircle, LogOut, X, CheckCircle2 } from 'lucide-react';
 
 function AccountModal({ isOpen, onClose, profile, onLogout }) {
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -18,6 +20,11 @@ function AccountModal({ isOpen, onClose, profile, onLogout }) {
     setError('');
     setSuccess('');
 
+    if (!currentPassword.trim()) {
+      setError('現在のパスワードを入力してください。');
+      return;
+    }
+
     if (!newPassword.trim()) {
       setError('新しいパスワードを入力してください。');
       return;
@@ -25,6 +32,11 @@ function AccountModal({ isOpen, onClose, profile, onLogout }) {
 
     if (newPassword !== confirmPassword) {
       setError('確認用パスワードと一致しません。');
+      return;
+    }
+
+    if (currentPassword.trim() === newPassword.trim()) {
+      setError('現在のパスワードとは異なる新しいパスワードを設定してください。');
       return;
     }
 
@@ -50,6 +62,7 @@ function AccountModal({ isOpen, onClose, profile, onLogout }) {
           headers,
           body: JSON.stringify({
             email: profile.email,
+            currentPassword: currentPassword.trim(),
             newPassword: newPassword.trim()
           })
         });
@@ -70,6 +83,14 @@ function AccountModal({ isOpen, onClose, profile, onLogout }) {
       // 2. Client-side fallback if API was unreachable
       if (!apiSuccess) {
         if (session) {
+          const { error: verifyErr } = await client.auth.signInWithPassword({
+            email: profile.email,
+            password: currentPassword.trim()
+          });
+          if (verifyErr) {
+            throw new Error('現在のパスワードが正しくありません。');
+          }
+
           const { error: updateErr } = await client.auth.updateUser({
             password: newPassword.trim()
           });
@@ -82,11 +103,20 @@ function AccountModal({ isOpen, onClose, profile, onLogout }) {
               .eq('id', profile.id);
           }
         } else {
+          const globalUsers = await getGlobalUsers();
+          const target = globalUsers.find(u => (u.email || '').toLowerCase() === (profile.email || '').toLowerCase());
+          if (target) {
+            const valid = await verifyPassword(currentPassword.trim(), target.password, target.temp_password);
+            if (!valid) {
+              throw new Error('現在のパスワードが正しくありません。');
+            }
+          }
           await changeUserPassword(profile.email, newPassword.trim());
         }
       }
 
       setSuccess('パスワードを変更しました！次回から新しいパスワードでログインしてください。');
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => {
@@ -180,6 +210,26 @@ function AccountModal({ isOpen, onClose, profile, onLogout }) {
           )}
 
           <div>
+            <label className="block text-[11px] font-bold text-slate-400 mb-1">現在のパスワード</label>
+            <div className="relative">
+              <input
+                type={showCurrentPassword ? 'text' : 'password'}
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                placeholder="現在のパスワードを入力"
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              >
+                {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
             <label className="block text-[11px] font-bold text-slate-400 mb-1">新しいパスワード</label>
             <div className="relative">
               <input
@@ -212,9 +262,9 @@ function AccountModal({ isOpen, onClose, profile, onLogout }) {
 
           <button
             type="submit"
-            disabled={loading || !newPassword || !confirmPassword}
+            disabled={loading || !currentPassword || !newPassword || !confirmPassword}
             className={`w-full py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg cursor-pointer ${
-              loading || !newPassword || !confirmPassword
+              loading || !currentPassword || !newPassword || !confirmPassword
                 ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
                 : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/20'
             }`}

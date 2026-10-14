@@ -388,12 +388,12 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         <button 
           onClick={handleManualSync}
           disabled={syncState?.saving || loading}
-          className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black transition-all ${
+          className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black transition-all whitespace-nowrap shrink-0 ${
             syncState?.saving || loading ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-500 shadow-xl'
           }`}
         >
-          <RefreshCw className={`w-5 h-5 ${syncState?.saving || loading ? 'animate-spin' : ''}`} />
-          {syncState?.saving || loading ? '同期中...' : 'クラウドから同期'}
+          <RefreshCw className={`w-5 h-5 shrink-0 ${syncState?.saving || loading ? 'animate-spin' : ''}`} />
+          <span className="whitespace-nowrap">{syncState?.saving || loading ? '同期中...' : 'クラウドから同期'}</span>
         </button>
       </header>
 

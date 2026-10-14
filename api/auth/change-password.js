@@ -140,7 +140,11 @@ export default async function handler(req, res) {
 
   try {
     const adminClient = getAdminClient();
-    const { email: rawEmail, newPassword } = req.body || {};
+    const { email: rawEmail, currentPassword, newPassword } = req.body || {};
+
+    if (!currentPassword || !currentPassword.trim()) {
+      return res.status(400).json({ error: '現在のパスワードを入力してください。' });
+    }
 
     if (!newPassword || !newPassword.trim()) {
       return res.status(400).json({ error: '新しいパスワードを入力してください。' });
@@ -172,7 +176,43 @@ export default async function handler(req, res) {
     }
 
     const { email: cleanEmail } = normalizeIdentifier(callerEmail);
+    const cleanCurrentPw = currentPassword.trim();
     const cleanPassword = newPassword.trim();
+
+    // 1.5 Verify Current Password
+    let currentPwVerified = false;
+    try {
+      const { data: authSignIn, error: signInErr } = await adminClient.auth.signInWithPassword({
+        email: cleanEmail,
+        password: cleanCurrentPw
+      });
+      if (!signInErr && authSignIn?.user) {
+        currentPwVerified = true;
+      }
+    } catch {}
+
+    if (!currentPwVerified) {
+      try {
+        const legacyUsers = await getLegacyUsers(adminClient);
+        const u = legacyUsers.find(x => 
+          (x.email && x.email.toLowerCase() === cleanEmail.toLowerCase()) || 
+          (x.email && x.email.toLowerCase() === callerEmail.toLowerCase())
+        );
+        if (u) {
+          const hashedCurr = await hashPassword(cleanCurrentPw);
+          if (u.password === hashedCurr || u.password === cleanCurrentPw) {
+            currentPwVerified = true;
+          } else if (u.temp_password && (u.temp_password.pass_plain === cleanCurrentPw || u.temp_password.hashed === hashedCurr)) {
+            currentPwVerified = true;
+          }
+        }
+      } catch {}
+    }
+
+    if (!currentPwVerified) {
+      return res.status(400).json({ error: '現在のパスワードが正しくありません。' });
+    }
+
     const hashed = await hashPassword(cleanPassword);
 
     // 2. Update Supabase Auth if account exists

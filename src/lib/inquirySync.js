@@ -18,6 +18,20 @@ export const categoryLabel = (id) =>
 
 // 全件取得（新しい順）
 export async function fetchInquiries() {
+  // 1. Try serverless API
+  try {
+    const res = await fetch('/api/inquiries');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.inquiries)) {
+        return data.inquiries;
+      }
+    }
+  } catch (err) {
+    console.warn('API fetchInquiries error, falling back to direct client:', err);
+  }
+
+  // 2. Direct Supabase fallback
   const { data, error } = await supabase
     .from('baseball_data')
     .select('id, upload_id, created_at')
@@ -39,15 +53,41 @@ export async function fetchInquiries() {
 // 新規送信
 // source: 'app'（ログイン後） | 'login'（ログイン画面・未ログイン）
 export async function submitInquiry({ source, loginId, displayName, contact, category, subject, message }) {
-  const body = {
-    source,
-    login_id: String(loginId || '').trim().toLowerCase(),
-    display_name: String(displayName || '').trim(),
+  const payload = {
+    source: source || 'app',
+    loginId: String(loginId || '').trim().toLowerCase(),
+    displayName: String(displayName || '').trim(),
     contact: String(contact || '').trim(),
     category: category || 'other',
     subject: String(subject || '').trim(),
     message: String(message || '').trim(),
-    status: 'open', // 'open' | 'answered' | 'closed'
+  };
+
+  // 1. Try serverless API
+  try {
+    const res = await fetch('/api/inquiries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) return true;
+    }
+  } catch (err) {
+    console.warn('API submitInquiry error, falling back to direct client:', err);
+  }
+
+  // 2. Direct Supabase fallback
+  const body = {
+    source: payload.source,
+    login_id: payload.loginId,
+    display_name: payload.displayName,
+    contact: payload.contact,
+    category: payload.category,
+    subject: payload.subject,
+    message: payload.message,
+    status: 'open',
     reply: null,
     replied_at: null,
     read_by_user: true,
@@ -66,6 +106,22 @@ export async function submitInquiry({ source, loginId, displayName, contact, cat
 
 // 1件更新（返信・ステータス変更・既読）
 export async function updateInquiry(inquiry, changes) {
+  // 1. Try serverless API
+  try {
+    const res = await fetch('/api/inquiries', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowId: inquiry.rowId, changes })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.inquiry) return data.inquiry;
+    }
+  } catch (err) {
+    console.warn('API updateInquiry error, falling back to direct client:', err);
+  }
+
+  // 2. Direct Supabase fallback
   const { rowId, ...rest } = inquiry;
   const next = { ...rest, ...changes, updated_at: new Date().toISOString() };
   const enc = await encryptPayload(next);
@@ -82,6 +138,21 @@ export async function updateInquiry(inquiry, changes) {
 export async function fetchMyInquiries(loginId) {
   const key = String(loginId || '').trim().toLowerCase();
   if (!key) return [];
+
+  // 1. Try serverless API with user_email filter
+  try {
+    const res = await fetch(`/api/inquiries?user_email=${encodeURIComponent(key)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.inquiries)) {
+        return data.inquiries;
+      }
+    }
+  } catch (err) {
+    console.warn('API fetchMyInquiries error, falling back to fetchInquiries:', err);
+  }
+
+  // 2. Fallback
   const all = await fetchInquiries();
-  return all.filter(i => i.source === 'app' && i.login_id === key);
+  return all.filter(i => (i.login_id || '').toLowerCase() === key);
 }

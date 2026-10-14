@@ -172,21 +172,21 @@ function Sidebar({
 
       <div className="px-4 pb-3 space-y-2 pt-2 border-t border-gray-800/60">
         {syncState.saving && (
-          <div className="flex items-center justify-center gap-2 text-blue-400 animate-pulse text-xs font-bold p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
-            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            <span>クラウドへ同期中...</span>
+          <div className="flex items-center justify-center gap-2 text-blue-400 animate-pulse text-xs font-bold p-2 bg-blue-500/10 rounded-lg border border-blue-500/20 whitespace-nowrap">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+            <span className="whitespace-nowrap">クラウドへ同期中...</span>
           </div>
         )}
         {!syncState.saving && (syncState.lastSuccess || syncState.cloudConnected) && (
-          <div className="flex items-center justify-center gap-2 text-emerald-400 text-xs font-bold p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>クラウド同期完了</span>
+          <div className="flex items-center justify-center gap-2 text-emerald-400 text-xs font-bold p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20 whitespace-nowrap">
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+            <span className="whitespace-nowrap">クラウド同期完了</span>
           </div>
         )}
         {!syncState.saving && !syncState.lastSuccess && !syncState.cloudConnected && (
-          <div className="flex items-center justify-center gap-2 text-slate-300 text-xs font-bold p-2 bg-slate-800 rounded-lg border border-slate-700">
-            <HardDrive className="w-3.5 h-3.5 text-blue-400" />
-            <span>ローカルモード (保存中)</span>
+          <div className="flex items-center justify-center gap-2 text-slate-300 text-xs font-bold p-2 bg-slate-800 rounded-lg border border-slate-700 whitespace-nowrap">
+            <HardDrive className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <span className="whitespace-nowrap">ローカルモード (保存中)</span>
           </div>
         )}
         <div className="text-[10px] text-gray-600 text-center">

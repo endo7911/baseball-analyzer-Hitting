@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { 
   BookOpen, UploadCloud, HardDrive, Users, User, Trophy, LineChart, 
   HelpCircle, ChevronDown, ChevronRight, CheckCircle2, ShieldCheck, 
-  Sparkles, FileText, Activity, Sliders, Maximize2, MousePointer, Filter, ArrowUpDown, Layers, Dumbbell
+  Sparkles, FileText, Activity, Sliders, Maximize2, MousePointer, Filter, ArrowUpDown, Layers, Dumbbell,
+  MessageSquare
 } from 'lucide-react';
+import InquiryPage from './InquiryPage';
 
-function GuidePage({ setActiveView }) {
+function GuidePage({ setActiveView, currentUser, profile }) {
   const [activeTab, setActiveTab] = useState('analysis');
   const [openFaq, setOpenFaq] = useState(null);
 
@@ -75,6 +77,7 @@ function GuidePage({ setActiveView }) {
           { id: 'cloud', label: '3. クラウド管理・プライバシー', icon: HardDrive },
           { id: 'faq', label: '4. よくある質問 (FAQ)', icon: HelpCircle },
           { id: 'changelog', label: '5. 更新履歴 (ver 2.0.0)', icon: Layers },
+          { id: 'inquiry', label: '6. お問い合わせ・ご要望', icon: MessageSquare },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -445,6 +448,11 @@ function GuidePage({ setActiveView }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Tab 6: Inquiry & Contact Page */}
+      {activeTab === 'inquiry' && (
+        <InquiryPage user={currentUser || profile} profile={profile || currentUser} />
       )}
     </div>
   );
