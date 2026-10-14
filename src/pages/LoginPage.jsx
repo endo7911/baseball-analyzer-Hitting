@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getGlobalUsers, verifyPassword } from '../lib/userSync';
+import { recordSecurityLog } from '../lib/auditLogger';
 import { LogIn, Shield, Eye, EyeOff, KeyRound } from 'lucide-react';
 
 function LoginPage({ onLogin }) {
@@ -62,6 +63,16 @@ function LoginPage({ onLogin }) {
           .eq('id', pendingLogin.userObj.id);
       }
 
+      // ログ記録
+      recordSecurityLog({
+        email: pendingLogin.userObj.email,
+        userId: pendingLogin.userObj.id,
+        teamId: pendingLogin.profileObj?.team_id,
+        eventType: 'password_changed',
+        status: 'info',
+        details: { action: 'user_reset_temp_password' }
+      });
+
       alert('新しいパスワードを設定しました。次回からは新しいパスワードでログインしてください。');
       finishLogin(pendingLogin.userObj, pendingLogin.profileObj);
     } catch (err) {
@@ -116,6 +127,14 @@ function LoginPage({ onLogin }) {
         // アカウント停止チェック
         if (profileData?.is_disabled) {
           await supabase.auth.signOut();
+          recordSecurityLog({
+            email: targetEmail,
+            userId: authUser.id,
+            teamId: profileData?.team_id,
+            eventType: 'account_disabled_try',
+            status: 'warning',
+            details: { reason: 'account_disabled' }
+          });
           setError('このアカウントは現在停止されています。管理者にお問い合わせください。');
           setLoading(false);
           return;
@@ -147,11 +166,29 @@ function LoginPage({ onLogin }) {
 
         // 一時パスワードでのログインか確認
         if (profileData?.temp_password_info?.is_temporary || profileData?.temp_password_info?.is_initial) {
+          recordSecurityLog({
+            email: userObj.email,
+            userId: userObj.id,
+            teamId: profileObj.team_id,
+            eventType: 'temp_login',
+            status: 'warning',
+            details: { temp_password_login: true }
+          });
           setPendingLogin({ userObj, profileObj });
           setPwStep('ask');
           setLoading(false);
           return;
         }
+
+        // ログイン成功ログ記録
+        recordSecurityLog({
+          email: userObj.email,
+          userId: userObj.id,
+          teamId: profileObj.team_id,
+          eventType: 'login_success',
+          status: 'success',
+          details: { method: 'supabase_auth' }
+        });
 
         finishLogin(userObj, profileObj);
         setLoading(false);
@@ -169,6 +206,13 @@ function LoginPage({ onLogin }) {
 
         if (foundGlobalUser) {
           if (foundGlobalUser.is_disabled) {
+            recordSecurityLog({
+              email: targetEmail,
+              teamId: foundGlobalUser.team_id,
+              eventType: 'account_disabled_try',
+              status: 'warning',
+              details: { reason: 'legacy_account_disabled' }
+            });
             setError('このアカウントは現在停止されています。管理者にお問い合わせください。');
             setLoading(false);
             return;
@@ -193,6 +237,15 @@ function LoginPage({ onLogin }) {
               }
             };
 
+            recordSecurityLog({
+              email: userObj.email,
+              userId: userObj.id,
+              teamId: profileObj.team_id,
+              eventType: 'login_success',
+              status: 'info',
+              details: { method: 'legacy_hash_fallback' }
+            });
+
             if (result === 'temp') {
               setPendingLogin({ userObj, profileObj });
               setPwStep('ask');
@@ -208,6 +261,14 @@ function LoginPage({ onLogin }) {
       } catch (legacyErr) {
         console.warn('Legacy login fallback check failed:', legacyErr);
       }
+
+      // 不正アクセス/ログイン失敗ログ記録
+      recordSecurityLog({
+        email: targetEmail,
+        eventType: 'login_failed',
+        status: 'danger',
+        details: { raw_input: rawInput, reason: 'password_mismatch_or_unknown_account' }
+      });
 
       setError('ID / メールアドレスまたはパスワードが間違っています。');
 

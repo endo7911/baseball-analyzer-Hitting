@@ -1,26 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { getGlobalUsers, saveGlobalUsers, hashPassword } from '../lib/userSync';
-import { Users, Plus, Trash2, Shield, RefreshCw, CheckCircle2, XCircle, Ban, PlayCircle, Key, Clock, Copy, Check, Target, Dumbbell, ArrowUpRight } from 'lucide-react';
+import { 
+  Users, Plus, Trash2, Shield, RefreshCw, CheckCircle2, XCircle, 
+  Ban, PlayCircle, Key, Clock, Copy, Check, Target, Dumbbell, 
+  ArrowUpRight, AlertTriangle, ShieldAlert, Monitor, Activity, Eye, UserCheck
+} from 'lucide-react';
 
 function AdminPanel() {
+  const [activeTab, setActiveTab] = useState('users'); // 'users' | 'logs'
   const [users, setUsers] = useState([]);
+  const [logs, setLogs] = useState([]);
   const [teamInputs, setTeamInputs] = useState({});
   const [loading, setLoading] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', password: '', team_id: '', role: 'user', display_name: '' });
   const [message, setMessage] = useState(null);
   const [tempModal, setTempModal] = useState(null);
+  const [singleMigrateModal, setSingleMigrateModal] = useState(null); // 個別移行モーダル
+  const [customInitPass, setCustomInitPass] = useState('');
   const [copied, setCopied] = useState(false);
   const [serverApiActive, setServerApiActive] = useState(true);
   const [migrating, setMigrating] = useState(false);
+
+  // ログフィルター
+  const [logAccountFilter, setLogAccountFilter] = useState('all');
+  const [logTypeFilter, setLogTypeFilter] = useState('all');
 
   useEffect(() => { 
     fetchUsers(); 
   }, []);
 
+  useEffect(() => {
+    if (activeTab === 'logs') {
+      fetchLogs();
+    }
+  }, [activeTab, logAccountFilter]);
+
   // API helper for Vercel Serverless Admin Functions
-  const callAdminApi = async (method, body = null) => {
+  const callAdminApi = async (method, body = null, queryParams = '') => {
     const { data: { session } } = await supabase.auth.getSession();
     const headers = { 'Content-Type': 'application/json' };
     if (session?.access_token) {
@@ -29,7 +48,7 @@ function AdminPanel() {
     const options = { method, headers };
     if (body) options.body = JSON.stringify(body);
 
-    const res = await fetch('/api/admin/users', options);
+    const res = await fetch(`/api/admin/users${queryParams}`, options);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || `HTTP ${res.status}`);
@@ -40,7 +59,6 @@ function AdminPanel() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      // 1. Try Vercel Serverless Function (Supabase Auth + profiles table)
       const data = await callAdminApi('GET');
       if (Array.isArray(data.users)) {
         setUsers(data.users);
@@ -54,11 +72,11 @@ function AdminPanel() {
         return;
       }
     } catch (e) {
-      console.warn("Vercel Admin API not available or errored, falling back to legacy storage:", e);
+      console.warn("Vercel Admin API fallback:", e);
       setServerApiActive(false);
     }
 
-    // 2. Fallback to legacy globalUsers
+    // Fallback to legacy globalUsers
     try {
       const globalUsers = await getGlobalUsers();
       setUsers(globalUsers);
@@ -74,21 +92,61 @@ function AdminPanel() {
     }
   };
 
-  const handleMigrateOldAccounts = async () => {
-    if (!confirm('旧形式で保存されていたすべてのアカウントを、Supabase Auth 公式ログイン機能へ移行しますか？\n（移行後、初期一時パスワードが割り当てられます）')) return;
-    
-    setMigrating(true);
+  const fetchLogs = async () => {
+    setLogsLoading(true);
     try {
-      const res = await fetch('/api/admin/migrate', { method: 'POST' });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || '移行に失敗しました');
+      const query = `?type=logs&email=${encodeURIComponent(logAccountFilter)}`;
+      const data = await callAdminApi('GET', null, query);
+      setLogs(data.logs || []);
+    } catch (err) {
+      console.error("Fetch logs error:", err);
+      // Fallback: direct Supabase query
+      try {
+        let q = supabase.from('access_logs').select('*').order('created_at', { ascending: false }).limit(200);
+        if (logAccountFilter !== 'all') {
+          q = q.eq('email', logAccountFilter.toLowerCase().trim());
+        }
+        const { data: fbLogs } = await q;
+        setLogs(fbLogs || []);
+      } catch (fbErr) {
+        setLogs([]);
+      }
+    } finally {
+      setLogsLoading(false);
+    }
+  };
 
-      alert(`移行処理が完了しました！（移行成功: ${result.migratedCount || 0}件）\nアカウント一覧を更新します。`);
+  // 個別アカウントの移行実行
+  const handleSingleMigrate = async (e) => {
+    e.preventDefault();
+    if (!singleMigrateModal) return;
+
+    setLoading(true);
+    try {
+      const res = await callAdminApi('POST', {
+        action: 'migrate_single',
+        email: singleMigrateModal.email,
+        password: customInitPass.trim() || undefined,
+        team_id: singleMigrateModal.team_id || 'Team A',
+        display_name: singleMigrateModal.display_name,
+        role: singleMigrateModal.role || 'user'
+      });
+
+      setTempModal({
+        email: res.email,
+        name: singleMigrateModal.display_name || res.email,
+        pass: res.tempPassword,
+        expiresAt: '初回ログイン時に新パスワードを設定可能'
+      });
+
+      setSingleMigrateModal(null);
+      setCustomInitPass('');
+      setMessage({ type: 'success', text: `「${singleMigrateModal.display_name || singleMigrateModal.email}」を Supabase Auth に個別移行しました！` });
       await fetchUsers();
     } catch (err) {
-      alert(`移行中にエラーが発生しました: ${err.message}\n※Vercel環境変数に SUPABASE_SERVICE_ROLE_KEY が設定されていることをご確認ください。`);
+      alert(`個別移行に失敗しました: ${err.message}`);
     } finally {
-      setMigrating(false);
+      setLoading(false);
     }
   };
 
@@ -98,66 +156,26 @@ function AdminPanel() {
     setLoading(true);
     
     try {
-      // 1. Try serverless API
       if (serverApiActive) {
-        try {
-          await callAdminApi('POST', {
-            email: newUser.email.trim(),
-            password: newUser.password.trim(),
-            team_id: newUser.team_id.trim() || 'Team A',
-            role: newUser.role,
-            display_name: newUser.display_name.trim() || newUser.email.trim()
-          });
+        await callAdminApi('POST', {
+          email: newUser.email.trim(),
+          password: newUser.password.trim(),
+          team_id: newUser.team_id.trim() || 'Team A',
+          role: newUser.role,
+          display_name: newUser.display_name.trim() || newUser.email.trim()
+        });
 
-          setMessage({ type: 'success', text: `アカウント「${newUser.email}」を Supabase Auth に追加しました。` });
-          setShowAdd(false);
-          setNewUser({ email: '', password: '', team_id: '', role: 'user', display_name: '' });
-          await fetchUsers();
-          setLoading(false);
-          setTimeout(() => setMessage(null), 4000);
-          return;
-        } catch (serverErr) {
-          console.warn("Server API add user failed:", serverErr);
-          setMessage({ type: 'error', text: `追加失敗: ${serverErr.message}` });
-          setLoading(false);
-          setTimeout(() => setMessage(null), 5000);
-          return;
-        }
-      }
-
-      // 2. Legacy fallback
-      const currentUsers = await getGlobalUsers();
-      const cleanEmail = newUser.email.trim().toLowerCase();
-
-      if (currentUsers.some(u => u.email.toLowerCase() === cleanEmail)) {
-        setMessage({ type: 'error', text: `アカウント「${cleanEmail}」は既に登録されています。` });
+        setMessage({ type: 'success', text: `アカウント「${newUser.email}」を登録しました。` });
+        setShowAdd(false);
+        setNewUser({ email: '', password: '', team_id: '', role: 'user', display_name: '' });
+        await fetchUsers();
         setLoading(false);
         setTimeout(() => setMessage(null), 4000);
         return;
       }
-
-      const newId = `user-${Date.now()}`;
-      const userObj = {
-        id: newId,
-        email: cleanEmail,
-        password: newUser.password.trim(),
-        display_name: newUser.display_name.trim() || cleanEmail,
-        role: newUser.role,
-        team_id: newUser.team_id.trim() || 'Team A',
-        is_disabled: false,
-        created_at: new Date().toISOString()
-      };
-
-      const updatedUsers = [...currentUsers, userObj];
-      await saveGlobalUsers(updatedUsers);
-
-      setMessage({ type: 'success', text: `アカウント「${cleanEmail}」を追加しました。` });
-      setShowAdd(false);
-      setNewUser({ email: '', password: '', team_id: '', role: 'user', display_name: '' });
-      setUsers(updatedUsers);
     } catch (err) {
       console.error("Add user error:", err);
-      setMessage({ type: 'error', text: 'ユーザーの追加に失敗しました。' });
+      setMessage({ type: 'error', text: `追加失敗: ${err.message}` });
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(null), 4000);
@@ -168,56 +186,23 @@ function AdminPanel() {
     setLoading(true);
     try {
       if (serverApiActive && user.id) {
-        try {
-          const res = await callAdminApi('PUT', {
-            id: user.id,
-            action: 'temp_password'
-          });
+        const res = await callAdminApi('PUT', {
+          id: user.id,
+          action: 'temp_password'
+        });
 
-          setTempModal({
-            email: user.email,
-            name: user.display_name || user.email,
-            pass: res.tempPassword,
-            expiresAt: res.expiresAt
-          });
-          setMessage({ type: 'success', text: `「${user.display_name || user.email}」に30分間有効の一時パスワードを発行しました。` });
-          await fetchUsers();
-          setLoading(false);
-          setTimeout(() => setMessage(null), 4000);
-          return;
-        } catch (serverErr) {
-          console.warn("Server API temp password error, trying legacy:", serverErr);
-        }
+        setTempModal({
+          email: user.email,
+          name: user.display_name || user.email,
+          pass: res.tempPassword,
+          expiresAt: res.expiresAt
+        });
+        setMessage({ type: 'success', text: `「${user.display_name || user.email}」に30分間有効の一時パスワードを発行しました。` });
+        await fetchUsers();
+        setLoading(false);
+        setTimeout(() => setMessage(null), 4000);
+        return;
       }
-
-      // Legacy fallback
-      const currentUsers = await getGlobalUsers();
-      const tempPass = 'tp' + Math.floor(100000 + Math.random() * 900000);
-      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-      const hashedTemp = await hashPassword(tempPass);
-
-      const updatedUsers = currentUsers.map(u => {
-        if (u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase()) {
-          return {
-            ...u,
-            temp_password: {
-              hashed: hashedTemp,
-              expires_at: expiresAt
-            }
-          };
-        }
-        return u;
-      });
-
-      await saveGlobalUsers(updatedUsers);
-      setUsers(updatedUsers);
-      setTempModal({
-        email: user.email,
-        name: user.display_name || user.email,
-        pass: tempPass,
-        expiresAt: expiresAt
-      });
-      setMessage({ type: 'success', text: `「${user.display_name || user.email}」に30分間有効の一時パスワードを発行しました。` });
     } catch (e) {
       console.error("Issue temp password error:", e);
       setMessage({ type: 'error', text: '一時パスワードの発行に失敗しました。' });
@@ -234,36 +219,15 @@ function AdminPanel() {
     if (!confirm(`「${user.display_name || user.email}」を${actionName}しますか？`)) return;
 
     setLoading(true);
-
     try {
       if (serverApiActive && user.id) {
-        try {
-          await callAdminApi('PUT', {
-            id: user.id,
-            updates: { is_disabled: newStatus }
-          });
-          setMessage({ type: 'success', text: `「${user.display_name || user.email}」を${actionName}しました。` });
-          await fetchUsers();
-          setLoading(false);
-          setTimeout(() => setMessage(null), 4000);
-          return;
-        } catch (sErr) {
-          console.warn("Server API toggle status failed:", sErr);
-        }
+        await callAdminApi('PUT', {
+          id: user.id,
+          updates: { is_disabled: newStatus }
+        });
+        setMessage({ type: 'success', text: `「${user.display_name || user.email}」を${actionName}しました。` });
+        await fetchUsers();
       }
-
-      // Legacy fallback
-      const currentUsers = await getGlobalUsers();
-      const updatedUsers = currentUsers.map(u => {
-        if (u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase()) {
-          return { ...u, is_disabled: newStatus };
-        }
-        return u;
-      });
-
-      await saveGlobalUsers(updatedUsers);
-      setUsers(updatedUsers);
-      setMessage({ type: 'success', text: `「${user.display_name || user.email}」を${actionName}しました。` });
     } catch (e) {
       console.error("Toggle user error:", e);
     } finally {
@@ -280,19 +244,7 @@ function AdminPanel() {
           updates: { team_id, team_name: team_id }
         });
         await fetchUsers();
-        return;
       }
-
-      // Legacy fallback
-      const currentUsers = await getGlobalUsers();
-      const updatedUsers = currentUsers.map(u => {
-        if (u.id === userId || u.email.toLowerCase() === email.toLowerCase()) {
-          return { ...u, team_id };
-        }
-        return u;
-      });
-      await saveGlobalUsers(updatedUsers);
-      setUsers(updatedUsers);
     } catch (e) {
       console.error("Update team error:", e);
     }
@@ -304,14 +256,9 @@ function AdminPanel() {
       pitching: user.allow_pitching !== false,
       bodyComp: user.allow_body_comp !== false
     };
-    const currentStatus = curPerms[moduleKey] !== false;
-    const newStatus = !currentStatus;
+    const newStatus = !curPerms[moduleKey];
 
-    const moduleLabels = {
-      hitting: '打撃分析',
-      pitching: '投手分析',
-      bodyComp: '体組成分析'
-    };
+    const moduleLabels = { hitting: '打撃分析', pitching: '投手分析', bodyComp: '体組成分析' };
     const label = moduleLabels[moduleKey] || moduleKey;
     const actionText = newStatus ? 'オン（表示）' : 'オフ（非表示）';
 
@@ -326,42 +273,10 @@ function AdminPanel() {
           id: user.id,
           updates: { [updateField]: newStatus }
         });
-
         setMessage({ type: 'success', text: `「${user.display_name || user.email}」の【${label}】を${actionText}に設定しました。` });
         await fetchUsers();
         setTimeout(() => setMessage(null), 3000);
-        return;
       }
-
-      // Legacy fallback
-      const currentUsers = await getGlobalUsers();
-      const updatedUsers = currentUsers.map(u => {
-        if (u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase()) {
-          const userPerms = u.permissions || {
-            hitting: u.allow_hitting !== false,
-            pitching: u.allow_pitching !== false,
-            bodyComp: u.allow_body_comp !== false
-          };
-          const newPerms = {
-            ...userPerms,
-            [moduleKey]: newStatus
-          };
-          return {
-            ...u,
-            allow_hitting: newPerms.hitting,
-            allow_pitching: newPerms.pitching,
-            allow_body_comp: newPerms.bodyComp,
-            permissions: newPerms
-          };
-        }
-        return u;
-      });
-
-      await saveGlobalUsers(updatedUsers);
-      setUsers(updatedUsers);
-
-      setMessage({ type: 'success', text: `「${user.display_name || user.email}」の【${label}】を${actionText}に設定しました。` });
-      setTimeout(() => setMessage(null), 3000);
     } catch (e) {
       console.error("Toggle module permission error:", e);
     }
@@ -369,26 +284,13 @@ function AdminPanel() {
 
   const deleteUser = async (userId, email) => {
     if (!confirm(`「${email}」のアカウントを削除しますか？`)) return;
-    
     setLoading(true);
-
     try {
       if (serverApiActive && userId) {
         await callAdminApi('DELETE', { id: userId });
         setMessage({ type: 'success', text: `「${email}」を削除しました。` });
         await fetchUsers();
-        setLoading(false);
-        setTimeout(() => setMessage(null), 4000);
-        return;
       }
-
-      // Legacy fallback
-      const currentUsers = await getGlobalUsers();
-      const updatedUsers = currentUsers.filter(u => u.id !== userId && u.email.toLowerCase() !== email.toLowerCase());
-
-      await saveGlobalUsers(updatedUsers);
-      setUsers(updatedUsers);
-      setMessage({ type: 'success', text: `「${email}」を削除しました。` });
     } catch (err) {
       console.error("Delete user error:", err);
     } finally {
@@ -403,6 +305,17 @@ function AdminPanel() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // ログフィルター適用
+  const filteredLogs = logs.filter(log => {
+    if (logTypeFilter === 'all') return true;
+    if (logTypeFilter === 'danger') return log.status === 'danger' || log.event_type === 'login_failed';
+    if (logTypeFilter === 'login') return log.event_type.startsWith('login_');
+    return log.event_type === logTypeFilter;
+  });
+
+  // 不審なアクセスの検知件数（直近のログイン失敗など）
+  const suspiciousCount = logs.filter(l => l.status === 'danger' || l.event_type === 'login_failed' || l.event_type === 'account_disabled_try').length;
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
       {/* Header */}
@@ -415,54 +328,73 @@ function AdminPanel() {
             <h1 className="text-2xl font-bold text-white tracking-tight">管理者パネル</h1>
           </div>
           <p className="text-sm text-slate-400">
-            Supabase Auth & Vercel Serverless による安全なアカウント管理・閲覧制限設定
+            個別アカウント移行・セキュリティ監視・不正アクセス検知
           </p>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
           <button
-            onClick={fetchUsers}
-            disabled={loading}
+            onClick={() => { fetchUsers(); if (activeTab === 'logs') fetchLogs(); }}
+            disabled={loading || logsLoading}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-sm font-medium transition cursor-pointer"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading || logsLoading ? 'animate-spin' : ''}`} />
             更新
           </button>
-          <button
-            onClick={() => setShowAdd(!showAdd)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg shadow-blue-500/20 transition cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            アカウント追加
-          </button>
-          <button
-            onClick={handleMigrateOldAccounts}
-            disabled={migrating}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition cursor-pointer"
-            title="旧形式の暗号化アカウントを Supabase Auth 公式ユーザーへ一括インポートします"
-          >
-            <ArrowUpRight className={`w-4 h-4 ${migrating ? 'animate-spin' : ''}`} />
-            {migrating ? '移行中...' : '旧アカウントをSupabase Authへ移行'}
-          </button>
+          {activeTab === 'users' && (
+            <button
+              onClick={() => setShowAdd(!showAdd)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg shadow-blue-500/20 transition cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              アカウント追加
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Mode Banner */}
-      <div className={`p-4 rounded-2xl border text-xs flex items-center justify-between gap-4 ${
-        serverApiActive 
-          ? 'bg-blue-950/40 border-blue-500/30 text-blue-300' 
-          : 'bg-amber-950/40 border-amber-500/30 text-amber-300'
-      }`}>
+      {/* Tab Navigation */}
+      <div className="flex gap-2 border-b border-slate-800 pb-3">
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer ${
+            activeTab === 'users'
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+              : 'bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          アカウント管理（{users.length}件）
+        </button>
+
+        <button
+          onClick={() => setActiveTab('logs')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition cursor-pointer ${
+            activeTab === 'logs'
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+              : 'bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <ShieldAlert className="w-4 h-4" />
+          アクセス監視ログ
+          {suspiciousCount > 0 && (
+            <span className="px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-black animate-pulse">
+              {suspiciousCount}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Mode Status Banner */}
+      <div className="p-4 rounded-2xl border text-xs flex items-center justify-between gap-4 bg-blue-950/40 border-blue-500/30 text-blue-300">
         <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${serverApiActive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="font-bold">
-            {serverApiActive 
-              ? '【高セキュリティモード】Supabase Auth ＆ Vercel サーバーサイドAPI 稼働中' 
-              : '【クライアント暗号モード（移行準備中）】Vercel 環境変数 SUPABASE_SERVICE_ROLE_KEY を設定すると完全サーバー管理へ切り替わります'}
+            【高セキュリティ稼働中】パスワードサーバー照合 ＆ チーム別行レベルセキュリティ（RLS）適用中
           </span>
         </div>
         <span className="text-slate-400 text-[11px]">
-          パスワードはサーバー照合 / DB行レベルセキュリティ（RLS）で保護
+          管理操作はすべて Vercel サーバーレスAPIで保護されています
         </span>
       </div>
 
@@ -478,253 +410,437 @@ function AdminPanel() {
         </div>
       )}
 
-      {/* Add User Modal / Box */}
-      {showAdd && (
-        <div className="bg-slate-800/80 backdrop-blur border border-slate-700 rounded-3xl p-6 shadow-xl animate-fadeIn">
-          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <Plus className="w-5 h-5 text-blue-400" />
-            新しいアカウントを追加
-          </h2>
-          <form onSubmit={addUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                ユーザーID または メールアドレス *
-              </label>
-              <input
-                type="text"
-                value={newUser.email}
-                onChange={e => setNewUser({ ...newUser, email: e.target.value })}
-                placeholder="例: teamA または user@example.com"
-                required
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-              <p className="text-[11px] text-slate-500 mt-1">※メールアドレス以外のIDもそのまま利用可能です</p>
+      {/* TAB 1: USERS MANAGEMENT */}
+      {activeTab === 'users' && (
+        <>
+          {showAdd && (
+            <div className="bg-slate-800/80 backdrop-blur border border-slate-700 rounded-3xl p-6 shadow-xl animate-fadeIn">
+              <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-blue-400" />
+                新しいアカウントを追加
+              </h2>
+              <form onSubmit={addUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    ユーザーID または メールアドレス *
+                  </label>
+                  <input
+                    type="text"
+                    value={newUser.email}
+                    onChange={e => setNewUser({ ...newUser, email: e.target.value })}
+                    placeholder="例: teamA または user@example.com"
+                    required
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">※メールアドレス以外のIDもそのまま使えます</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    初期パスワード *
+                  </label>
+                  <input
+                    type="password"
+                    value={newUser.password}
+                    onChange={e => setNewUser({ ...newUser, password: e.target.value })}
+                    placeholder="8文字以上"
+                    required
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    表示名（チーム名・選手名など）
+                  </label>
+                  <input
+                    type="text"
+                    value={newUser.display_name}
+                    onChange={e => setNewUser({ ...newUser, display_name: e.target.value })}
+                    placeholder="例: ○○高校 野球部"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    所属チームID（データ分離用）
+                  </label>
+                  <input
+                    type="text"
+                    value={newUser.team_id}
+                    onChange={e => setNewUser({ ...newUser, team_id: e.target.value })}
+                    placeholder="例: Team A"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div className="md:col-span-2 flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdd(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition cursor-pointer"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-bold shadow-lg shadow-blue-500/20 transition cursor-pointer"
+                  >
+                    {loading ? '保存中...' : '登録する'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          <div className="bg-slate-800/60 backdrop-blur border border-slate-700/60 rounded-3xl overflow-hidden shadow-xl">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="bg-slate-900/60 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-700/60">
+                  <tr>
+                    <th className="px-6 py-4">ID / 表示名</th>
+                    <th className="px-6 py-4">所属チーム</th>
+                    <th className="px-6 py-4">認証ステータス</th>
+                    <th className="px-6 py-4 text-center">モジュール表示設定</th>
+                    <th className="px-6 py-4 text-center">状態</th>
+                    <th className="px-6 py-4 text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/40">
+                  {users.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="px-6 py-8 text-center text-slate-500">
+                        登録されているアカウントがありません
+                      </td>
+                    </tr>
+                  ) : (
+                    users.map(u => {
+                      const isCurrentDisabled = !!u.is_disabled;
+                      const perms = u.permissions || {
+                        hitting: u.allow_hitting !== false,
+                        pitching: u.allow_pitching !== false,
+                        bodyComp: u.allow_body_comp !== false
+                      };
+
+                      return (
+                        <tr key={u.id || u.email} className={`hover:bg-slate-750/30 transition ${isCurrentDisabled ? 'opacity-50 bg-red-950/10' : ''}`}>
+                          <td className="px-6 py-4">
+                            <div className="font-semibold text-white flex items-center gap-2">
+                              {u.display_name || u.username || u.email}
+                              {u.role === 'admin' && (
+                                <span className="px-2 py-0.5 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-[10px] font-bold">
+                                  管理者
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-slate-400 font-mono">
+                              {u.email?.includes('@baseball-analyzer.internal') ? u.email.replace('@baseball-analyzer.internal', '') : u.email}
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <input
+                              type="text"
+                              value={teamInputs[u.id || u.email] ?? (u.team_id || '')}
+                              onChange={e => setTeamInputs({ ...teamInputs, [u.id || u.email]: e.target.value })}
+                              onBlur={() => updateTeam(u.id, u.email, teamInputs[u.id || u.email])}
+                              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white w-28 focus:ring-1 focus:ring-blue-500 outline-none"
+                            />
+                          </td>
+
+                          {/* 認証移行ステータス ＆ 個別移行ボタン */}
+                          <td className="px-6 py-4">
+                            {u.is_migrated ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
+                                <UserCheck className="w-3.5 h-3.5" />
+                                Supabase Auth連携済
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => setSingleMigrateModal(u)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 transition cursor-pointer shadow-sm"
+                                title="このアカウントだけを新認証へ個別移行"
+                              >
+                                <ArrowUpRight className="w-3.5 h-3.5" />
+                                個別移行する
+                              </button>
+                            )}
+                          </td>
+
+                          {/* Module toggles */}
+                          <td className="px-6 py-4">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => toggleModulePermission(u, 'hitting')}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                                  perms.hitting ? 'bg-blue-600/20 border-blue-500/40 text-blue-300' : 'bg-slate-800 border-slate-700 text-slate-500'
+                                }`}
+                              >
+                                <Target className="w-3 h-3" /> 打撃
+                              </button>
+                              <button
+                                onClick={() => toggleModulePermission(u, 'pitching')}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                                  perms.pitching ? 'bg-purple-600/20 border-purple-500/40 text-purple-300' : 'bg-slate-800 border-slate-700 text-slate-500'
+                                }`}
+                              >
+                                投手
+                              </button>
+                              <button
+                                onClick={() => toggleModulePermission(u, 'bodyComp')}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                                  perms.bodyComp ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-500'
+                                }`}
+                              >
+                                <Dumbbell className="w-3 h-3" /> 体組成
+                              </button>
+                            </div>
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-6 py-4 text-center">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                              isCurrentDisabled ? 'bg-red-500/20 border border-red-500/40 text-red-400' : 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${isCurrentDisabled ? 'bg-red-400' : 'bg-emerald-400'}`} />
+                              {isCurrentDisabled ? '停止中' : '稼働中'}
+                            </span>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => issueTempPassword(u)}
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 hover:text-amber-300 transition cursor-pointer"
+                                title="30分間有効の一時パスワードを発行"
+                              >
+                                <Key className="w-4 h-4" />
+                              </button>
+
+                              <button
+                                onClick={() => toggleUserStatus(u)}
+                                className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                                  isCurrentDisabled ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-amber-500/20 border-amber-500/40 text-amber-400'
+                                }`}
+                                title={isCurrentDisabled ? 'アカウントを再開' : 'アカウントを一時停止'}
+                              >
+                                {isCurrentDisabled ? <PlayCircle className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                              </button>
+
+                              <button
+                                onClick={() => deleteUser(u.id, u.email)}
+                                className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 transition cursor-pointer"
+                                title="アカウントを完全に削除"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* TAB 2: SECURITY ACCESS & AUDIT LOGS */}
+      {activeTab === 'logs' && (
+        <div className="space-y-4 animate-fadeIn">
+          {/* Filters Bar */}
+          <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  対象アカウント絞り込み
+                </label>
+                <select
+                  value={logAccountFilter}
+                  onChange={e => setLogAccountFilter(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="all">すべてのアカウント</option>
+                  {users.map(u => (
+                    <option key={u.email} value={u.email}>
+                      {u.display_name || u.email} ({u.email?.includes('@baseball-analyzer.internal') ? u.email.replace('@baseball-analyzer.internal', '') : u.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  イベント種別
+                </label>
+                <select
+                  value={logTypeFilter}
+                  onChange={e => setLogTypeFilter(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="all">すべてのイベント</option>
+                  <option value="danger">⚠️ 不正・ログイン失敗のみ</option>
+                  <option value="login">ログイン全般</option>
+                  <option value="password_changed">パスワード変更</option>
+                  <option value="account_disabled_try">停止中アカウントのアクセス試行</option>
+                </select>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                初期パスワード *
-              </label>
-              <input
-                type="password"
-                value={newUser.password}
-                onChange={e => setNewUser({ ...newUser, password: e.target.value })}
-                placeholder="8文字以上"
-                required
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+            <div className="text-xs text-slate-400">
+              最新 <span className="text-white font-bold">{filteredLogs.length}</span> 件のアクセスログ
             </div>
+          </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                表示名（チーム名・選手名など）
-              </label>
-              <input
-                type="text"
-                value={newUser.display_name}
-                onChange={e => setNewUser({ ...newUser, display_name: e.target.value })}
-                placeholder="例: ○○高校 野球部"
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            </div>
+          {/* Logs Table */}
+          <div className="bg-slate-800/60 backdrop-blur border border-slate-700/60 rounded-3xl overflow-hidden shadow-xl">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="bg-slate-900/60 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-700/60">
+                  <tr>
+                    <th className="px-6 py-4">日時</th>
+                    <th className="px-6 py-4">対象アカウント</th>
+                    <th className="px-6 py-4">イベント内容</th>
+                    <th className="px-6 py-4">判定結果</th>
+                    <th className="px-6 py-4">端末情報（ブラウザ/OS）</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/40">
+                  {filteredLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="px-6 py-12 text-center text-slate-500">
+                        {logsLoading ? 'ログを取得中...' : '該当するアクセスログはありません'}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredLogs.map(log => {
+                      const isDanger = log.status === 'danger' || log.event_type === 'login_failed';
+                      const isWarning = log.status === 'warning' || log.event_type === 'account_disabled_try' || log.event_type === 'temp_login';
 
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                所属チームID（データ分離用）
-              </label>
-              <input
-                type="text"
-                value={newUser.team_id}
-                onChange={e => setNewUser({ ...newUser, team_id: e.target.value })}
-                placeholder="例: Team A"
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            </div>
+                      const eventLabels = {
+                        login_success: 'ログイン成功',
+                        login_failed: 'ログイン失敗（パスワード不一致）',
+                        temp_login: '一時パスワードでログイン',
+                        password_changed: 'パスワード変更',
+                        account_disabled_try: '停止中アカウントによるログイン試行',
+                        migrated_to_auth: 'Supabase Authへ移行完了',
+                        data_upload: 'データ保存'
+                      };
 
-            <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowAdd(false)}
-                className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition cursor-pointer"
-              >
-                キャンセル
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-bold shadow-lg shadow-blue-500/20 transition cursor-pointer"
-              >
-                {loading ? '保存中...' : '登録する'}
-              </button>
+                      return (
+                        <tr key={log.id} className={`hover:bg-slate-750/30 transition ${isDanger ? 'bg-red-950/20' : (isWarning ? 'bg-amber-950/15' : '')}`}>
+                          {/* Date */}
+                          <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400 font-mono">
+                            {new Date(log.created_at).toLocaleString('ja-JP')}
+                          </td>
+
+                          {/* Account */}
+                          <td className="px-6 py-4">
+                            <div className="font-semibold text-white">
+                              {log.email?.includes('@baseball-analyzer.internal') ? log.email.replace('@baseball-analyzer.internal', '') : log.email}
+                            </div>
+                            {log.team_id && (
+                              <div className="text-[11px] text-slate-400">{log.team_id}</div>
+                            )}
+                          </td>
+
+                          {/* Event */}
+                          <td className="px-6 py-4 text-xs">
+                            <span className="font-medium text-slate-200">
+                              {eventLabels[log.event_type] || log.event_type}
+                            </span>
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                              isDanger
+                                ? 'bg-red-500/20 border border-red-500/40 text-red-400'
+                                : (isWarning ? 'bg-amber-500/20 border border-amber-500/40 text-amber-400' : 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400')
+                            }`}>
+                              {isDanger ? '⚠️ 不正アクセス' : (isWarning ? '注意' : '正常')}
+                            </span>
+                          </td>
+
+                          {/* User Agent */}
+                          <td className="px-6 py-4 text-xs text-slate-400 max-w-xs truncate" title={log.user_agent}>
+                            {log.user_agent ? log.user_agent.split(') ')[0] + ')' : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
-          </form>
+          </div>
         </div>
       )}
 
-      {/* Users Table */}
-      <div className="bg-slate-800/60 backdrop-blur border border-slate-700/60 rounded-3xl overflow-hidden shadow-xl">
-        <div className="px-6 py-4 border-b border-slate-700/60 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-blue-400" />
-            <h2 className="text-base font-bold text-white">登録アカウント一覧（{users.length}件）</h2>
+      {/* 個別移行モーダル */}
+      {singleMigrateModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-3xl p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400">
+                <ArrowUpRight className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">アカウントの個別移行</h3>
+                <p className="text-xs text-slate-400">このアカウントだけを新認証（Supabase Auth）へ移行します</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSingleMigrate} className="space-y-4">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4">
+                <div className="text-xs text-slate-400 mb-1">対象アカウント</div>
+                <div className="text-sm font-bold text-white">{singleMigrateModal.display_name || singleMigrateModal.email}</div>
+                <div className="text-xs text-slate-400 font-mono mt-0.5">{singleMigrateModal.email}</div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  初期パスワードの指定（空欄の場合は自動発行）
+                </label>
+                <input
+                  type="text"
+                  value={customInitPass}
+                  onChange={e => setCustomInitPass(e.target.value)}
+                  placeholder="空欄の場合は安全なランダムパスワードを自動発行"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  ※移行完了時にパスワードが表示されますので、利用者にそのままお伝えいただけます。
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setSingleMigrateModal(null); setCustomInitPass(''); }}
+                  className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium transition cursor-pointer"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-bold shadow-lg shadow-blue-500/20 transition cursor-pointer"
+                >
+                  {loading ? '移行処理中...' : 'このアカウントを移行する'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-900/60 text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-700/60">
-              <tr>
-                <th className="px-6 py-4">ID / 表示名</th>
-                <th className="px-6 py-4">所属チーム</th>
-                <th className="px-6 py-4">権限</th>
-                <th className="px-6 py-4 text-center">モジュール表示設定</th>
-                <th className="px-6 py-4 text-center">ステータス</th>
-                <th className="px-6 py-4 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700/40">
-              {users.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-slate-500">
-                    登録されているアカウントがありません
-                  </td>
-                </tr>
-              ) : (
-                users.map(u => {
-                  const isCurrentDisabled = !!u.is_disabled;
-                  const perms = u.permissions || {
-                    hitting: u.allow_hitting !== false,
-                    pitching: u.allow_pitching !== false,
-                    bodyComp: u.allow_body_comp !== false
-                  };
-
-                  return (
-                    <tr key={u.id || u.email} className={`hover:bg-slate-750/30 transition ${isCurrentDisabled ? 'opacity-50 bg-red-950/10' : ''}`}>
-                      <td className="px-6 py-4">
-                        <div className="font-semibold text-white flex items-center gap-2">
-                          {u.display_name || u.username || u.email}
-                          {u.role === 'admin' && (
-                            <span className="px-2 py-0.5 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-[10px] font-bold">
-                              管理者
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-slate-400 font-mono">
-                          {u.email?.includes('@baseball-analyzer.internal') ? u.email.replace('@baseball-analyzer.internal', '') : u.email}
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={teamInputs[u.id || u.email] ?? (u.team_id || '')}
-                            onChange={e => setTeamInputs({ ...teamInputs, [u.id || u.email]: e.target.value })}
-                            onBlur={() => updateTeam(u.id, u.email, teamInputs[u.id || u.email])}
-                            className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white w-28 focus:ring-1 focus:ring-blue-500 outline-none"
-                          />
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4 text-xs">
-                        <span className="text-slate-400 capitalize">{u.role || 'user'}</span>
-                      </td>
-
-                      {/* Analysis Modules Permissions */}
-                      <td className="px-6 py-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => toggleModulePermission(u, 'hitting')}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
-                              perms.hitting
-                                ? 'bg-blue-600/20 border-blue-500/40 text-blue-300 hover:bg-blue-600/30'
-                                : 'bg-slate-800 border-slate-700 text-slate-500 hover:bg-slate-700'
-                            }`}
-                            title="打撃分析の表示切り替え"
-                          >
-                            <Target className="w-3 h-3" />
-                            打撃
-                          </button>
-
-                          <button
-                            onClick={() => toggleModulePermission(u, 'pitching')}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
-                              perms.pitching
-                                ? 'bg-purple-600/20 border-purple-500/40 text-purple-300 hover:bg-purple-600/30'
-                                : 'bg-slate-800 border-slate-700 text-slate-500 hover:bg-slate-700'
-                            }`}
-                            title="投手分析の表示切り替え"
-                          >
-                            投手
-                          </button>
-
-                          <button
-                            onClick={() => toggleModulePermission(u, 'bodyComp')}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
-                              perms.bodyComp
-                                ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/30'
-                                : 'bg-slate-800 border-slate-700 text-slate-500 hover:bg-slate-700'
-                            }`}
-                            title="体組成分析の表示切り替え"
-                          >
-                            <Dumbbell className="w-3 h-3" />
-                            体組成
-                          </button>
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4 text-center">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          isCurrentDisabled
-                            ? 'bg-red-500/20 border border-red-500/40 text-red-400'
-                            : 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${isCurrentDisabled ? 'bg-red-400' : 'bg-emerald-400'}`} />
-                          {isCurrentDisabled ? '停止中' : '稼働中'}
-                        </span>
-                      </td>
-
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => issueTempPassword(u)}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 hover:text-amber-300 transition cursor-pointer"
-                            title="30分間有効の一時パスワードを発行"
-                          >
-                            <Key className="w-4 h-4" />
-                          </button>
-
-                          <button
-                            onClick={() => toggleUserStatus(u)}
-                            className={`p-1.5 rounded-lg border transition cursor-pointer ${
-                              isCurrentDisabled
-                                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/30'
-                                : 'bg-amber-500/20 border-amber-500/40 text-amber-400 hover:bg-amber-500/30'
-                            }`}
-                            title={isCurrentDisabled ? 'アカウントを再開' : 'アカウントを一時停止'}
-                          >
-                            {isCurrentDisabled ? <PlayCircle className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                          </button>
-
-                          <button
-                            onClick={() => deleteUser(u.id, u.email)}
-                            className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 transition cursor-pointer"
-                            title="アカウントを完全に削除"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Temp Password Issued Modal */}
+      {/* Temp Password / Migration Success Modal */}
       {tempModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
           <div className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-3xl p-6 shadow-2xl">
@@ -733,8 +849,8 @@ function AdminPanel() {
                 <Clock className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white">一時パスワードを発行しました</h3>
-                <p className="text-xs text-slate-400">有効期限: 発行から30分間</p>
+                <h3 className="text-lg font-bold text-white">パスワードを発行しました</h3>
+                <p className="text-xs text-slate-400">{tempModal.expiresAt}</p>
               </div>
             </div>
 
@@ -742,7 +858,7 @@ function AdminPanel() {
               <div className="text-xs text-slate-400 mb-1">対象アカウント</div>
               <div className="text-sm font-semibold text-white mb-3">{tempModal.name} ({tempModal.email})</div>
 
-              <div className="text-xs text-slate-400 mb-1">発行された一時パスワード</div>
+              <div className="text-xs text-slate-400 mb-1">発行されたパスワード</div>
               <div className="flex items-center justify-between bg-slate-950 px-3.5 py-2.5 rounded-xl border border-slate-800">
                 <span className="font-mono text-lg font-bold text-amber-400 tracking-wider">
                   {tempModal.pass}
@@ -758,7 +874,7 @@ function AdminPanel() {
             </div>
 
             <div className="text-xs text-slate-400 mb-6 leading-relaxed">
-              利用者にこのパスワードを伝えてください。初回ログイン時に、本人による新しいパスワードへの更新画面が表示されます。
+              利用者にこのパスワードをお伝えください。ログイン後、必要に応じて本人による新しいパスワードへの変更が可能です。
             </div>
 
             <button
