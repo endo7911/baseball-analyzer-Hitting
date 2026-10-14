@@ -415,15 +415,19 @@ export default async function handler(req, res) {
         }
 
         // 4. Log to access_logs
-        await adminClient.from('access_logs').insert([{
-          user_id: finalUserId,
-          email,
-          team_id: team_id || 'Team A',
-          event_type: 'migrated_to_auth',
-          status: 'success',
-          details: { admin_action: true, issuer: authCheck.adminUser.email },
-          created_at: new Date().toISOString()
-        }]).catch(() => {});
+        try {
+          await adminClient.from('access_logs').insert([{
+            user_id: finalUserId,
+            email,
+            team_id: team_id || 'Team A',
+            event_type: 'migrated_to_auth',
+            status: 'success',
+            details: { admin_action: true, issuer: authCheck.adminUser.email },
+            created_at: new Date().toISOString()
+          }]);
+        } catch (logErr) {
+          console.warn('access_logs insert error:', logErr);
+        }
 
         return res.status(200).json({
           message: `「${username}」を Supabase Auth に個別移行しました。`,
@@ -587,15 +591,19 @@ export default async function handler(req, res) {
         }
 
         // 4. Record in access_logs
-        await adminClient.from('access_logs').insert([{
-          user_id: finalUserId || null,
-          email: cleanEmail,
-          team_id: req.body.team_id || 'Team A',
-          event_type: 'temp_password_issued',
-          status: 'warning',
-          details: { issuer: authCheck.adminUser.email, expires_at: expiresAt },
-          created_at: new Date().toISOString()
-        }]).catch(() => {});
+        try {
+          await adminClient.from('access_logs').insert([{
+            user_id: finalUserId || null,
+            email: cleanEmail,
+            team_id: req.body.team_id || 'Team A',
+            event_type: 'temp_password_issued',
+            status: 'warning',
+            details: { issuer: authCheck.adminUser.email, expires_at: expiresAt },
+            created_at: new Date().toISOString()
+          }]);
+        } catch (logErr) {
+          console.warn('temp_password access_logs insert error:', logErr);
+        }
 
         return res.status(200).json({
           message: 'Temporary password issued.',
@@ -674,8 +682,16 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'User ID is required.' });
       }
 
-      await adminClient.auth.admin.deleteUser(id).catch(() => {});
-      await adminClient.from('profiles').delete().eq('id', id).catch(() => {});
+      try {
+        await adminClient.auth.admin.deleteUser(id);
+      } catch (err) {
+        console.warn('Delete auth user warning:', err);
+      }
+      try {
+        await adminClient.from('profiles').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Delete profile warning:', err);
+      }
 
       try {
         const legacyUsers = await getLegacyUsers(adminClient);
