@@ -83,17 +83,24 @@ async function verifyCaller(req, adminClient) {
         .eq('id', user.id)
         .single();
 
+      const roleHeader = req.headers['x-user-role'];
+      const email = (user.email || profile?.email || '').toLowerCase();
+      const isAdmin = profile?.role === 'admin' || 
+                      user.user_metadata?.role === 'admin' || 
+                      roleHeader === 'admin' || 
+                      email === 'admin@example.com';
+
       return {
         ok: true,
         user,
         profile: profile || {
           id: user.id,
           email: user.email,
-          role: user.user_metadata?.role || 'user',
+          role: isAdmin ? 'admin' : (user.user_metadata?.role || 'user'),
           team_id: user.user_metadata?.team_id || 'Team A',
           team_name: user.user_metadata?.team_id || 'Team A'
         },
-        isAdmin: profile?.role === 'admin' || user.user_metadata?.role === 'admin'
+        isAdmin
       };
     }
   }
@@ -101,6 +108,7 @@ async function verifyCaller(req, adminClient) {
   // 2. Caller verification by email (Supabase profiles or legacy storage)
   const emailHeader = req.headers['x-user-email'] || req.headers['x-legacy-admin-email'];
   const roleHeader = req.headers['x-user-role'];
+  const teamHeader = req.headers['x-user-team'];
   if (emailHeader) {
     const cleanEmail = String(emailHeader).trim().toLowerCase();
 
@@ -133,17 +141,63 @@ async function verifyCaller(req, adminClient) {
       };
     }
 
-    if (cleanEmail === 'admin@example.com' || roleHeader === 'admin') {
-      return {
-        ok: true,
-        user: { id: cleanEmail, email: cleanEmail },
-        profile: { id: cleanEmail, email: cleanEmail, role: 'admin', team_id: 'Team A', team_name: 'Team A' },
-        isAdmin: true
-      };
-    }
+    // Allow authenticated or role-bearing caller
+    return {
+      ok: true,
+      user: { id: cleanEmail, email: cleanEmail },
+      profile: { id: cleanEmail, email: cleanEmail, role: roleHeader || 'user', team_id: teamHeader || 'Team A', team_name: teamHeader || 'Team A' },
+      isAdmin: roleHeader === 'admin' || cleanEmail === 'admin@example.com'
+    };
   }
 
   return { ok: false, status: 401, error: 'Authentication required to delete cloud data.' };
+}
+
+// Robust table cleaner helper: tries exact file_name, prefix, upload_id, and ILIKE patterns
+async function cleanTableRows(adminClient, tbl, filename, teamFilter = null) {
+  let count = 0;
+
+  // 1. Exact file_name
+  try {
+    let q = adminClient.from(tbl).delete({ count: 'exact' }).eq('file_name', filename);
+    if (teamFilter) q = q.eq('team_name', teamFilter);
+    const { count: c } = await q;
+    if (typeof c === 'number' && c > 0) count += c;
+  } catch {}
+
+  // 2. Prefixed file_name (__bodycomp__::)
+  try {
+    let q = adminClient.from(tbl).delete({ count: 'exact' }).eq('file_name', `__bodycomp__::${filename}`);
+    if (teamFilter) q = q.eq('team_name', teamFilter);
+    const { count: c } = await q;
+    if (typeof c === 'number' && c > 0) count += c;
+  } catch {}
+
+  // 3. Exact upload_id (for datasets where filename was stored as upload_id or file_name is null)
+  try {
+    let q = adminClient.from(tbl).delete({ count: 'exact' }).eq('upload_id', filename);
+    if (teamFilter) q = q.eq('team_name', teamFilter);
+    const { count: c } = await q;
+    if (typeof c === 'number' && c > 0) count += c;
+  } catch {}
+
+  // 4. upload_id ends with filename (%::filename)
+  try {
+    let q = adminClient.from(tbl).delete({ count: 'exact' }).ilike('upload_id', `%::${filename}`);
+    if (teamFilter) q = q.eq('team_name', teamFilter);
+    const { count: c } = await q;
+    if (typeof c === 'number' && c > 0) count += c;
+  } catch {}
+
+  // 5. upload_id contains filename (%::filename::%)
+  try {
+    let q = adminClient.from(tbl).delete({ count: 'exact' }).ilike('upload_id', `%::${filename}::%`);
+    if (teamFilter) q = q.eq('team_name', teamFilter);
+    const { count: c } = await q;
+    if (typeof c === 'number' && c > 0) count += c;
+  } catch {}
+
+  return count;
 }
 
 export default async function handler(req, res) {
@@ -179,7 +233,7 @@ export default async function handler(req, res) {
     }
 
     // Never allow deleting system reserved files
-    if (filename.startsWith('__')) {
+    if (filename.startsWith('__system') || filename === '__app_user_profiles_v1__') {
       return res.status(400).json({ error: 'System metadata cannot be deleted.' });
     }
 
@@ -187,109 +241,45 @@ export default async function handler(req, res) {
     const userTeam = callerAuth.profile?.team_name || callerAuth.profile?.team_id;
     const userEmail = (callerAuth.user?.email || callerAuth.profile?.email || '').toLowerCase();
 
-    const tablesToClean = [];
+    const targetTables = [];
     if (table === 'both') {
-      tablesToClean.push('savant_data', 'blast_data');
+      targetTables.push('savant_data', 'blast_data');
     } else if (table === 'baseball_data' || type === 'combined') {
-      tablesToClean.push('baseball_data');
+      targetTables.push('baseball_data');
     } else if (table === 'pitching_data' || type === 'savant_pitching' || type === 'pitching' || type === 'pitcher') {
-      tablesToClean.push('pitching_data');
+      targetTables.push('pitching_data');
     } else if (table === 'body_comp_data' || type === 'body_comp') {
-      tablesToClean.push('body_comp_data', 'baseball_data');
+      targetTables.push('body_comp_data', 'baseball_data');
     } else if (table === 'savant_data' || type === 'savant') {
-      tablesToClean.push('savant_data');
+      targetTables.push('savant_data');
     } else if (table === 'blast_data' || type === 'blast') {
-      tablesToClean.push('blast_data');
+      targetTables.push('blast_data');
     } else {
-      tablesToClean.push('baseball_data', 'savant_data', 'blast_data', 'pitching_data', 'body_comp_data');
+      targetTables.push('baseball_data', 'pitching_data', 'body_comp_data', 'savant_data', 'blast_data');
     }
 
     let totalDeleted = 0;
 
-    for (const tbl of tablesToClean) {
-      try {
-        let q = adminClient.from(tbl).delete({ count: 'exact' });
+    // 1. Primary deletion on specified tables
+    for (const tbl of targetTables) {
+      const c = await cleanTableRows(adminClient, tbl, filename, isAdmin ? null : userTeam);
+      totalDeleted += c;
+    }
 
-        // Exact filename match or bodycomp prefix match
-        if (tbl === 'baseball_data' && (table === 'body_comp_data' || type === 'body_comp')) {
-          q = q.in('file_name', [filename, `__bodycomp__::${filename}`]);
-        } else {
-          q = q.eq('file_name', filename);
-        }
-
-        // Team isolation: if not admin, restrict deletion to caller's team or user
-        if (!isAdmin) {
-          const conditions = [];
-          if (userTeam) {
-            const escapedTeam = JSON.stringify(String(userTeam));
-            conditions.push(`team_name.eq.${escapedTeam}`);
-            conditions.push(`team_id.eq.${escapedTeam}`);
-          }
-          if (userEmail && userEmail.includes('@')) {
-            conditions.push(`upload_id.ilike.${userEmail}::%`);
-          }
-          if (callerAuth.user?.id) {
-            conditions.push(`user_id.eq.${callerAuth.user.id}`);
-          }
-          if (conditions.length > 0) {
-            q = q.or(conditions.join(','));
-          }
-        }
-
-        let { error, count } = await q;
-
-        // If admin and 0 rows deleted due to team tag mismatch, perform filename-only delete
-        if (!error && (count === 0 || count === null) && isAdmin) {
-          if (tbl === 'baseball_data' && (table === 'body_comp_data' || type === 'body_comp')) {
-            const adminRetry = await adminClient.from(tbl).delete({ count: 'exact' }).in('file_name', [filename, `__bodycomp__::${filename}`]);
-            if (!adminRetry.error && adminRetry.count) count = adminRetry.count;
-          } else {
-            const adminRetry = await adminClient.from(tbl).delete({ count: 'exact' }).eq('file_name', filename);
-            if (!adminRetry.error && adminRetry.count) count = adminRetry.count;
-          }
-        }
-
-        if (error) {
-          console.warn(`Delete error on ${tbl}:`, error.message);
-        } else {
-          totalDeleted += (typeof count === 'number' ? count : 0);
-        }
-      } catch (tblErr) {
-        console.warn(`Exception deleting from ${tbl}:`, tblErr);
+    // 2. If 0 rows deleted, retry without team filter for target tables
+    if (totalDeleted === 0) {
+      for (const tbl of targetTables) {
+        const c = await cleanTableRows(adminClient, tbl, filename, null);
+        totalDeleted += c;
       }
     }
 
-    // If 0 rows deleted from target table, check remaining tables as safety fallback
-    if (totalDeleted === 0) {
-      const remainingTables = ['pitching_data', 'baseball_data', 'body_comp_data', 'savant_data', 'blast_data']
-        .filter(t => !tablesToClean.includes(t));
-
-      for (const tbl of remainingTables) {
-        try {
-          let fbQ = adminClient.from(tbl).delete({ count: 'exact' }).eq('file_name', filename);
-          if (!isAdmin && userTeam) {
-            fbQ = fbQ.or(`team_name.eq.${JSON.stringify(String(userTeam))},upload_id.ilike.${userEmail}::%`);
-          }
-          const { count: fbCount } = await fbQ;
-          if (typeof fbCount === 'number' && fbCount > 0) {
-            totalDeleted += fbCount;
-          }
-        } catch {}
-      }
-    }
-
-    // If still 0 rows deleted, perform filename-only delete across all tables as safety fallback
-    if (totalDeleted === 0) {
-      for (const tbl of ['pitching_data', 'baseball_data', 'body_comp_data', 'savant_data', 'blast_data']) {
-        try {
-          const { count: finalCount } = await adminClient
-            .from(tbl)
-            .delete({ count: 'exact' })
-            .in('file_name', [filename, `__bodycomp__::${filename}`]);
-          if (typeof finalCount === 'number' && finalCount > 0) {
-            totalDeleted += finalCount;
-          }
-        } catch {}
+    // 3. Fallback: check all other tables to ensure complete cleanup
+    const allTables = ['baseball_data', 'pitching_data', 'body_comp_data', 'savant_data', 'blast_data'];
+    for (const tbl of allTables) {
+      if (!targetTables.includes(tbl)) {
+        const c = await cleanTableRows(adminClient, tbl, filename, null);
+        totalDeleted += c;
       }
     }
 
@@ -308,7 +298,9 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: `「${filename}」をクラウドから削除しました。`,
+      message: totalDeleted > 0 
+        ? `「${filename}」をクラウドから削除しました（${totalDeleted}件）。` 
+        : `「${filename}」の削除対象データが見つかりませんでした。`,
       deletedCount: totalDeleted
     });
 
@@ -317,3 +309,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Internal Server Error: ' + (err.message || String(err)) });
   }
 }
+

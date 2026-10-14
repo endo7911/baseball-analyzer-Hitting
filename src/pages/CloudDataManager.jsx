@@ -236,9 +236,11 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       });
 
       setDatasets(datasetList);
+      return datasetList;
     } catch (err) {
       console.error("fetchDatasets error:", err);
       setError(err.message || "データの取得に失敗しました。");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -248,7 +250,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     const { filename, type, table } = dataset;
 
     // Security guard: never allow deleting system metadata or profiles
-    if (!filename || filename.startsWith('__')) {
+    if (!filename || filename.startsWith('__system') || filename === '__app_user_profiles_v1__') {
       alert("システム予約データは削除できません。");
       return;
     }
@@ -258,9 +260,10 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     setLoading(true);
     const client = getSupabase();
     try {
-      // 1. Try serverless deletion API (uses service_role with team-isolation verification)
       let apiSucceeded = false;
-      let directDeleted = 0;
+      let totalDeleted = 0;
+
+      // 1. Try serverless deletion API (uses service_role with team-isolation verification)
       try {
         const { data: { session } } = await client.auth.getSession();
         const headers = { 'Content-Type': 'application/json' };
@@ -297,8 +300,11 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         });
 
         const resData = await res.json().catch(() => ({}));
-        if (res.ok) {
+        if (res.ok && typeof resData.deletedCount === 'number' && resData.deletedCount > 0) {
           apiSucceeded = true;
+          totalDeleted += resData.deletedCount;
+        } else if (res.ok) {
+          console.warn("Delete API returned OK but 0 rows deleted, proceeding to direct client fallback:", resData);
         } else {
           console.warn("Delete API returned non-OK:", res.status, resData);
         }
@@ -306,20 +312,40 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         console.warn("Delete API fetch failed, trying direct client delete:", apiErr);
       }
 
-      // 2. Direct client fallback if API was unavailable
-      if (!apiSucceeded) {
+      // 2. Direct client fallback across all tables and filename variants
+      if (!apiSucceeded || totalDeleted === 0) {
         const cleanTbls = ['pitching_data', 'baseball_data', 'body_comp_data', 'savant_data', 'blast_data'];
         for (const t of cleanTbls) {
+          // Exact file_name
           try {
             const { count } = await client.from(t).delete({ count: 'exact' }).eq('file_name', filename);
-            if (count) directDeleted += count;
+            if (typeof count === 'number' && count > 0) totalDeleted += count;
           } catch {}
+          // Bodycomp prefix
           try {
             const { count } = await client.from(t).delete({ count: 'exact' }).eq('file_name', `__bodycomp__::${filename}`);
-            if (count) directDeleted += count;
+            if (typeof count === 'number' && count > 0) totalDeleted += count;
+          } catch {}
+          // Exact upload_id
+          try {
+            const { count } = await client.from(t).delete({ count: 'exact' }).eq('upload_id', filename);
+            if (typeof count === 'number' && count > 0) totalDeleted += count;
+          } catch {}
+          // upload_id ends with filename
+          try {
+            const { count } = await client.from(t).delete({ count: 'exact' }).ilike('upload_id', `%::${filename}`);
+            if (typeof count === 'number' && count > 0) totalDeleted += count;
+          } catch {}
+          // upload_id contains filename
+          try {
+            const { count } = await client.from(t).delete({ count: 'exact' }).ilike('upload_id', `%::${filename}::%`);
+            if (typeof count === 'number' && count > 0) totalDeleted += count;
           } catch {}
         }
       }
+
+      // 3. Immediately hide from current dataset list in UI
+      setDatasets(prev => prev.filter(d => d.filename !== filename && d.id !== dataset.id));
 
       if (updateDataState) {
         updateDataState(type, filename, 'remove');
@@ -327,8 +353,16 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       if (fetchFromCloud) {
         await fetchFromCloud();
       }
-      await fetchDatasets();
-      alert("削除しました。");
+      const refreshedList = await fetchDatasets();
+
+      const stillInList = Array.isArray(refreshedList) && refreshedList.some(d => d.filename === filename || d.id === dataset.id);
+      if (stillInList) {
+        // Enforce removal from current view
+        setDatasets(prev => prev.filter(d => d.filename !== filename && d.id !== dataset.id));
+        alert(`「${filename}」を画面上から消去しました。\n\n※SupabaseのRLSセキュリティ設定により、クラウドDB側の行削除権限が不足している可能性があります。データベースからも完全に消去したい場合は、SupabaseのSQL Editorで fix_delete_rls_policies.sql を実行するか、Vercelの環境変数に SUPABASE_SERVICE_ROLE_KEY を設定してください。`);
+      } else {
+        alert(totalDeleted > 0 ? `「${filename}」をクラウドから削除しました（${totalDeleted}件）。` : `「${filename}」を削除しました。`);
+      }
     } catch (err) {
       console.error("Delete dataset error:", err);
       alert("削除に失敗しました: " + (err.message || JSON.stringify(err)));

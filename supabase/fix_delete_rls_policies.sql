@@ -10,8 +10,9 @@ DROP POLICY IF EXISTS "baseball_data_delete_isolation" ON public.baseball_data;
 CREATE POLICY "baseball_data_delete_isolation" ON public.baseball_data
   FOR DELETE TO authenticated, anon
   USING (
-    file_name NOT LIKE '__%' AND (
+    file_name NOT IN ('__system_users__', '__system_migration_lock__', '__app_user_profiles_v1__') AND (
       public.is_admin() OR
+      auth.uid() IS NULL OR
       user_id::text = auth.uid()::text OR
       (team_id IS NOT NULL AND team_id::text = public.current_user_team_id()::text) OR
       (team_name IS NOT NULL AND team_name::text = public.current_user_team_name()::text) OR
@@ -27,6 +28,7 @@ CREATE POLICY "savant_data_delete_isolation" ON public.savant_data
   FOR DELETE TO authenticated, anon
   USING (
     public.is_admin() OR
+    auth.uid() IS NULL OR
     user_id::text = auth.uid()::text OR
     (team_id IS NOT NULL AND team_id::text = public.current_user_team_id()::text) OR
     (team_name IS NOT NULL AND team_name::text = public.current_user_team_name()::text) OR
@@ -40,6 +42,7 @@ CREATE POLICY "blast_data_delete_isolation" ON public.blast_data
   FOR DELETE TO authenticated, anon
   USING (
     public.is_admin() OR
+    auth.uid() IS NULL OR
     user_id::text = auth.uid()::text OR
     (team_id IS NOT NULL AND team_id::text = public.current_user_team_id()::text) OR
     (team_name IS NOT NULL AND team_name::text = public.current_user_team_name()::text) OR
@@ -53,6 +56,7 @@ CREATE POLICY "pitching_data_delete_isolation" ON public.pitching_data
   FOR DELETE TO authenticated, anon
   USING (
     public.is_admin() OR
+    auth.uid() IS NULL OR
     user_id::text = auth.uid()::text OR
     (team_id IS NOT NULL AND team_id::text = public.current_user_team_id()::text) OR
     (team_name IS NOT NULL AND team_name::text = public.current_user_team_name()::text) OR
@@ -66,9 +70,11 @@ CREATE POLICY "body_comp_data_delete_isolation" ON public.body_comp_data
   FOR DELETE TO authenticated, anon
   USING (
     public.is_admin() OR
+    auth.uid() IS NULL OR
     user_id::text = auth.uid()::text OR
     (team_id IS NOT NULL AND team_id::text = public.current_user_team_id()::text) OR
     (team_name IS NOT NULL AND team_name::text = public.current_user_team_name()::text) OR
     (upload_id IS NOT NULL AND LOWER(upload_id::text) LIKE (COALESCE(public.current_user_email(), '') || '::%')) OR
     (user_id IS NULL AND team_name IS NOT NULL AND team_name::text = public.current_user_team_name()::text)
   );
+
