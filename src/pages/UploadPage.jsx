@@ -2,6 +2,8 @@ import React, { useRef } from 'react';
 import Papa from 'papaparse';
 import { UploadCloud, FileText, Database, Cloud, Save, RefreshCw, X, Sparkles, Zap, Target, Activity, Dumbbell } from 'lucide-react';
 import { parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS, extractRowVal } from '../utils/dataHelpers';
+import { decodeCsvBuffer, findHeaderIndex, BODY_COMP_HEADER_KEYWORDS } from '../utils/csvImport';
+import { applyTwoRowHeader } from '../utils/bodyComp';
 import { getSupabase } from '../lib/supabase';
 import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from '../config';
 
