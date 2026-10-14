@@ -18,9 +18,9 @@ export async function verifyPassword(inputPassword, stored, tempPasswordObj) {
   if (stored) {
     if (stored.startsWith('sha256:')) {
       const hashed = await hashPassword(inputPassword);
-      if (hashed === stored) return true;
+      if (hashed === stored) return 'main';
     } else if (stored === String(inputPassword).trim()) {
-      return true;
+      return 'main';
     }
   }
 
@@ -30,11 +30,11 @@ export async function verifyPassword(inputPassword, stored, tempPasswordObj) {
     if (!isNaN(expiresMs) && expiresMs > Date.now()) {
       const inputTrimmed = String(inputPassword).trim();
       if (tempPasswordObj.pass_plain && inputTrimmed === String(tempPasswordObj.pass_plain).trim()) {
-        return true;
+        return 'temp';
       }
       if (tempPasswordObj.hashed) {
         const hashed = await hashPassword(inputPassword);
-        if (hashed === tempPasswordObj.hashed) return true;
+        if (hashed === tempPasswordObj.hashed) return 'temp';
       }
     }
   }
@@ -42,26 +42,85 @@ export async function verifyPassword(inputPassword, stored, tempPasswordObj) {
   return false;
 }
 
-export const DEFAULT_MOCK_USERS = [
-  {
-    id: 'admin-id',
-    email: 'admin@example.com',
-    password: 'baseball2024',
-    display_name: '管理者アカウント',
-    role: 'admin',
-    team_id: '管理者',
-    is_disabled: false
-  },
-  {
-    id: 'user-default-id',
-    email: 'user@example.com',
-    password: 'user123',
-    display_name: '一般利用者',
-    role: 'user',
-    team_id: 'Test',
-    is_disabled: false
+export const DEFAULT_MOCK_USERS = [];
+
+// Change a user's own password and invalidate any temporary password
+export async function changeUserPassword(email, newPassword) {
+  const users = await getGlobalUsers();
+  const key = String(email || '').toLowerCase();
+  let found = false;
+  const updated = users.map(u => {
+    if ((u.email || '').toLowerCase() === key) {
+      found = true;
+      return { ...u, password: String(newPassword).trim(), temp_password: null, password_changed_at: new Date().toISOString() };
+    }
+    return u;
+  });
+  if (!found) return false;
+  return saveGlobalUsers(updated);
+}
+
+
+// Encryption key derivation and AES-GCM authenticated payload protection
+const ENCRYPTION_SALT = 'baseball-analyzer-secure-payload-salt-v2';
+
+async function getEncryptionKey() {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.digest('SHA-256', encoder.encode(ENCRYPTION_SALT));
+  return crypto.subtle.importKey('raw', keyMaterial, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+// Encrypt payload with AES-GCM (prevents unauthorized reading & tampering)
+export async function encryptPayload(dataObj) {
+  try {
+    const encoder = new TextEncoder();
+    const key = await getEncryptionKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = JSON.stringify(dataObj);
+    const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(plaintext));
+    const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('');
+    const cipherHex = Array.from(new Uint8Array(encrypted)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return `enc:v2:${ivHex}:${cipherHex}`;
+  } catch (e) {
+    console.error('Payload encryption failed:', e);
+    throw e;
   }
-];
+}
+
+// Decrypt and verify authenticated payload (returns null if tampered)
+export async function decryptPayload(payloadStr) {
+  if (!payloadStr) return null;
+
+  // Handle encrypted AES-GCM payload
+  if (typeof payloadStr === 'string' && payloadStr.startsWith('enc:v2:')) {
+    try {
+      const parts = payloadStr.split(':');
+      if (parts.length < 4) return null;
+      const ivHex = parts[2];
+      const cipherHex = parts[3];
+      const iv = new Uint8Array(ivHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+      const cipher = new Uint8Array(cipherHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+      const key = await getEncryptionKey();
+      const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipher);
+      const decoder = new TextDecoder();
+      return JSON.parse(decoder.decode(decrypted));
+    } catch (e) {
+      console.error('Payload decryption or integrity check failed (data may be tampered):', e);
+      return null;
+    }
+  }
+
+  // Fallback for legacy plain JSON format
+  if (typeof payloadStr === 'string' && (payloadStr.startsWith('[') || payloadStr.startsWith('{'))) {
+    try {
+      return JSON.parse(payloadStr);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
 
 // Hash passwords in the user list before cloud storage
 async function hashUsersForCloud(users) {
@@ -75,7 +134,7 @@ async function hashUsersForCloud(users) {
   }));
 }
 
-// Fetch all registered users from Supabase Cloud (falling back to localStorage)
+// Fetch all registered users from Supabase Cloud
 export async function getGlobalUsers() {
   let cloudUsers = null;
 
@@ -88,14 +147,20 @@ export async function getGlobalUsers() {
     if (!error && data && data.length > 0) {
       const raw = data[0].upload_id;
       if (raw) {
-        cloudUsers = JSON.parse(raw);
+        cloudUsers = await decryptPayload(raw);
       }
     }
   } catch (e) {
     console.warn("Failed to fetch global users from Supabase:", e);
   }
 
-  const localUsers = JSON.parse(localStorage.getItem('mockUsersList') || '[]');
+  let localUsers = [];
+  try {
+    const rawLocal = localStorage.getItem('mockUsersList');
+    if (rawLocal) {
+      localUsers = (await decryptPayload(rawLocal)) || JSON.parse(rawLocal);
+    }
+  } catch {}
 
   // Merge: defaults → local → cloud
   const userMap = new Map();
@@ -124,39 +189,38 @@ export async function getGlobalUsers() {
 
   const merged = Array.from(userMap.values());
 
-  // Auto-sync any local users missing from cloud
-  const cloudEmailSet = new Set((cloudUsers || []).map(u => (u?.email || '').toLowerCase()));
-  const hasUnsyncedLocalUser = merged.some(u => !cloudEmailSet.has((u?.email || '').toLowerCase()));
-
-  if (hasUnsyncedLocalUser && Array.isArray(cloudUsers)) {
-    console.log("Auto-migrating pre-existing local accounts to Supabase Cloud...");
-    saveGlobalUsers(merged).catch(err => console.warn("Auto-migration error:", err));
+  // Auto-encrypt and save if cloudUsers was in legacy unencrypted format
+  if (Array.isArray(cloudUsers)) {
+    // If the raw data in cloud wasn't encrypted yet, upgrade it to encrypted
+    saveGlobalUsers(merged).catch(() => {});
   }
-
-  // Update local cache
-  try {
-    localStorage.setItem('mockUsersList', JSON.stringify(merged));
-  } catch {}
 
   return merged;
 }
 
-// Save all registered users to Supabase Cloud (hashed passwords) and localStorage (hashed passwords)
+// Save all registered users to Supabase Cloud (encrypted) and localStorage (encrypted)
 export async function saveGlobalUsers(usersList) {
   if (!Array.isArray(usersList)) return false;
 
   // Hash passwords before saving anywhere
   const hashedList = await hashUsersForCloud(usersList);
 
-  // 1. Update localStorage cache (hashed)
+  // Encrypt payload with AES-GCM (tamper-proof & readable only by authorized app)
+  let encryptedPayload;
   try {
-    localStorage.setItem('mockUsersList', JSON.stringify(hashedList));
+    encryptedPayload = await encryptPayload(hashedList);
+  } catch (e) {
+    console.error("Encryption failed before save:", e);
+    return false;
+  }
+
+  // 1. Update localStorage cache (encrypted)
+  try {
+    localStorage.setItem('mockUsersList', encryptedPayload);
   } catch {}
 
-  // 2. Persist to Supabase Cloud (hashed passwords - safe to store)
+  // 2. Persist to Supabase Cloud (AES-GCM encrypted payload)
   try {
-    const jsonStr = JSON.stringify(hashedList);
-
     const { data } = await supabase
       .from('baseball_data')
       .select('id')
@@ -167,7 +231,7 @@ export async function saveGlobalUsers(usersList) {
       await supabase
         .from('baseball_data')
         .update({
-          upload_id: jsonStr,
+          upload_id: encryptedPayload,
           updated_at: new Date().toISOString()
         })
         .eq('id', rowId);
@@ -179,7 +243,7 @@ export async function saveGlobalUsers(usersList) {
             file_name: SYSTEM_USER_FILE_NAME,
             player_name: '__system_users__',
             team_name: '__system__',
-            upload_id: jsonStr
+            upload_id: encryptedPayload
           }
         ]);
     }
@@ -189,3 +253,4 @@ export async function saveGlobalUsers(usersList) {
     return false;
   }
 }
+

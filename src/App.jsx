@@ -59,81 +59,125 @@ function App() {
   // Global saving state (default to cloud connected)
   const [syncState, setSyncState] = useState({ saving: false, lastError: null, lastSuccess: 'Cloud Active', cloudConnected: true });
 
-  // Check auth on mount
+  // Check auth on mount: Prioritize Supabase Auth session, fallback to legacy session
   useEffect(() => {
-    // 1. Check session storage (session-based) first, fallback to legacy local storage
-    const savedUser = sessionStorage.getItem('mockUser') || localStorage.getItem('mockUser');
-    const savedProfile = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile');
-    
-    if (savedUser && savedProfile) {
-      try {
-        const u = JSON.parse(savedUser);
-        const p = JSON.parse(savedProfile);
-        
-        getGlobalUsers().then(globalUsers => {
-          const latest = globalUsers.find(m => m.id === u.id || m.email.toLowerCase() === (u.email || '').toLowerCase());
-          if (latest?.is_disabled || p?.is_disabled) {
-            sessionStorage.removeItem('mockUser');
-            sessionStorage.removeItem('mockProfile');
-            localStorage.removeItem('mockUser');
-            localStorage.removeItem('mockProfile');
-            setUser(null);
-            setProfile(null);
-            setAuthLoading(false);
-            alert('このアカウントは停止されています。');
-          } else {
-            // Migrate legacy localStorage session to sessionStorage
-            sessionStorage.setItem('mockUser', JSON.stringify(u));
-            sessionStorage.setItem('mockProfile', JSON.stringify(latest ? { ...p, ...latest } : p));
-            localStorage.removeItem('mockUser');
-            localStorage.removeItem('mockProfile');
+    let isMounted = true;
 
-            setUser(u);
-            setProfile(latest ? { ...p, ...latest } : p);
+    const initAuth = async () => {
+      try {
+        // 1. Check Supabase Auth official session first
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          const authUser = session.user;
+          // Fetch latest profile from profiles table
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
+
+          if (profileData?.is_disabled) {
+            await supabase.auth.signOut();
+            if (isMounted) {
+              setUser(null);
+              setProfile(null);
+              setAuthLoading(false);
+              alert('このアカウントは現在停止されています。');
+            }
+            return;
+          }
+
+          if (isMounted) {
+            setUser(authUser);
+            setProfile(profileData || {
+              id: authUser.id,
+              email: authUser.email,
+              role: authUser.user_metadata?.role || 'user',
+              team_id: authUser.user_metadata?.team_id || 'Team A',
+              team_name: authUser.user_metadata?.team_id || 'Team A',
+              display_name: profileData?.display_name || authUser.email
+            });
             setAuthLoading(false);
           }
-        }).catch(() => {
-          setUser(u);
-          setProfile(p);
-          setAuthLoading(false);
-        });
-        return;
-      } catch (e) {
-        console.warn("Mock session parse error:", e);
-      }
-    }
+          return;
+        }
 
-    // 2. Otherwise try Supabase
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => {
-        if (session?.user) {
-          supabase.from('profiles').select('*').eq('id', session.user.id).single()
-            .then(({ data }) => { 
-              if (data?.is_disabled) {
-                supabase.auth.signOut();
+        // 2. Fallback: Check sessionStorage / localStorage for migration period
+        const savedUser = sessionStorage.getItem('mockUser') || localStorage.getItem('mockUser');
+        const savedProfile = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile');
+
+        if (savedUser && savedProfile) {
+          const u = JSON.parse(savedUser);
+          const p = JSON.parse(savedProfile);
+
+          try {
+            const globalUsers = await getGlobalUsers();
+            const latest = globalUsers.find(m => m.id === u.id || m.email.toLowerCase() === (u.email || '').toLowerCase());
+            if (latest?.is_disabled || p?.is_disabled) {
+              sessionStorage.removeItem('mockUser');
+              sessionStorage.removeItem('mockProfile');
+              localStorage.removeItem('mockUser');
+              localStorage.removeItem('mockProfile');
+              if (isMounted) {
                 setUser(null);
                 setProfile(null);
+                setAuthLoading(false);
                 alert('このアカウントは停止されています。');
-              } else {
-                setUser(session.user);
-                setProfile(data); 
               }
-              setAuthLoading(false); 
-            })
-            .catch(() => setAuthLoading(false));
-        } else {
+              return;
+            } else if (isMounted) {
+              setUser(u);
+              setProfile(latest ? { ...p, ...latest } : p);
+              setAuthLoading(false);
+              return;
+            }
+          } catch {
+            if (isMounted) {
+              setUser(u);
+              setProfile(p);
+              setAuthLoading(false);
+              return;
+            }
+          }
+        }
+
+        if (isMounted) {
+          setUser(null);
+          setProfile(null);
           setAuthLoading(false);
         }
-      })
-      .catch((err) => {
-        console.error('Auth check failed:', err);
-        setAuthLoading(false);
-      });
+      } catch (err) {
+        console.error('Auth initialization error:', err);
+        if (isMounted) setAuthLoading(false);
+      }
+    };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') { setUser(null); setProfile(null); }
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        sessionStorage.removeItem('mockUser');
+        sessionStorage.removeItem('mockProfile');
+        localStorage.removeItem('mockUser');
+        localStorage.removeItem('mockProfile');
+        setUser(null);
+        setProfile(null);
+      } else if (event === 'SIGNED_IN' && session?.user) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        setUser(session.user);
+        if (profileData) setProfile(profileData);
+      }
     });
-    return () => subscription.unsubscribe();
+
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+    };
   }, []);
 
   // Load cached data from IndexedDB (Scoped by user ID to prevent cross-account leaks)
@@ -207,7 +251,7 @@ function App() {
       'game_year', 'pfx_x', 'pfx_z', 'plate_x', 'plate_z', 'on_3b', 'on_2b', 'on_1b', 
       'outs_when_up', 'inning', 'inning_topbot', 'hc_x', 'hc_y', 'vx0', 'vy0', 'vz0', 
       'ax', 'ay', 'az', 'sz_top', 'sz_bot', 'effective_speed', 'release_extension', 
-      'game_pk', 'spin_axis', 'delta_home_win_exp', 'delta_run_exp', 'file_name', 'upload_id',
+      'game_pk', 'spin_axis', 'delta_home_win_exp', 'delta_run_exp', 'file_name', 'upload_id', 'user_id',
       'pitch_type', 'release_pos_x', 'release_pos_y', 'release_pos_z', 'vaa', 'haa',
       'attack_direction', 'estimated_woba_using_speedangle', 'pitcher', 'batter', 'swing_length'
     ];
@@ -216,7 +260,7 @@ function App() {
       'date', 'player_name', 'bat_speed', 'attack_angle', 'vertical_bat_angle', 'power', 
       'time_to_contact', 'peak_hand_speed', 'on_plane_efficiency', 'rotation_score', 
       'on_plane_score', 'connection_score', 'rotation_acceleration', 'connection_at_impact', 
-      'connection_at_address', 'bat_angle', 'file_name', 'upload_id',
+      'connection_at_address', 'bat_angle', 'file_name', 'upload_id', 'user_id',
       'launch_speed', 'launch_angle', 'hit_distance_sc'
     ];
 
@@ -225,7 +269,7 @@ function App() {
       'bat_speed', 'launch_speed', 'attack_angle', 'launch_angle', 'hit_distance_sc',
       'hc_x', 'on_plane_efficiency', 'connection_score', 'rotation_score',
       'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle',
-      'release_speed', 'file_name', 'upload_id'
+      'release_speed', 'file_name', 'upload_id', 'user_id'
     ];
 
     const PITCHING_COLUMNS = [
@@ -233,14 +277,14 @@ function App() {
       'pitch_type', 'pitch_name', 'release_speed', 'release_spin_rate',
       'spin_axis', 'spin_efficiency', 'gyro_angle', 'vb_traj', 'hb_traj',
       'release_pos_x', 'release_pos_z', 'vaa', 'p_throws',
-      'file_name', 'upload_id'
+      'file_name', 'upload_id', 'user_id'
     ];
 
     const BODY_COMP_COLUMNS = [
       'date', 'player_name', 'team_name', 'height', 'weight', 'muscle_mass',
       'body_fat_pct', 'bmr', 'bmi', 'trunk_muscle', 'left_arm_muscle',
       'right_arm_muscle', 'left_leg_muscle', 'right_leg_muscle', 'ffmi',
-      'file_name', 'upload_id'
+      'file_name', 'upload_id', 'user_id'
     ];
 
     const allowedColumns = table === 'savant_data' ? SAVANT_COLUMNS 
@@ -584,12 +628,20 @@ function App() {
             if (targetColumns.includes('team_name')) rowPayload.team_name = finalRow.team_name || null;
             if (targetColumns.includes('team_id') && validTeamId) rowPayload.team_id = validTeamId;
             if (targetColumns.includes('owner_id') && validOwnerId) rowPayload.owner_id = validOwnerId;
+            if (validOwnerId) rowPayload.user_id = validOwnerId;
             if (targetColumns.includes('updated_at')) rowPayload.updated_at = new Date().toISOString();
 
             return rowPayload;
           });
 
-          const { error } = await client.from(targetTable).insert(batch);
+          let { error } = await client.from(targetTable).insert(batch);
+          // If user_id column does not exist yet on remote table, fallback without user_id
+          if (error && error.message && error.message.includes('user_id')) {
+            console.warn(`user_id column not present in ${targetTable}, retrying insert without user_id`);
+            const fallbackBatch = batch.map(({ user_id, ...rest }) => rest);
+            const fbResult = await client.from(targetTable).insert(fallbackBatch);
+            error = fbResult.error;
+          }
           if (error) {
             console.error(`Error inserting into ${targetTable} at batch ${i}:`, error);
             throw error;

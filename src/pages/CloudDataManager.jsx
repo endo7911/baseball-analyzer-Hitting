@@ -227,6 +227,13 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
 
   const deleteDataset = async (dataset) => {
     const { filename, type, table } = dataset;
+
+    // Security guard: never allow deleting system metadata or profiles
+    if (!filename || filename.startsWith('__')) {
+      alert("システム予約データは削除できません。");
+      return;
+    }
+
     if (!window.confirm(`「${filename}」を削除してもよろしいですか？`)) return;
     
     setLoading(true);
@@ -236,7 +243,13 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         await client.from('savant_data').delete().eq('file_name', filename);
         await client.from('blast_data').delete().eq('file_name', filename);
       } else if (table === 'baseball_data') {
-        const { error } = await client.from('baseball_data').delete().eq('file_name', filename);
+        let query = client.from('baseball_data').delete().eq('file_name', filename);
+        // Only delete rows belonging to this user/team
+        const rawEmail = (profile?.email || profile?.display_name || '').trim().toLowerCase();
+        if (rawEmail && rawEmail.includes('@') && profile?.role !== 'admin') {
+          query = query.or(`upload_id.ilike.${rawEmail}%::%,team_name.eq.${profile?.team_name || ''}`);
+        }
+        const { error } = await query;
         if (error) throw error;
       } else if (table === 'pitching_data') {
         const { error } = await client.from('pitching_data').delete().eq('file_name', filename);
