@@ -13,6 +13,7 @@ import LoginPage from './pages/LoginPage';
 import AdminPanel from './pages/AdminPanel';
 import GuidePage from './pages/GuidePage';
 import BodyCompAnalysis from './pages/BodyCompAnalysis';
+import AccountModal from './components/AccountModal';
 import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from './config';
 import './App.css';
 
@@ -55,6 +56,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [showAccountModal, setShowAccountModal] = useState(false);
 
   // Global saving state (default to cloud connected)
   const [syncState, setSyncState] = useState({ saving: false, lastError: null, lastSuccess: 'Cloud Active', cloudConnected: true });
@@ -1283,25 +1285,48 @@ function App() {
       {isMenuOpen && <div className="sidebar-overlay fixed inset-0 bg-black/60 z-40 backdrop-blur-sm lg:hidden" onClick={() => setIsMenuOpen(false)} />}
 
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 border-b border-slate-800 z-50 flex items-center px-4 sm:px-6 justify-between shadow-xl">
-        <div className="flex items-center gap-2">
-          <h1 className="text-base sm:text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 border-b border-slate-800 z-50 flex items-center px-3 sm:px-5 justify-between shadow-xl">
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-sm sm:text-base font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 shrink-0">
             Baseball Analyzer
           </h1>
-          <span className="text-[10px] font-bold bg-blue-600/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full">
+          <span className="text-[9px] sm:text-[10px] font-bold bg-blue-600/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full shrink-0">
             {viewLabels[activeView] || '分析'}
           </span>
         </div>
-        <button 
-          onClick={() => setIsMenuOpen(!isMenuOpen)} 
-          className="p-2 text-slate-300 hover:text-white bg-slate-800 border border-slate-700 rounded-xl transition-all"
-          title="メニュー開閉"
-        >
-          {isMenuOpen
-            ? <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
-            : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16m-7 6h7" /></svg>
-          }
-        </button>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {profile && (
+            <button
+              onClick={() => setShowAccountModal(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800/90 border border-slate-700/80 hover:border-blue-500/50 transition cursor-pointer max-w-[130px] sm:max-w-[180px]"
+              title="ログイン中のアカウント（タップでパスワード変更）"
+            >
+              <div className="w-6 h-6 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center shrink-0 text-blue-400">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+              </div>
+              <div className="min-w-0 text-left">
+                <p className="text-[10px] sm:text-[11px] font-bold text-white truncate leading-tight">
+                  {profile.display_name || profile.username || profile.email}
+                </p>
+                <p className="text-[9px] text-emerald-400 font-semibold truncate leading-tight">
+                  {profile.role === 'admin' ? '管理者' : (profile.team_name || profile.team_id || 'チーム')}
+                </p>
+              </div>
+            </button>
+          )}
+
+          <button 
+            onClick={() => setIsMenuOpen(!isMenuOpen)} 
+            className="p-2 text-slate-300 hover:text-white bg-slate-800 border border-slate-700 rounded-xl transition-all"
+            title="メニュー開閉"
+          >
+            {isMenuOpen
+              ? <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+              : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16m-7 6h7" /></svg>
+            }
+          </button>
+        </div>
       </div>
 
       <Sidebar
@@ -1322,8 +1347,17 @@ function App() {
         syncState={syncState}
         profile={profile}
         onLogout={handleLogout}
+        onOpenAccount={() => setShowAccountModal(true)}
         theme={theme}
         setTheme={setTheme}
+      />
+
+      {/* Account Info & Password Change Modal */}
+      <AccountModal
+        isOpen={showAccountModal}
+        onClose={() => setShowAccountModal(false)}
+        profile={profile}
+        onLogout={handleLogout}
       />
 
       <main className="content-area pt-20 lg:pt-10">

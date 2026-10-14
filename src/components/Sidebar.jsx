@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X, BookOpen, Target, Dumbbell, Sun, Moon } from 'lucide-react';
+import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X, BookOpen, Target, Dumbbell, Sun, Moon, KeyRound } from 'lucide-react';
 import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from '../config';
 
 function Sidebar({ 
   activeView, setActiveView, 
   savantData, savantPitchingData, blastData, combinedData, bodyCompData,
   savantFiles = [], savantPitchingFiles = [], blastFiles = [], combinedFiles = [], bodyCompFiles = [],
-  isOpen, setIsOpen, syncState, profile, onLogout,
+  isOpen, setIsOpen, syncState, profile, onLogout, onOpenAccount,
   theme = 'dark', setTheme
 }) {
   const isAdmin = profile?.role === 'admin';
@@ -98,6 +98,42 @@ function Sidebar({
       </div>
 
       <nav className="flex-1 py-4 px-3 space-y-1.5 overflow-y-auto">
+        {/* Prominent Account Header (especially clear on Mobile) */}
+        {profile && (
+          <div 
+            onClick={() => {
+              if (onOpenAccount) onOpenAccount();
+              if (isMobile && setIsOpen) setIsOpen(false);
+            }}
+            className="mb-3.5 p-3 rounded-2xl bg-gradient-to-r from-blue-950/40 via-indigo-950/30 to-slate-900/50 border border-blue-500/30 cursor-pointer hover:border-blue-400/50 transition group shadow-md"
+            title="アカウント詳細・パスワード変更"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-300 shrink-0 group-hover:scale-105 transition">
+                <User className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-bold text-white truncate">{profile.display_name || profile.username || profile.email}</p>
+                  {profile.role === 'admin' && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                      管理者
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-emerald-400 font-semibold truncate">
+                  {profile.team_name || profile.team_id || 'チーム未設定'}
+                </p>
+              </div>
+              <KeyRound className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-400 transition shrink-0" />
+            </div>
+            <div className="mt-2 pt-1.5 border-t border-slate-800/60 flex items-center justify-between text-[10px] text-slate-400">
+              <span className="flex items-center gap-1">🔑 パスワード変更</span>
+              <span className="text-blue-400 group-hover:translate-x-0.5 transition">設定 ›</span>
+            </div>
+          </div>
+        )}
+
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeView === item.id;
@@ -129,13 +165,26 @@ function Sidebar({
 
       {profile && (
         <div className="px-4 py-3 border-t border-gray-800 flex items-center justify-between bg-slate-900/50">
-          <div className="min-w-0">
+          <div 
+            onClick={onOpenAccount}
+            className="min-w-0 flex-1 cursor-pointer hover:opacity-80 transition"
+            title="アカウント設定・パスワード変更"
+          >
             <p className="text-xs font-bold text-white truncate">{profile.display_name || profile.email}</p>
-            <p className="text-[10px] text-slate-500">{profile.role === 'admin' ? '管理者' : (profile.team_id || 'チーム未割当')}</p>
+            <p className="text-[10px] text-emerald-400 truncate font-medium">{profile.role === 'admin' ? '管理者' : (profile.team_name || profile.team_id || 'チーム未割当')}</p>
           </div>
-          <button onClick={onLogout} title="ログアウト" className="ml-2 text-slate-500 hover:text-red-400 transition-colors flex-shrink-0">
-            <LogOut className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0 ml-2">
+            <button
+              onClick={onOpenAccount}
+              title="パスワード変更"
+              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition cursor-pointer"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={onLogout} title="ログアウト" className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition cursor-pointer">
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
