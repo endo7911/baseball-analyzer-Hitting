@@ -144,7 +144,11 @@ function PitcherProfile({ pitcherName, events = [], startDate = '', endDate = ''
       const spinClock = getSpinDirectionClock(spinAxis);
       
       const spinEff = getDataValue(row, SPIN_EFFICIENCY_KEYS);
-      const gyroAngle = getDataValue(row, GYRO_ANGLE_KEYS);
+      let gyroAngle = getDataValue(row, GYRO_ANGLE_KEYS);
+      if ((gyroAngle == null || gyroAngle === 0 || isNaN(gyroAngle)) && spinEff > 0 && spinEff <= 100) {
+        const rad = Math.acos(spinEff / 100);
+        gyroAngle = Math.round((rad * 180 / Math.PI) * 10) / 10;
+      }
       const vaa = getDataValue(row, VAA_KEYS);
 
       const vbTraj = getDataValue(row, VB_TRAJ_KEYS);
@@ -1119,21 +1123,21 @@ function PitcherProfile({ pitcherName, events = [], startDate = '', endDate = ''
                     <span className="w-2.5 h-2.5 print:w-2 print:h-2 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }}></span>
                     <span className="truncate">{p.pitchType}</span>
                   </td>
-                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono font-bold text-amber-400 print:text-[8px]">{p.velo > 0 ? p.velo : '-'}</td>
-                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-emerald-400 print:text-[8px]">{p.spin > 0 ? p.spin : '-'}</td>
-                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-emerald-300 print:text-[8px]">{p.spinEff > 0 ? p.spinEff : '-'}</td>
+                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono font-bold text-amber-400 print:text-[8px]">{p.velo > 0 ? Number(p.velo).toFixed(1) : '-'}</td>
+                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-emerald-400 print:text-[8px]">{p.spin > 0 ? Math.round(p.spin) : '-'}</td>
+                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-emerald-300 print:text-[8px]">{p.spinEff > 0 ? Number(p.spinEff).toFixed(1) : '-'}</td>
                   <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-blue-300 print:text-[8px]">{p.spinClock}</td>
-                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-purple-400 print:text-[8px]">{p.gyroAngle !== 0 ? `${p.gyroAngle}°` : '-'}</td>
+                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-purple-400 print:text-[8px]">{p.gyroAngle != null && p.gyroAngle !== 0 ? `${Number(p.gyroAngle).toFixed(1)}°` : '-'}</td>
                   <td className={`py-3 px-3 print:py-1 print:px-1 text-right font-mono print:text-[8px] ${p.vbTraj >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {p.vbTraj !== 0 ? p.vbTraj : '-'}
+                    {p.vbTraj != null && p.vbTraj !== 0 ? (p.vbTraj > 0 ? `+${Number(p.vbTraj).toFixed(1)}` : Number(p.vbTraj).toFixed(1)) : '-'}
                   </td>
                   <td className={`py-3 px-3 print:py-1 print:px-1 text-right font-mono print:text-[8px] ${p.hbTraj >= 0 ? 'text-blue-400' : 'text-orange-400'}`}>
-                    {p.hbTraj !== 0 ? p.hbTraj : '-'}
+                    {p.hbTraj != null && p.hbTraj !== 0 ? (p.hbTraj > 0 ? `+${Number(p.hbTraj).toFixed(1)}` : Number(p.hbTraj).toFixed(1)) : '-'}
                   </td>
-                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-slate-400 print:text-[8px]">{p.releaseZ > 0 ? p.releaseZ : '-'}</td>
-                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-slate-400 print:text-[8px]">{p.releaseX !== 0 ? p.releaseX : '-'}</td>
+                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-slate-400 print:text-[8px]">{p.releaseZ > 0 ? Number(p.releaseZ).toFixed(2) : '-'}</td>
+                  <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-slate-400 print:text-[8px]">{p.releaseX != null && p.releaseX !== 0 ? Number(p.releaseX).toFixed(2) : '-'}</td>
                   {overallSummary.hasVaaData && (
-                    <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-amber-400 print:text-[8px]">{p.vaa !== 0 ? `${p.vaa}°` : '-'}</td>
+                    <td className="py-3 px-3 print:py-1 print:px-1 text-right font-mono text-amber-400 print:text-[8px]">{p.vaa != null && p.vaa !== 0 ? `${Number(p.vaa).toFixed(1)}°` : '-'}</td>
                   )}
                 </tr>
               ))}

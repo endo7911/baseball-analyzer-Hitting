@@ -22,7 +22,7 @@ import { getGlobalUsers } from './lib/userSync';
 import { saveDatasetToLocalDB, getDatasetFromLocalDB, clearLocalDB } from './lib/db';
 import { 
   extractRowVal, toAsciiNumbers, parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS,
-  getDataValue, PITCH_VELO_KEYS, SPIN_RATE_KEYS, SPIN_EFFICIENCY_KEYS,
+  getDataValue, PITCH_VELO_KEYS, SPIN_RATE_KEYS, SPIN_EFFICIENCY_KEYS, GYRO_ANGLE_KEYS,
   VB_TRAJ_KEYS, HB_TRAJ_KEYS, RELEASE_HEIGHT_KEYS, RELEASE_SIDE_KEYS 
 } from './utils/dataHelpers';
 import { toBodyCompDbRow, extractBodyValues, getBodyName, getBodyTeam, getBodyDate } from './utils/bodyComp';
@@ -456,11 +456,19 @@ function App() {
       '回転効率': 'spin_efficiency',
       'Spin Efficiency': 'spin_efficiency',
       'SpinEfficiency': 'spin_efficiency',
+      'Spin Efficiency (release)': 'spin_efficiency',
       'spin_efficiency': 'spin_efficiency',
       // ジャイロ角
       'ジャイロ角': 'gyro_angle',
+      'ジャイロ角度': 'gyro_angle',
+      'ジャイロ度': 'gyro_angle',
+      'ジャイロ': 'gyro_angle',
       'Gyro Angle': 'gyro_angle',
       'GyroAngle': 'gyro_angle',
+      'Gyro Degree (deg)': 'gyro_angle',
+      'Gyro Degree': 'gyro_angle',
+      'Gyro (deg)': 'gyro_angle',
+      'Gyro': 'gyro_angle',
       'gyro_angle': 'gyro_angle',
       // 変化量
       '縦変化量': 'vb_traj',
@@ -676,6 +684,14 @@ function App() {
               if (filteredRow.release_pos_x == null || filteredRow.release_pos_x === 0) {
                 const rx = getDataValue(row, RELEASE_SIDE_KEYS);
                 if (rx !== 0) filteredRow.release_pos_x = rx;
+              }
+              if (filteredRow.gyro_angle == null || filteredRow.gyro_angle === 0) {
+                let g = getDataValue(row, GYRO_ANGLE_KEYS);
+                if ((g == null || g === 0 || isNaN(g)) && filteredRow.spin_efficiency > 0 && filteredRow.spin_efficiency <= 100) {
+                  const rad = Math.acos(filteredRow.spin_efficiency / 100);
+                  g = Math.round((rad * 180 / Math.PI) * 10) / 10;
+                }
+                if (g) filteredRow.gyro_angle = g;
               }
             }
 
@@ -978,7 +994,11 @@ function App() {
         const pType = row.pitch_type ?? row['Pitch Type'] ?? row['PitchType'] ?? row['球種'];
         const pThrows = row.p_throws ?? row['Throws'] ?? row['利き腕'] ?? row['投球腕'];
         const sAxis = row.spin_axis ?? row['Spin Direction'] ?? row['SpinDirection'] ?? row['回転軸'];
-        const gyro = row.gyro_angle ?? row['Gyro Angle'] ?? row['GyroAngle'] ?? row['ジャイロ角度'];
+        let gyro = row.gyro_angle ?? row['Gyro Degree (deg)'] ?? row['Gyro Degree'] ?? row['Gyro Angle'] ?? row['GyroAngle'] ?? row['ジャイロ角度'] ?? row['ジャイロ角'];
+        if ((gyro == null || gyro === 0 || isNaN(gyro)) && eff > 0 && eff <= 100) {
+          const rad = Math.acos(eff / 100);
+          gyro = Math.round((rad * 180 / Math.PI) * 10) / 10;
+        }
         const vaaVal = row.vaa ?? row['VAA'] ?? row['垂直アプローチ角度'];
 
         return {
@@ -991,6 +1011,7 @@ function App() {
           '回転数': spin,
           spin_efficiency: eff,
           'Spin Efficiency': eff,
+          'Spin Efficiency (release)': eff,
           '回転効率': eff,
           vb_traj: vb,
           'VB (trajectory)': vb,
@@ -1017,6 +1038,9 @@ function App() {
           'Spin Direction': sAxis,
           gyro_angle: gyro,
           'Gyro Angle': gyro,
+          'Gyro Degree (deg)': gyro,
+          'Gyro Degree': gyro,
+          'ジャイロ角': gyro,
           vaa: vaaVal,
           'VAA': vaaVal
         };
@@ -1146,6 +1170,15 @@ function App() {
             if (rz > 0) { row.release_pos_z = rz; row['Release Height'] = rz; }
             const rx = getDataValue(row, RELEASE_SIDE_KEYS);
             if (rx !== 0) { row.release_pos_x = rx; row['Release Side'] = rx; }
+            let g = getDataValue(row, GYRO_ANGLE_KEYS);
+            if ((g == null || g === 0 || isNaN(g)) && (row.spin_efficiency > 0 || eff > 0)) {
+              const curEff = row.spin_efficiency || eff;
+              if (curEff <= 100) {
+                const rad = Math.acos(curEff / 100);
+                g = Math.round((rad * 180 / Math.PI) * 10) / 10;
+              }
+            }
+            if (g) { row.gyro_angle = g; row['Gyro Angle'] = g; row['Gyro Degree (deg)'] = g; }
           }
 
           if (!grouped[fileName]) {
@@ -1388,6 +1421,15 @@ function App() {
             if (rz > 0) { row.release_pos_z = rz; row['Release Height'] = rz; }
             const rx = getDataValue(row, RELEASE_SIDE_KEYS);
             if (rx !== 0) { row.release_pos_x = rx; row['Release Side'] = rx; }
+            let g = getDataValue(row, GYRO_ANGLE_KEYS);
+            if ((g == null || g === 0 || isNaN(g)) && (row.spin_efficiency > 0 || eff > 0)) {
+              const curEff = row.spin_efficiency || eff;
+              if (curEff <= 100) {
+                const rad = Math.acos(curEff / 100);
+                g = Math.round((rad * 180 / Math.PI) * 10) / 10;
+              }
+            }
+            if (g) { row.gyro_angle = g; row['Gyro Angle'] = g; row['Gyro Degree (deg)'] = g; }
           }
 
           // Data isolation: Admin sees all; Team members see team data or own uploads
