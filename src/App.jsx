@@ -649,12 +649,23 @@ function App() {
 
             if (targetTable === 'blast_data') {
               if (!filteredRow.player_name) {
-                filteredRow.player_name = filteredRow.batter_name || row['選手名'] || row['名前'] || row['Player Name'] || 'Unknown Player';
+                filteredRow.player_name = filteredRow.batter_name || row['選手名'] || row['名前'] || row['Player Name'] || row['Player'] || 'Unknown Player';
+              }
+            }
+            if (targetTable === 'baseball_data') {
+              if (!filteredRow.player_name) {
+                filteredRow.player_name = filteredRow.batter_name || row['選手名'] || row['名前'] || row['Player Name'] || row['Player'] || 'Unknown Player';
+              }
+              if (!filteredRow.batter_name) {
+                filteredRow.batter_name = filteredRow.player_name;
               }
             }
             if (targetTable === 'savant_data') {
               if (!filteredRow.batter_name) {
-                filteredRow.batter_name = filteredRow.player_name || row['選手名'] || row['名前'] || row['Player Name'] || 'Unknown Player';
+                filteredRow.batter_name = filteredRow.player_name || row['選手名'] || row['名前'] || row['Player Name'] || row['Player'] || 'Unknown Player';
+              }
+              if (!filteredRow.player_name) {
+                filteredRow.player_name = filteredRow.batter_name;
               }
             }
             if (targetTable === 'pitching_data') {
@@ -745,6 +756,52 @@ function App() {
             return rowPayload;
           });
 
+          // 1. Primary: Attempt privileged Serverless Upload API (/api/data/upload)
+          // Uses SUPABASE_SERVICE_ROLE_KEY to bypass RLS and dynamically prune incompatible columns
+          let savedViaApi = false;
+          try {
+            const { data: { session } } = await client.auth.getSession();
+            const headers = { 'Content-Type': 'application/json' };
+            if (session?.access_token) {
+              headers['Authorization'] = `Bearer ${session.access_token}`;
+            }
+            if (uploaderEmail) headers['X-User-Email'] = uploaderEmail;
+            if (currentTeamName) headers['X-User-Team'] = currentTeamName;
+            if (profile?.role) headers['X-User-Role'] = profile.role || 'user';
+
+            const res = await fetch('/api/data/upload', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                type,
+                filename: dataObj.filename,
+                rows: batch,
+                team_name: currentTeamName,
+                team_id: currentTeamId,
+                user_id: currentUserId,
+                email: uploaderEmail
+              })
+            });
+
+            if (res.ok) {
+              const resData = await res.json().catch(() => ({}));
+              if (resData.success) {
+                savedViaApi = true;
+              }
+            } else {
+              const errData = await res.json().catch(() => ({}));
+              console.warn("Upload API returned non-OK status, falling back to direct client insert:", errData.error || res.status);
+            }
+          } catch (apiErr) {
+            console.warn("Direct upload API attempt skipped or failed, falling back to direct client insert:", apiErr);
+          }
+
+          if (savedViaApi) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            continue;
+          }
+
+          // 2. Secondary Fallback: Direct client insert (for offline / direct connection)
           let { error } = await client.from(targetTable).insert(batch);
 
           // Handle 22P02 (invalid input syntax for type uuid)
@@ -760,22 +817,37 @@ function App() {
             error = fbResult.error;
           }
 
-          // If a metadata column does not exist yet on remote table, fallback without it
-          if (error && error.message) {
-            let fallbackBatch = [...batch];
-            let needsRetry = false;
-            ['user_id', 'team_id', 'team_name', 'owner_id'].forEach(col => {
-              if (error.message.includes(`'${col}'`) || error.message.includes(`"${col}"`) || error.message.includes(`column "${col}"`)) {
-                console.warn(`${col} column not present in ${targetTable}, retrying insert without ${col}`);
-                fallbackBatch = fallbackBatch.map(({ [col]: _, ...rest }) => rest);
-                needsRetry = true;
-              }
-            });
-            if (needsRetry) {
+          // Dynamic column pruning: extract any missing column name from Postgres error message and retry
+          let retryCount = 0;
+          let fallbackBatch = [...batch];
+          while (error && error.message && retryCount < 10) {
+            retryCount++;
+            const colMatch = error.message.match(/column ["']?([a-zA-Z0-9_]+)["']?.*does not exist/i) ||
+                             error.message.match(/Could not find the ['"]?([a-zA-Z0-9_]+)['"]? column/i);
+            if (colMatch && colMatch[1]) {
+              const missingCol = colMatch[1];
+              console.warn(`Column "${missingCol}" not present in ${targetTable}, retrying insert without it...`);
+              fallbackBatch = fallbackBatch.map(({ [missingCol]: _, ...rest }) => rest);
               const fbResult = await client.from(targetTable).insert(fallbackBatch);
               error = fbResult.error;
+            } else {
+              // Try common metadata columns
+              let pruned = false;
+              ['user_id', 'team_id', 'team_name', 'owner_id', 'grade', 'launch_speed', 'launch_angle', 'hit_distance_sc'].forEach(col => {
+                if (error.message && (error.message.includes(`'${col}'`) || error.message.includes(`"${col}"`))) {
+                  fallbackBatch = fallbackBatch.map(({ [col]: _, ...rest }) => rest);
+                  pruned = true;
+                }
+              });
+              if (pruned) {
+                const fbResult = await client.from(targetTable).insert(fallbackBatch);
+                error = fbResult.error;
+              } else {
+                break;
+              }
             }
           }
+
           if (error) {
             console.error(`Error inserting into ${targetTable} at batch ${i}:`, error);
             throw error;
@@ -809,7 +881,39 @@ function App() {
             };
           }).filter(r => r.player_name);
 
-          if (bodyCompDbRows.length > 0) {
+          // Try Serverless API first for body_comp
+          try {
+            const { data: { session } } = await client.auth.getSession();
+            const headers = { 'Content-Type': 'application/json' };
+            if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+            if (uploaderEmail) headers['X-User-Email'] = uploaderEmail;
+            if (currentTeamName) headers['X-User-Team'] = currentTeamName;
+            if (profile?.role) headers['X-User-Role'] = profile.role || 'user';
+
+            const res = await fetch('/api/data/upload', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                type: 'body_comp',
+                filename: dataObj.filename,
+                rows: bodyCompDbRows,
+                team_name: currentTeamName,
+                team_id: currentTeamId,
+                user_id: currentUserId,
+                email: uploaderEmail
+              })
+            });
+            if (res.ok) {
+              const resJson = await res.json().catch(() => ({}));
+              if (resJson.success) {
+                savedToDedicated = true;
+              }
+            }
+          } catch (apiErr) {
+            console.warn("body_comp API upload attempt failed, trying client direct insert:", apiErr);
+          }
+
+          if (!savedToDedicated && bodyCompDbRows.length > 0) {
             let { error: bcErr } = await client.from('body_comp_data').insert(bodyCompDbRows);
             if (bcErr && (bcErr.code === '22P02' || (bcErr.message && bcErr.message.includes('type uuid')))) {
               console.warn("body_comp_data UUID constraint error, retrying without non-UUID user_id/team_id");
