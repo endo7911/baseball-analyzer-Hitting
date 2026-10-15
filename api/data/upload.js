@@ -329,6 +329,29 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  if (req.method === 'GET') {
+    if (!SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY is missing.' });
+    }
+    try {
+      const adminClient = getAdminClient();
+      const callerAuth = await verifyCaller(req, adminClient);
+      const { filename, table } = req.query || {};
+      const targetTable = table || 'baseball_data';
+      
+      let q = adminClient.from(targetTable).select('*');
+      if (filename) q = q.eq('file_name', filename);
+      if (!callerAuth.isAdmin) {
+        const userTeam = callerAuth.profile?.team_name || callerAuth.profile?.team_id;
+        if (userTeam) q = q.eq('team_name', userTeam);
+      }
+      const { data, error } = await q.limit(500);
+      return res.status(200).json({ data: data || [], error: error?.message || null });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
