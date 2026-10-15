@@ -271,19 +271,19 @@ export default async function handler(req, res) {
       totalDeleted += c;
     }
 
-    // 2. If 0 rows deleted, retry without team filter for target tables
-    if (totalDeleted === 0) {
+    // 2. If 0 rows deleted, retry without team filter ONLY for administrators
+    if (totalDeleted === 0 && isAdmin) {
       for (const tbl of targetTables) {
         const c = await cleanTableRows(adminClient, tbl, filename, null);
         totalDeleted += c;
       }
     }
 
-    // 3. Fallback: check all other tables to ensure complete cleanup
+    // 3. Fallback: check all other tables using the caller's team filter
     const allTables = ['baseball_data', 'pitching_data', 'body_comp_data', 'savant_data', 'blast_data'];
     for (const tbl of allTables) {
       if (!targetTables.includes(tbl)) {
-        const c = await cleanTableRows(adminClient, tbl, filename, null);
+        const c = await cleanTableRows(adminClient, tbl, filename, isAdmin ? null : userTeam);
         totalDeleted += c;
       }
     }
