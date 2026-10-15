@@ -127,7 +127,12 @@ async function verifyCaller(req, adminClient) {
   // 2. Caller verification by email
   const emailHeader = req.headers['x-user-email'] || req.headers['x-legacy-admin-email'];
   const roleHeader = req.headers['x-user-role'];
-  const teamHeader = req.headers['x-user-team'];
+  let teamHeader = req.headers['x-user-team'];
+  if (teamHeader) {
+    try {
+      teamHeader = decodeURIComponent(teamHeader);
+    } catch {}
+  }
   if (emailHeader) {
     const cleanEmail = String(emailHeader).trim().toLowerCase();
 

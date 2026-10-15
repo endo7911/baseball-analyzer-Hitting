@@ -35,25 +35,25 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         console.warn("baseball_data fetch error:", bError);
       }
 
-      // 2. Fetch from legacy/dedicated tables (savant_data, blast_data, pitching_data)
+      // 2. Fetch from legacy/dedicated tables (savant_data, blast_data, pitching_data, body_comp_data)
       const { data: savantRows, error: sError } = await client
         .from('savant_data')
-        .select('file_name, upload_id, updated_at, created_at')
+        .select('file_name, upload_id, created_at')
         .limit(5000);
 
       const { data: blastRows, error: blError } = await client
         .from('blast_data')
-        .select('file_name, upload_id, updated_at, created_at')
+        .select('file_name, upload_id, created_at')
         .limit(5000);
 
       const { data: pitchingRows, error: pError } = await client
         .from('pitching_data')
-        .select('file_name, upload_id, updated_at, created_at')
+        .select('file_name, upload_id, created_at')
         .limit(5000);
 
       const { data: bodyCompRows, error: bcError } = await client
         .from('body_comp_data')
-        .select('file_name, upload_id, updated_at, created_at')
+        .select('file_name, upload_id, created_at')
         .limit(5000);
 
       if (sError) console.warn("savant_data fetch error:", sError);
@@ -418,8 +418,8 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
 
         if (callerEmail) {
           headers['X-User-Email'] = callerEmail;
-          headers['X-User-Team'] = callerTeam;
-          headers['X-User-Role'] = callerRole;
+          if (callerTeam) headers['X-User-Team'] = encodeURIComponent(callerTeam);
+          if (callerRole) headers['X-User-Role'] = callerRole;
         }
 
         const res = await fetch('/api/data/delete', {
