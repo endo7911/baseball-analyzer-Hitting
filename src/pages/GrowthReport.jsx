@@ -566,7 +566,7 @@ export default function GrowthReport({
                 成長レポート（Before / After 比較）
               </h2>
               <p className="text-xs sm:text-sm text-slate-400">
-                測定日ごとの変化量（Δ）を自動算出し、チーム成長ランキングと個人の成長カルテを可視化します
+                測定日ごとの変化（Δ）を自動算出し、チーム成長ランキングと個人の成長カルテを可視化します
               </p>
             </div>
           </div>
@@ -631,7 +631,7 @@ export default function GrowthReport({
             </select>
           </div>
 
-          {/* 比較モード選択 */}
+          {/* 比較方式選択 */}
           <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
             <label className="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1.5">
               <Calendar size={13} className="text-emerald-400 shrink-0" /> 比較期間の算出方法
@@ -658,7 +658,7 @@ export default function GrowthReport({
             >
               {(CATEGORY_METRICS[category] || []).map(m => (
                 <option key={m.key} value={m.key}>
-                  {m.label} ({m.unit || '指数'}) の変化量
+                  {m.label} ({m.unit || '指数'}) の変化
                 </option>
               ))}
             </select>
@@ -775,7 +775,7 @@ export default function GrowthReport({
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">
                       {sortMode === 'delta'
-                        ? '初回測定日から最新測定日までの「伸び幅（変化量 Δ = After - Before）」が大きい順に表示しています。'
+                        ? '初回測定日から最新測定日までの「伸び幅（変化 Δ = After - Before）」が大きい順に表示しています。'
                         : '最新測定日（After）の実績記録が高い順に表示しています。'}
                       全選手の名前をもれなく表示しています。
                     </p>
@@ -795,7 +795,7 @@ export default function GrowthReport({
                             ? 'bg-blue-600 text-white shadow-sm'
                             : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                         }`}
-                        title="期間内での伸び幅（変化量 Δ）が大きい順"
+                        title="期間内での伸び幅（変化 Δ）が大きい順"
                       >
                         📈 伸び幅 (Δ) 順
                       </button>
@@ -892,7 +892,7 @@ export default function GrowthReport({
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">
                       {sortMode === 'delta'
-                        ? '変化量（Δ）が大きい順に並んでいます。行をクリックすると右側の個別カルテに反映されます。'
+                        ? '変化（Δ）が大きい順に並んでいます。行をクリックすると右側の個別カルテに反映されます。'
                         : '最新測定値（After）が高い順に並んでいます。行をクリックすると右側の個別カルテに反映されます。'}
                     </p>
                   </div>
@@ -910,7 +910,7 @@ export default function GrowthReport({
                         <th className="py-2.5 px-3 min-w-[140px] whitespace-nowrap">比較期間</th>
                         <th className="py-2.5 px-3 w-20 text-right whitespace-nowrap">Before</th>
                         <th className="py-2.5 px-3 w-20 text-right whitespace-nowrap">After</th>
-                        <th className="py-2.5 px-3 w-28 text-right whitespace-nowrap">変化量 (Δ)</th>
+                        <th className="py-2.5 px-3 w-28 text-right whitespace-nowrap">変化 (Δ)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 text-xs">
