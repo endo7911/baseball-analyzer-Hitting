@@ -505,8 +505,7 @@ export default function GrowthReport({
         Before: p.beforeStats?.[selectedMetricKey] != null ? Number(p.beforeStats[selectedMetricKey].toFixed(decimals)) : 0,
         After: p.afterStats?.[selectedMetricKey] != null ? Number(p.afterStats[selectedMetricKey].toFixed(decimals)) : 0,
         delta: p.deltas[selectedMetricKey] != null ? Number(p.deltas[selectedMetricKey].toFixed(decimals)) : 0
-      }))
-      .reverse();
+      }));
   }, [playerGrowthList, selectedMetricKey, currentMetricMeta, chartDisplayLimit]);
 
   // チャートの高さを選手数に応じて自動計算（1人あたり38pxを確保し、全選手名が100%確実に表示されるよう調整）
