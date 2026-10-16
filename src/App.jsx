@@ -156,8 +156,7 @@ function App() {
                 hitting: allowHitting,
                 pitching: allowPitching,
                 bodyComp: allowBodyComp,
-                game: allowGame,
-                ...(pData.permissions || {})
+                game: allowGame
               }
             };
 
@@ -285,8 +284,7 @@ function App() {
             hitting: allowHitting,
             pitching: allowPitching,
             bodyComp: allowBodyComp,
-            game: allowGame,
-            ...(pData.permissions || {})
+            game: allowGame
           }
         });
       }
@@ -579,8 +577,7 @@ function App() {
               hitting: allowHitting,
               pitching: allowPitching,
               bodyComp: allowBodyComp,
-              game: allowGame,
-              ...(updated.permissions || {})
+              game: allowGame
             }
           };
         });

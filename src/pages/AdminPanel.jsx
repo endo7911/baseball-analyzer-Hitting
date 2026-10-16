@@ -359,13 +359,15 @@ function AdminPanel() {
     }
   };
 
+  const getEffectivePermissions = (u) => ({
+    hitting: u?.allow_hitting !== false && u?.permissions?.hitting !== false,
+    pitching: u?.allow_pitching !== false && u?.permissions?.pitching !== false,
+    bodyComp: u?.allow_body_comp !== false && u?.permissions?.bodyComp !== false,
+    game: u?.allow_game !== false && u?.permissions?.game !== false
+  });
+
   const toggleModulePermission = async (user, moduleKey) => {
-    const curPerms = user.permissions || {
-      hitting: user.allow_hitting !== false,
-      pitching: user.allow_pitching !== false,
-      bodyComp: user.allow_body_comp !== false,
-      game: user.allow_game !== false
-    };
+    const curPerms = getEffectivePermissions(user);
     const newStatus = !curPerms[moduleKey];
 
     const moduleLabels = { hitting: '打撃分析', pitching: '投手分析', bodyComp: '体組成分析', game: '試合スタッツ' };
@@ -382,12 +384,18 @@ function AdminPanel() {
         : (moduleKey === 'bodyComp' ? 'allow_body_comp' : 'allow_game'));
       const targetId = user.id || user.email;
 
+      const newPerms = {
+        ...curPerms,
+        [moduleKey]: newStatus
+      };
+
       if (serverApiActive && targetId) {
         await callAdminApi('PUT', {
           id: targetId,
           email: user.email,
           updates: { 
             [updateField]: newStatus,
+            permissions: newPerms,
             email: user.email 
           }
         });
@@ -395,7 +403,8 @@ function AdminPanel() {
 
       // Direct profiles table update fallback if Supabase client available
       try {
-        if (user.id) {
+        const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+        if (user.id && isUUID(user.id)) {
           await supabase
             .from('profiles')
             .update({ [updateField]: newStatus, updated_at: new Date().toISOString() })
@@ -410,16 +419,22 @@ function AdminPanel() {
         console.warn("Direct profiles update non-fatal:", sbErr);
       }
 
-      // Also update local/global storage fallback
+      // Also update local/global storage fallback (ensure all 4 permissions remain intact)
       try {
         const globalUsers = await getGlobalUsers();
         const updatedUsers = globalUsers.map(u => {
-          if ((user.id && u.id === user.id) || (user.email && u.email?.toLowerCase() === user.email?.toLowerCase())) {
+          const matchId = user.id && (u.id === user.id);
+          const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
+          if (matchId || matchEmail) {
             return {
               ...u,
               [updateField]: newStatus,
+              allow_hitting: moduleKey === 'hitting' ? newStatus : (u.allow_hitting !== false && u.permissions?.hitting !== false),
+              allow_pitching: moduleKey === 'pitching' ? newStatus : (u.allow_pitching !== false && u.permissions?.pitching !== false),
+              allow_body_comp: moduleKey === 'bodyComp' ? newStatus : (u.allow_body_comp !== false && u.permissions?.bodyComp !== false),
+              allow_game: moduleKey === 'game' ? newStatus : (u.allow_game !== false && u.permissions?.game !== false),
               permissions: {
-                ...(u.permissions || {}),
+                ...getEffectivePermissions(u),
                 [moduleKey]: newStatus
               }
             };
@@ -696,12 +711,7 @@ function AdminPanel() {
                   ) : (
                     users.map(u => {
                       const isCurrentDisabled = !!u.is_disabled;
-                      const perms = u.permissions || {
-                        hitting: u.allow_hitting !== false,
-                        pitching: u.allow_pitching !== false,
-                        bodyComp: u.allow_body_comp !== false,
-                        game: u.allow_game !== false
-                      };
+                      const perms = getEffectivePermissions(u);
 
                       return (
                         <tr key={u.id || u.email} className={`hover:bg-slate-750/30 transition ${isCurrentDisabled ? 'opacity-50 bg-red-950/10' : ''}`}>

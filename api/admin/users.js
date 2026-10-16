@@ -278,6 +278,11 @@ export default async function handler(req, res) {
         if (!u || !u.email) return;
         const key = u.email.toLowerCase();
         const hasAuth = authUserMap.has(key) || (u.id && authUserMap.has(u.id));
+        const hitting = u.allow_hitting !== false && u.permissions?.hitting !== false;
+        const pitching = u.allow_pitching !== false && u.permissions?.pitching !== false;
+        const bodyComp = u.allow_body_comp !== false && u.permissions?.bodyComp !== false;
+        const game = u.allow_game !== false && u.permissions?.game !== false;
+
         userMap.set(key, {
           id: u.id || key,
           email: u.email,
@@ -288,15 +293,15 @@ export default async function handler(req, res) {
           role: u.role || 'user',
           is_disabled: !!u.is_disabled,
           is_migrated: hasAuth,
-          allow_hitting: u.allow_hitting !== false,
-          allow_pitching: u.allow_pitching !== false,
-          allow_body_comp: u.allow_body_comp !== false,
-          allow_game: u.allow_game !== false,
+          allow_hitting: hitting,
+          allow_pitching: pitching,
+          allow_body_comp: bodyComp,
+          allow_game: game,
           permissions: {
-            hitting: u.allow_hitting !== false,
-            pitching: u.allow_pitching !== false,
-            bodyComp: u.allow_body_comp !== false,
-            game: u.allow_game !== false
+            hitting,
+            pitching,
+            bodyComp,
+            game
           },
           temp_password: u.temp_password || null,
           created_at: u.created_at || new Date().toISOString()
@@ -310,6 +315,12 @@ export default async function handler(req, res) {
           const key = p.email.toLowerCase();
           const existing = userMap.get(key) || {};
           const hasAuth = authUserMap.has(key) || (p.id && authUserMap.has(p.id));
+
+          const hitting = (p.allow_hitting !== undefined ? p.allow_hitting !== false : existing.allow_hitting !== false) && p.permissions?.hitting !== false && existing.permissions?.hitting !== false;
+          const pitching = (p.allow_pitching !== undefined ? p.allow_pitching !== false : existing.allow_pitching !== false) && p.permissions?.pitching !== false && existing.permissions?.pitching !== false;
+          const bodyComp = (p.allow_body_comp !== undefined ? p.allow_body_comp !== false : existing.allow_body_comp !== false) && p.permissions?.bodyComp !== false && existing.permissions?.bodyComp !== false;
+          const game = (p.allow_game !== undefined ? p.allow_game !== false : existing.allow_game !== false) && p.permissions?.game !== false && existing.permissions?.game !== false;
+
           userMap.set(key, {
             ...existing,
             id: p.id,
@@ -321,15 +332,15 @@ export default async function handler(req, res) {
             role: p.role || existing.role || 'user',
             is_disabled: !!p.is_disabled,
             is_migrated: hasAuth,
-            allow_hitting: p.allow_hitting !== false,
-            allow_pitching: p.allow_pitching !== false,
-            allow_body_comp: p.allow_body_comp !== false,
-            allow_game: p.allow_game !== false,
+            allow_hitting: hitting,
+            allow_pitching: pitching,
+            allow_body_comp: bodyComp,
+            allow_game: game,
             permissions: {
-              hitting: p.allow_hitting !== false,
-              pitching: p.allow_pitching !== false,
-              bodyComp: p.allow_body_comp !== false,
-              game: p.allow_game !== false
+              hitting,
+              pitching,
+              bodyComp,
+              game
             },
             temp_password: p.temp_password_info || existing.temp_password || null,
             created_at: p.created_at || existing.created_at,
@@ -694,7 +705,7 @@ export default async function handler(req, res) {
       if (updates && typeof updates === 'object') {
         const allowedFields = [
           'team_id', 'team_name', 'display_name', 'is_disabled',
-          'allow_hitting', 'allow_pitching', 'allow_body_comp', 'allow_game', 'role'
+          'allow_hitting', 'allow_pitching', 'allow_body_comp', 'allow_game', 'role', 'permissions'
         ];
         const safeUpdates = {};
         for (const k of allowedFields) {
@@ -705,16 +716,30 @@ export default async function handler(req, res) {
         const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
         const targetEmail = (updates.email || req.body.email || (typeof id === 'string' && id.includes('@') ? id : '')).toLowerCase().trim();
 
+        // Prepare updates for profiles table (strip permissions object as profiles uses individual columns)
+        const { permissions: _p, ...profileColumnsUpdates } = safeUpdates;
+
+        const updateProfilesTable = async (filterCol, filterVal) => {
+          try {
+            const { error: upErr } = await adminClient
+              .from('profiles')
+              .update(profileColumnsUpdates)
+              .eq(filterCol, filterVal);
+
+            // If error is due to allow_game column not existing, retry without it
+            if (upErr && (upErr.message?.includes('allow_game') || upErr.code === 'PGRST204')) {
+              const { allow_game, ...restUpdates } = profileColumnsUpdates;
+              await adminClient.from('profiles').update(restUpdates).eq(filterCol, filterVal);
+            }
+          } catch (err) {
+            console.warn(`profiles update by ${filterCol} non-fatal:`, err);
+          }
+        };
+
         if (id && isUUID(id)) {
-          await adminClient
-            .from('profiles')
-            .update(safeUpdates)
-            .eq('id', id);
+          await updateProfilesTable('id', id);
         } else if (targetEmail) {
-          await adminClient
-            .from('profiles')
-            .update(safeUpdates)
-            .eq('email', targetEmail);
+          await updateProfilesTable('email', targetEmail);
         }
 
         // Also update Supabase Auth user_metadata if auth user found
@@ -734,17 +759,45 @@ export default async function handler(req, res) {
           console.warn("Auth user_metadata update non-fatal error:", authErr);
         }
 
-        // Also reflect updates in legacy storage
+        // Also reflect updates in legacy storage (ensure all 4 permissions are present and in sync)
         try {
           const legacyUsers = await getLegacyUsers(adminClient);
           const updatedLegacy = legacyUsers.map(u => {
-            if (u.id === id || (u.email && targetEmail && u.email.toLowerCase() === targetEmail)) {
-              return { ...u, ...safeUpdates };
+            const matchId = (id && u.id === id);
+            const matchEmail = (targetEmail && u.email && u.email.toLowerCase() === targetEmail);
+            if (matchId || matchEmail) {
+              const basePerms = {
+                hitting: u.allow_hitting !== false && u.permissions?.hitting !== false,
+                pitching: u.allow_pitching !== false && u.permissions?.pitching !== false,
+                bodyComp: u.allow_body_comp !== false && u.permissions?.bodyComp !== false,
+                game: u.allow_game !== false && u.permissions?.game !== false,
+                ...(u.permissions || {})
+              };
+
+              if (safeUpdates.allow_hitting !== undefined) basePerms.hitting = safeUpdates.allow_hitting;
+              if (safeUpdates.allow_pitching !== undefined) basePerms.pitching = safeUpdates.allow_pitching;
+              if (safeUpdates.allow_body_comp !== undefined) basePerms.bodyComp = safeUpdates.allow_body_comp;
+              if (safeUpdates.allow_game !== undefined) basePerms.game = safeUpdates.allow_game;
+              if (safeUpdates.permissions && typeof safeUpdates.permissions === 'object') {
+                Object.assign(basePerms, safeUpdates.permissions);
+              }
+
+              return {
+                ...u,
+                ...safeUpdates,
+                allow_hitting: basePerms.hitting,
+                allow_pitching: basePerms.pitching,
+                allow_body_comp: basePerms.bodyComp,
+                allow_game: basePerms.game,
+                permissions: basePerms
+              };
             }
             return u;
           });
           await saveLegacyUsers(adminClient, updatedLegacy);
-        } catch {}
+        } catch (legErr) {
+          console.warn("legacyUsers update non-fatal:", legErr);
+        }
       }
 
       return res.status(200).json({ message: 'User updated successfully.' });
