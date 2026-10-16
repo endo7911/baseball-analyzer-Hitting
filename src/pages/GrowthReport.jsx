@@ -762,7 +762,8 @@ export default function GrowthReport({
             <div className="xl:col-span-7 space-y-6">
               {/* Before / After 比較 水平バーチャート（全選手名をもれなく完全表示） */}
               <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
+                <div className="space-y-3 mb-4">
+                  {/* 上段：タイトル＆説明文（全幅で表示し文字の縦潰れを完全解消） */}
                   <div>
                     <h3 className="text-base font-black text-white flex items-center gap-2">
                       <Award size={18} className="text-amber-400 shrink-0" />
@@ -773,7 +774,7 @@ export default function GrowthReport({
                           : `（${sortMode === 'delta' ? '伸び幅' : '最新記録'} 上位${chartDisplayLimit}名）`}
                       </span>
                     </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-xs text-slate-400 mt-1">
                       {sortMode === 'delta'
                         ? '初回測定日から最新測定日までの「伸び幅（変化 Δ = After - Before）」が大きい順に表示しています。'
                         : '最新測定日（After）の実績記録が高い順に表示しています。'}
@@ -781,8 +782,8 @@ export default function GrowthReport({
                     </p>
                   </div>
 
-                  {/* 並び順＆表示人数の選択コントロール */}
-                  <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto shrink-0">
+                  {/* 下段：並び順＆表示人数の選択コントロール（すっきり横一列に整頓） */}
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-800/80">
                     {/* ソート基準切替 */}
                     <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs">
                       <span className="text-slate-400 px-1.5 font-bold text-[11px]">並び順:</span>
