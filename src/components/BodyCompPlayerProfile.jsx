@@ -248,7 +248,7 @@ function BodyCompPlayerProfile({
           <Dumbbell className="w-5 h-5 text-cyan-400" /> 部位別筋肉量 (kg)
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 sm:gap-3">
-          <div className="bg-slate-900/80 border border-slate-700 p-3 rounded-xl text-center">
+          <div className="col-span-2 sm:col-span-1 bg-slate-900/80 border border-slate-700 p-3 rounded-xl text-center">
             <p className="text-xs text-slate-400 font-bold">体幹</p>
             <p className="text-lg sm:text-xl font-mono font-black text-white mt-1">{fmt(latest.trunk, 1)}</p>
           </div>

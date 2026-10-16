@@ -59,13 +59,13 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
         <div className="relative z-10 max-w-3xl space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-bold">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Baseball Analyzer 公式ガイド (ver 2.0.0)</span>
+            <span>Baseball Analyzer 公式ガイド (ver 2.1.0)</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
             アプリの使い方 & 機能ガイド
           </h1>
           <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-            CSV読み込み・クラウド管理から、投手分析、体組成分析、打撃分析、グラフのズーム機能、選手比較テーブルのソートまで分かりやすく解説します。
+            CSV読み込み・クラウド管理から、チームカレンダー、体組成シナジー分析、投手分析、打撃分析、グラフのズーム機能、選手比較テーブルのソートまで分かりやすく解説します。
           </p>
         </div>
         <div className="absolute right-0 top-0 -bottom-10 w-96 bg-blue-600/10 blur-3xl rounded-full pointer-events-none" />
@@ -78,7 +78,7 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
           { id: 'csv', label: '2. CSV読み込み手順', icon: UploadCloud },
           { id: 'cloud', label: '3. クラウド管理・プライバシー', icon: HardDrive },
           { id: 'faq', label: '4. よくある質問 (FAQ)', icon: HelpCircle },
-          { id: 'changelog', label: '5. 更新履歴 (ver 2.0.0)', icon: Layers },
+          { id: 'changelog', label: '5. 更新履歴 (ver 2.1.0)', icon: Layers },
           { id: 'inquiry', label: '6. お問い合わせ・ご要望', icon: MessageSquare },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -377,23 +377,83 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
         </div>
       )}
 
-      {/* Tab 5: Version Changelog / Release Notes (Latest Version Only) */}
+      {/* Tab 5: Version Changelog / Release Notes */}
       {activeTab === 'changelog' && (
         <div className="space-y-6">
-          {/* ver 2.0.0 Release Notes (Latest) */}
-          <div className="bg-slate-900 border border-amber-500/30 p-8 rounded-3xl space-y-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          {/* ver 2.1.0 Release Notes (Latest) */}
+          <div className="bg-slate-900 border-2 border-indigo-500/40 p-6 sm:p-8 rounded-3xl space-y-6 shadow-2xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-3 bg-amber-600/20 border border-amber-500/30 rounded-2xl text-amber-400">
+                <div className="p-3 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl text-indigo-400 shrink-0">
                   <Sparkles className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-extrabold text-white">主な更新内容（ver 2.0.0）</h3>
+                  <h3 className="text-xl font-extrabold text-white">主な更新内容（ver 2.1.0）</h3>
+                  <p className="text-xs text-slate-400">チーム活動＆測定カレンダー・体組成連動シナジー分析・アカウント完全分離・スマホ最適化</p>
+                </div>
+              </div>
+              <span className="self-start sm:self-auto px-3 py-1 bg-indigo-600/30 border border-indigo-400 text-indigo-300 text-xs font-black rounded-full whitespace-nowrap">
+                ver 2.1.0 (最新)
+              </span>
+            </div>
+
+            <div className="space-y-4">
+              {/* Feature 1 */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
+                <h4 className="text-sm font-extrabold text-indigo-300 flex items-center gap-2">
+                  <span>📅 1. 「チーム活動＆測定カレンダー」の正式リリース</span>
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  日々の練習・公式戦・OP戦・合宿・休養・ミーティングなどの予定登録・編集が可能になりました。打撃・投球・体組成CSVの読み込み日や参加選手もカレンダー上に自動連携集約され、活動履歴と測定実績を一目で把握できます。
+                </p>
+              </div>
+
+              {/* Feature 2 */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
+                <h4 className="text-sm font-extrabold text-emerald-300 flex items-center gap-2">
+                  <span>💪 2. 体組成個人分析「フィジカル × パフォーマンス連動シナジー分析」</span>
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  体重や筋肉量の増減に伴う「球速・打球速度・スイング速度」の伸び（増量還元効率: km/h / kg）を自動算出。複合推移チャート（棒グラフ: 体組成 × 折れ線グラフ: パフォーマンス）と成長シナジー自動診断により、身体作りが出力向上に直結しているかを直感的に検証できます。
+                </p>
+              </div>
+
+              {/* Feature 3 */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
+                <h4 className="text-sm font-extrabold text-cyan-300 flex items-center gap-2">
+                  <span>🛡️ 3. チーム・アカウント別の厳格なデータ完全分離 ＆ モジュール公開制御</span>
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  各チーム・アカウントが登録した予定データは衝突のない専用テナントキーにより完全に分離され、他校・他アカウントへの漏洩や干渉を100%遮断。また、管理者パネルからチームカレンダーや試合スタッツの表示/非表示（オン/オフ）をアカウントごとに即時切替・制御できるようになりました。
+                </p>
+              </div>
+
+              {/* Feature 4 */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
+                <h4 className="text-sm font-extrabold text-purple-300 flex items-center gap-2">
+                  <span>📱 4. スマートフォン・モバイル端末への完全レスポンシブ最適化</span>
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  スマートフォン画面でもカレンダー、予定追加モーダル、複合推移グラフ、各指標カードがはみ出さず、指先で快適に閲覧・操作できるようUIレイアウトを全面最適化しました。
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* ver 2.0.0 Release Notes (Previous) */}
+          <div className="bg-slate-900/60 border border-slate-800 p-6 sm:p-8 rounded-3xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-amber-600/20 border border-amber-500/30 rounded-2xl text-amber-400 shrink-0">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold text-white">主な更新内容（ver 2.0.0）</h3>
                   <p className="text-xs text-slate-400">投手分析・体組成分析ダブルリリース・カラーテーマ切替・安全ログアウト</p>
                 </div>
               </div>
-              <span className="px-3 py-1 bg-amber-600/20 border border-amber-500/40 text-amber-300 text-xs font-black rounded-full">
-                ver 2.0.0 (最新)
+              <span className="self-start sm:self-auto px-3 py-1 bg-slate-800 border border-slate-700 text-slate-400 text-xs font-bold rounded-full whitespace-nowrap">
+                ver 2.0.0
               </span>
             </div>
 

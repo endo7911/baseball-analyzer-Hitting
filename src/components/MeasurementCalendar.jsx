@@ -37,16 +37,19 @@ export default function MeasurementCalendar({
   const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'timeline'
   const [filterType, setFilterType] = useState('all');
 
-  // Strict Per-Account Storage Key (Isolates schedules per team/user; eliminates any cross-account leak)
-  const tenantId = (
-    profile?.team_id ||
-    profile?.team_name ||
-    user?.email ||
-    profile?.email ||
-    'team'
-  ).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  // Strict Per-Account / Per-Team Storage Key (Guarantees zero cross-team collision for Japanese & custom names)
+  const tenantStorageKey = useMemo(() => {
+    const rawTeam = (profile?.team_name || profile?.team_id || '').trim();
+    const isGenericTeam = !rawTeam || /^team[\s_-]*a$/i.test(rawTeam) || /^unknown/i.test(rawTeam);
+    const rawAccount = (user?.email || profile?.email || user?.id || profile?.id || 'guest').trim().toLowerCase();
 
-  const tenantStorageKey = `baseball_team_schedules_v2_${tenantId}`;
+    if (!isGenericTeam) {
+      // URL-safe encoding so Japanese team names (半田高校, 東浦高校 etc.) NEVER collide into generic characters
+      return `baseball_team_schedules_v3_team_${encodeURIComponent(rawTeam.toLowerCase())}`;
+    }
+    // For generic/default teams, isolate strictly by individual account (email/ID)
+    return `baseball_team_schedules_v3_user_${encodeURIComponent(rawAccount)}`;
+  }, [profile?.team_name, profile?.team_id, profile?.email, profile?.id, user?.email, user?.id]);
 
   // Modal State for Add & Edit
   const [showModal, setShowModal] = useState(false);
@@ -68,6 +71,19 @@ export default function MeasurementCalendar({
       localStorage.removeItem('baseball_measurement_schedules_v1');
       const saved = localStorage.getItem(tenantStorageKey);
       if (saved) return JSON.parse(saved);
+
+      // Safe migration from v2 if valid non-colliding key exists
+      const legacyKey = `baseball_team_schedules_v2_${(profile?.team_id || profile?.team_name || user?.email || 'team').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
+      if (legacyKey !== 'baseball_team_schedules_v2_____') {
+        const legacySaved = localStorage.getItem(legacyKey);
+        if (legacySaved) {
+          const parsed = JSON.parse(legacySaved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            localStorage.setItem(tenantStorageKey, JSON.stringify(parsed));
+            return parsed;
+          }
+        }
+      }
     } catch (e) {
       console.warn("Failed to load schedules from localStorage:", e);
     }
@@ -82,6 +98,18 @@ export default function MeasurementCalendar({
       if (saved) {
         setManualSchedules(JSON.parse(saved));
       } else {
+        const legacyKey = `baseball_team_schedules_v2_${(profile?.team_id || profile?.team_name || user?.email || 'team').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
+        if (legacyKey !== 'baseball_team_schedules_v2_____') {
+          const legacySaved = localStorage.getItem(legacyKey);
+          if (legacySaved) {
+            const parsed = JSON.parse(legacySaved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              localStorage.setItem(tenantStorageKey, JSON.stringify(parsed));
+              setManualSchedules(parsed);
+              return;
+            }
+          }
+        }
         setManualSchedules([]);
       }
     } catch (e) {
@@ -944,8 +972,8 @@ export default function MeasurementCalendar({
 
       {/* Add / Edit Schedule Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border-2 border-indigo-500/50 rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-4 my-8 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-900 border-2 border-indigo-500/50 rounded-2xl sm:rounded-3xl max-w-xl w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 my-auto animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
