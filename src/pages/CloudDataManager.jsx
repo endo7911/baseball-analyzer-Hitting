@@ -30,36 +30,50 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       const currentTeamName = rawTeamName.toLowerCase();
       const currentTeamId = (profile?.team_id || profile?.team_name || '').trim().toLowerCase();
 
+      const withTimeout = (promise, ms = 6000, errorMsg = 'Operation timed out') => {
+        let timer;
+        const timeout = new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(errorMsg)), ms);
+        });
+        return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+      };
+
       // Server-side filtered metadata fetch with seamless fallback if columns differ
       const fetchMetaFromTable = async (table, cols) => {
-        if (!isAdmin && rawTeamName) {
-          const encodedTeam = encodeURIComponent(rawTeamName);
-          const safeTeam = rawTeamName.replace(/"/g, '');
-          const filters = [
-            `team_name.eq."${safeTeam}"`,
-            `upload_id.ilike.%::team:${encodedTeam}::%`
-          ];
-          if (userEmail && userEmail !== 'guest') {
-            filters.push(`upload_id.ilike.${userEmail}::%`);
+        try {
+          if (!isAdmin && rawTeamName) {
+            const encodedTeam = encodeURIComponent(rawTeamName);
+            const safeTeam = rawTeamName.replace(/"/g, '');
+            const filters = [
+              `team_name.eq."${safeTeam}"`,
+              `upload_id.ilike.%::team:${encodedTeam}::%`
+            ];
+            if (userEmail && userEmail !== 'guest') {
+              filters.push(`upload_id.ilike.${userEmail}::%`);
+            }
+            if (table === 'baseball_data') {
+              filters.push('file_name.eq.__deleted_files_registry_v1__');
+            }
+            const { data, error: fErr } = await withTimeout(
+              client.from(table).select(cols).or(filters.join(',')).limit(5000),
+              6000,
+              `${table} filter fetch timeout`
+            );
+            if (!fErr && Array.isArray(data)) {
+              return data;
+            }
           }
-          if (table === 'baseball_data') {
-            filters.push('file_name.eq.__deleted_files_registry_v1__');
-          }
-          const { data, error: fErr } = await client
-            .from(table)
-            .select(cols)
-            .or(filters.join(','))
-            .limit(5000);
-          if (!fErr && Array.isArray(data)) {
-            return data;
-          }
+          const { data, error: qErr } = await withTimeout(
+            client.from(table).select(cols).limit(5000),
+            6000,
+            `${table} fetch timeout`
+          );
+          if (qErr) console.warn(`${table} fetch error:`, qErr);
+          return data || [];
+        } catch (err) {
+          console.warn(`${table} query timed out or failed:`, err);
+          return [];
         }
-        const { data, error: qErr } = await client
-          .from(table)
-          .select(cols)
-          .limit(5000);
-        if (qErr) console.warn(`${table} fetch error:`, qErr);
-        return data || [];
       };
 
       const [baseballRows, savantRows, blastRows, pitchingRows, bodyCompRows] = await Promise.all([
@@ -71,7 +85,11 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       ]);
 
       // 0. Extract deleted files registry from dedicated deleted_files_registry table + local + legacy
-      const deletedFilesMap = await fetchDeletedFilesMap(client, baseballRows);
+      const deletedFilesMap = await withTimeout(
+        fetchDeletedFilesMap(client, baseballRows),
+        4000,
+        'deletedFilesMap timeout'
+      ).catch(() => new Map());
 
       const isFileDeleted = (fname, rowTime, uploadId) => {
         if (!fname) return false;

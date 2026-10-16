@@ -11,7 +11,7 @@ export const DELETED_REGISTRY_TABLE = 'deleted_files_registry';
 const LOCAL_STORAGE_KEY = 'deletedCloudFiles';
 
 // セッション中に `deleted_files_registry` テーブルが存在しない（404/42P01）と判明した場合のキャッシュフラグ
-let dedicatedTableAvailable = true;
+let dedicatedTableAvailable = false;
 
 /**
  * ローカルストレージから削除済みファイル配列を取得

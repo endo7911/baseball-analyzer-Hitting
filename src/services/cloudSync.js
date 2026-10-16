@@ -486,6 +486,14 @@ export async function fetchDatasetsFromCloud({ user, profile }) {
   const currentTeamName = rawTeamName.toLowerCase();
   const currentTeamId = (profile?.team_id || profile?.team_name || '').trim().toLowerCase();
 
+  const withTimeout = (promise, ms = 6000, errorMsg = 'Operation timed out') => {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(errorMsg)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  };
+
   /**
    * サーバーサイド絞り込み付きページネーション取得:
    * - 管理者は全件取得
@@ -498,6 +506,8 @@ export async function fetchDatasetsFromCloud({ user, profile }) {
     let from = 0;
     let hasMore = true;
     let useServerFilter = !isAdmin && Boolean(rawTeamName);
+    let loopCount = 0;
+    const MAX_LOOPS = 10; // Safety limit: max 10,000 rows per table
 
     const buildFilterExpr = () => {
       const encodedTeam = encodeURIComponent(rawTeamName);
@@ -516,29 +526,40 @@ export async function fetchDatasetsFromCloud({ user, profile }) {
       return filters.join(',');
     };
 
-    while (hasMore) {
+    while (hasMore && loopCount < MAX_LOOPS) {
+      loopCount++;
       let query = client.from(table).select('*');
       if (useServerFilter) {
         query = query.or(buildFilterExpr());
       }
       query = query.range(from, from + PAGE_SIZE - 1);
 
-      const { data, error } = await query;
-      if (error) {
+      try {
+        const { data, error } = await withTimeout(query, 6000, `${table} query timeout`);
+        if (error) {
+          if (useServerFilter) {
+            // サーバーサイドフィルタ非対応のテーブル構造の場合はフォールバックして再試行
+            useServerFilter = false;
+            continue;
+          }
+          console.warn(`Query ${table} error:`, error);
+          break;
+        }
+
+        const rows = data || [];
+        allRows = allRows.concat(rows);
+        if (rows.length < PAGE_SIZE) {
+          hasMore = false;
+        } else {
+          from += PAGE_SIZE;
+        }
+      } catch (err) {
+        console.warn(`Query ${table} timed out or failed:`, err);
         if (useServerFilter) {
-          // サーバーサイドフィルタ非対応のテーブル構造の場合はフォールバックして再試行
           useServerFilter = false;
           continue;
         }
-        throw error;
-      }
-
-      const rows = data || [];
-      allRows = allRows.concat(rows);
-      if (rows.length < PAGE_SIZE) {
-        hasMore = false;
-      } else {
-        from += PAGE_SIZE;
+        break;
       }
     }
     return allRows;
@@ -553,7 +574,11 @@ export async function fetchDatasetsFromCloud({ user, profile }) {
   ]);
 
   // 専用テーブル `deleted_files_registry` + レガシー行 + ローカルから削除レジストリを取得
-  const deletedFilesMap = await fetchDeletedFilesMap(client, combinedRaw);
+  const deletedFilesMap = await withTimeout(
+    fetchDeletedFilesMap(client, combinedRaw),
+    4000,
+    'deletedFilesMap timeout'
+  ).catch(() => new Map());
 
   const isRowDeleted = (row) => {
     if (!row || deletedFilesMap.size === 0) return false;

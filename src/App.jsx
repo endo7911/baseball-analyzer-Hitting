@@ -1,5 +1,5 @@
 // Baseball Analyzer - Vite React App (Vercel Build Trigger)
-import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
 import Papa from 'papaparse';
 import Sidebar from './components/Sidebar';
 import LoginPage from './pages/LoginPage';
@@ -357,6 +357,25 @@ function App() {
     await clearLocalDB();
   };
 
+  // Concurrency guard to prevent overlapping cloud sync requests
+  const isFetchingRef = useRef(false);
+
+  // Fail-safe auto-recovery: Ensure syncState.saving can NEVER remain stuck on true for >10s
+  useEffect(() => {
+    if (syncState.saving) {
+      const timer = setTimeout(() => {
+        setSyncState(prev => {
+          if (prev.saving) {
+            console.warn('Sync state auto-recovery: cleared stuck saving indicator after 10s');
+            return { ...prev, saving: false, lastError: prev.lastError || '同期完了（ローカルモード）' };
+          }
+          return prev;
+        });
+      }, 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [syncState.saving]);
+
   const saveToCloud = async (type, dataObj) => {
     if (!dataObj || !dataObj.data) {
       alert('保存するデータがありません。');
@@ -383,11 +402,23 @@ function App() {
       await saveDatasetToLocalDB(`${userKey}_${type}`, currentFiles);
       alert(`「${dataObj.filename}」をクラウドへ保存中にエラーが発生したため、ローカル（ブラウザ）に保存しました。\n詳細: ${err?.message || err?.details || JSON.stringify(err)}`);
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Local Saved' }));
+    } finally {
+      setSyncState(prev => (prev.saving ? { ...prev, saving: false } : prev));
     }
   };
 
   const fetchFromCloud = async () => {
+    if (isFetchingRef.current) {
+      return;
+    }
+    isFetchingRef.current = true;
     setSyncState(prev => ({ ...prev, saving: true, lastError: null }));
+
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Cloud fetch timeout (8s)')), 8000);
+    });
+
     try {
       const {
         savantFilesCloud,
@@ -395,18 +426,25 @@ function App() {
         pitchingFilesCloud,
         combinedFilesCloud,
         bodyCompFilesCloud
-      } = await fetchDatasetsFromCloud({ user, profile });
+      } = await Promise.race([
+        fetchDatasetsFromCloud({ user, profile }),
+        timeoutPromise
+      ]);
 
-      setCloudSavantFiles(savantFilesCloud);
-      setCloudBlastFiles(blastFilesCloud);
-      setCloudSavantPitchingFiles(pitchingFilesCloud);
-      setCloudCombinedFiles(combinedFilesCloud);
-      setCloudBodyCompFiles(bodyCompFilesCloud);
+      setCloudSavantFiles(savantFilesCloud || []);
+      setCloudBlastFiles(blastFilesCloud || []);
+      setCloudSavantPitchingFiles(pitchingFilesCloud || []);
+      setCloudCombinedFiles(combinedFilesCloud || []);
+      setCloudBodyCompFiles(bodyCompFilesCloud || []);
 
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Synced!', cloudConnected: true, lastError: null }));
     } catch (err) {
       console.warn('Cloud sync skipped (using local cached data):', err);
       setSyncState(prev => ({ ...prev, saving: false, lastError: 'ローカルモード動作中' }));
+    } finally {
+      clearTimeout(timer);
+      isFetchingRef.current = false;
+      setSyncState(prev => (prev.saving ? { ...prev, saving: false } : prev));
     }
   };
 
