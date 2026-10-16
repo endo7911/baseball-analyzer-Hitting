@@ -4,7 +4,7 @@
 // Aliases cover Japanese headers, English headers and the snake_case column names
 // used by the Supabase `body_comp_data` table (so cloud rows round-trip).
 import Papa from 'papaparse';
-import { getDataValue, BS_KEYS, parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS } from './dataHelpers';
+import { getDataValue, BS_KEYS, parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS } from './dataHelpers.js';
 
 export const BODY_METRICS = [
   { key: 'height',   label: '身長',         unit: 'cm',    digits: 1, dbColumn: 'height',           aliases: ['身長', 'height', '身長cm', 'heightcm', 'bodyheight', 'stature'] },

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getSupabase } from '../lib/supabase';
 import { Database, Trash2, RefreshCw, HardDrive, AlertCircle } from 'lucide-react';
+import { fetchDeletedFilesMap, recordDeletedFile } from '../services/deletedRegistry';
 
 function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud }) {
   const [loading, setLoading] = useState(false);
@@ -21,82 +22,63 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
     setError(null);
     const client = getSupabase();
     try {
-      const userTeamName = profile?.team_name;
-      const userTeamId = profile?.team_id;
-      const userId = profile?.id;
+      const rawEmail = (profile?.email || profile?.display_name || '').trim().toLowerCase();
+      const userEmail = rawEmail.includes('@') ? rawEmail : 'guest';
+      const userUsername = userEmail.split('@')[0];
+      const isAdmin = profile?.role === 'admin';
+      const rawTeamName = (profile?.team_name || profile?.team_id || '').trim();
+      const currentTeamName = rawTeamName.toLowerCase();
+      const currentTeamId = (profile?.team_id || profile?.team_name || '').trim().toLowerCase();
 
-      // 1. Fetch from unified table (baseball_data)
-      const { data: baseballRows, error: bError } = await client
-        .from('baseball_data')
-        .select('file_name, upload_id, updated_at, created_at, team_name')
-        .limit(5000);
-
-      if (bError) {
-        console.warn("baseball_data fetch error:", bError);
-      }
-
-      // 2. Fetch from legacy/dedicated tables (savant_data, blast_data, pitching_data, body_comp_data)
-      const { data: savantRows, error: sError } = await client
-        .from('savant_data')
-        .select('file_name, upload_id, created_at')
-        .limit(5000);
-
-      const { data: blastRows, error: blError } = await client
-        .from('blast_data')
-        .select('file_name, upload_id, created_at')
-        .limit(5000);
-
-      const { data: pitchingRows, error: pError } = await client
-        .from('pitching_data')
-        .select('file_name, upload_id, created_at')
-        .limit(5000);
-
-      const { data: bodyCompRows, error: bcError } = await client
-        .from('body_comp_data')
-        .select('file_name, upload_id, created_at')
-        .limit(5000);
-
-      if (sError) console.warn("savant_data fetch error:", sError);
-      if (blError) console.warn("blast_data fetch error:", blError);
-      if (pError) console.warn("pitching_data fetch error:", pError);
-      if (bcError) console.warn("body_comp_data fetch error:", bcError);
-
-      // 0. Extract deleted files registry from baseball_data and localStorage
-      const deletedFilesMap = new Map();
-      try {
-        const localSaved = JSON.parse(localStorage.getItem('__deleted_files_registry__') || '[]');
-        if (Array.isArray(localSaved)) {
-          localSaved.forEach(item => {
-            if (item.filename) {
-              const t = new Date(item.deleted_at || 0).getTime();
-              deletedFilesMap.set(item.filename, t);
-              deletedFilesMap.set(item.filename.replace(/^__bodycomp__::/, ''), t);
-            }
-          });
+      // Server-side filtered metadata fetch with seamless fallback if columns differ
+      const fetchMetaFromTable = async (table, cols) => {
+        if (!isAdmin && rawTeamName) {
+          const encodedTeam = encodeURIComponent(rawTeamName);
+          const safeTeam = rawTeamName.replace(/"/g, '');
+          const filters = [
+            `team_name.eq."${safeTeam}"`,
+            `upload_id.ilike.%::team:${encodedTeam}::%`
+          ];
+          if (userEmail && userEmail !== 'guest') {
+            filters.push(`upload_id.ilike.${userEmail}::%`);
+          }
+          if (table === 'baseball_data') {
+            filters.push('file_name.eq.__deleted_files_registry_v1__');
+          }
+          const { data, error: fErr } = await client
+            .from(table)
+            .select(cols)
+            .or(filters.join(','))
+            .limit(5000);
+          if (!fErr && Array.isArray(data)) {
+            return data;
+          }
         }
-      } catch {}
+        const { data, error: qErr } = await client
+          .from(table)
+          .select(cols)
+          .limit(5000);
+        if (qErr) console.warn(`${table} fetch error:`, qErr);
+        return data || [];
+      };
 
-      (baseballRows || []).forEach(row => {
-        if (row.file_name === '__deleted_files_registry_v1__') {
-          try {
-            const parsed = JSON.parse(row.upload_id);
-            if (parsed.filename) {
-              const curTime = new Date(parsed.deleted_at || 0).getTime();
-              const prev = deletedFilesMap.get(parsed.filename);
-              if (!prev || curTime > prev) {
-                deletedFilesMap.set(parsed.filename, curTime);
-                deletedFilesMap.set(parsed.filename.replace(/^__bodycomp__::/, ''), curTime);
-              }
-            }
-          } catch {}
-        }
-      });
+      const [baseballRows, savantRows, blastRows, pitchingRows, bodyCompRows] = await Promise.all([
+        fetchMetaFromTable('baseball_data', 'file_name, upload_id, updated_at, created_at, team_name'),
+        fetchMetaFromTable('savant_data', 'file_name, upload_id, created_at'),
+        fetchMetaFromTable('blast_data', 'file_name, upload_id, created_at'),
+        fetchMetaFromTable('pitching_data', 'file_name, upload_id, created_at'),
+        fetchMetaFromTable('body_comp_data', 'file_name, upload_id, created_at')
+      ]);
+
+      // 0. Extract deleted files registry from dedicated deleted_files_registry table + local + legacy
+      const deletedFilesMap = await fetchDeletedFilesMap(client, baseballRows);
 
       const isFileDeleted = (fname, rowTime, uploadId) => {
         if (!fname) return false;
         const clean = fname.replace(/^__bodycomp__::/, '');
-        const delTime = deletedFilesMap.get(fname) || deletedFilesMap.get(clean);
-        if (!delTime) return false;
+        const delEntry = deletedFilesMap.get(fname) || deletedFilesMap.get(clean);
+        if (!delEntry) return false;
+        const delTime = typeof delEntry === 'number' ? delEntry : (delEntry?.deletedAt || 0);
 
         let uploadTimestamp = 0;
         const uId = String(uploadId || '');
@@ -110,21 +92,11 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
           rowTime ? new Date(rowTime).getTime() : 0
         );
 
-        if (effectiveTime > 0 && effectiveTime > delTime) {
+        if (effectiveTime > 0 && effectiveTime > delTime + 2000) {
           return false; // Re-uploaded after deletion
         }
-        if (effectiveTime > 0 && effectiveTime <= delTime) {
-          return true;
-        }
-        return false;
+        return true;
       };
-
-      const rawEmail = (profile?.email || profile?.display_name || '').trim().toLowerCase();
-      const userEmail = rawEmail.includes('@') ? rawEmail : 'guest';
-      const userUsername = userEmail.split('@')[0];
-      const isAdmin = profile?.role === 'admin';
-      const currentTeamName = (profile?.team_name || profile?.team_id || '').trim().toLowerCase();
-      const currentTeamId = (profile?.team_id || profile?.team_name || '').trim().toLowerCase();
 
       const isRowForUser = (row) => {
         if (!row) return false;
@@ -352,45 +324,14 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       let totalDeleted = 0;
       const cleanName = filename.replace(/^__bodycomp__::/, '');
       const userTeam = profile?.team_name || profile?.team_id || 'Team A';
-      const nowIso = new Date().toISOString();
 
-      // 1. Immediately record in localStorage deleted registry
-      try {
-        const localSaved = JSON.parse(localStorage.getItem('__deleted_files_registry__') || '[]');
-        localSaved.push({ filename, deleted_at: nowIso });
-        localSaved.push({ filename: cleanName, deleted_at: nowIso });
-        localStorage.setItem('__deleted_files_registry__', JSON.stringify(localSaved));
-      } catch {}
-
-      // 2. Persist tombstone into Supabase baseball_data (bypasses RLS issues and guarantees global cloud persistence)
-      try {
-        await client.from('baseball_data').insert([
-          {
-            file_name: '__deleted_files_registry_v1__',
-            player_name: '__SYSTEM__',
-            team_name: userTeam,
-            upload_id: JSON.stringify({
-              filename,
-              type,
-              deleted_at: nowIso,
-              team_name: userTeam
-            })
-          },
-          {
-            file_name: '__deleted_files_registry_v1__',
-            player_name: '__SYSTEM__',
-            team_name: userTeam,
-            upload_id: JSON.stringify({
-              filename: cleanName,
-              type,
-              deleted_at: nowIso,
-              team_name: userTeam
-            })
-          }
-        ]);
-      } catch (tombErr) {
-        console.warn("Tombstone save error:", tombErr);
-      }
+      // 1. Record in dedicated deleted_files_registry table + localStorage (no longer pollutes baseball_data)
+      await recordDeletedFile(client, {
+        filename,
+        type,
+        teamName: userTeam,
+        deletedBy: profile?.email || null
+      });
 
       // 3. Try serverless deletion API (uses service_role with team-isolation verification)
       try {

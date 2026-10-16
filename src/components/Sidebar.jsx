@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X, BookOpen, Target, Dumbbell, Sun, Moon, KeyRound } from 'lucide-react';
+import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X, BookOpen, Target, Dumbbell, Sun, Moon, KeyRound, TrendingUp } from 'lucide-react';
 import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from '../config';
 
 function Sidebar({ 
@@ -41,6 +41,7 @@ function Sidebar({
     ...(allowHitting ? [{ id: 'team', label: '打撃分析', icon: Users, disabled: !hasData }] : []),
     ...(SHOW_PITCHER_MODULE && allowPitching ? [{ id: 'pitcher', label: '投手分析', icon: Target, disabled: !hasData }] : []),
     { id: 'player', label: '個人分析', icon: User, disabled: !hasData },
+    { id: 'growth', label: '成長レポート', icon: TrendingUp, disabled: !hasData },
     { id: 'game', label: '試合スタッツ', icon: Trophy, disabled: !hasData },
     { id: 'custom', label: 'カスタムグラフ', icon: LineChart, disabled: !hasData },
     { id: 'guide', label: '使い方ガイド', icon: BookOpen },

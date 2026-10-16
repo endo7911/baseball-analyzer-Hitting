@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import Papa from 'papaparse';
 import { UploadCloud, FileText, Database, Cloud, Save, RefreshCw, X, Sparkles, Zap, Target, Activity, Dumbbell } from 'lucide-react';
 import { parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS, extractRowVal } from '../utils/dataHelpers';
-import { decodeCsvBuffer, findHeaderIndex, BODY_COMP_HEADER_KEYWORDS } from '../utils/csvImport';
+import { decodeCsvBuffer, findHeaderIndex, extractPreambleMetadata, BODY_COMP_HEADER_KEYWORDS } from '../utils/csvImport';
 import { applyTwoRowHeader } from '../utils/bodyComp';
 import { getSupabase } from '../lib/supabase';
 import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from '../config';
@@ -118,11 +118,12 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
         // Universal Header Row Detection for all CSV files (Blast, Rapsodo, Excel CSV exports)
         const lines = text.split(/\r?\n/);
         const headerIndex = findHeaderIndex(lines, type === 'body_comp' ? BODY_COMP_HEADER_KEYWORDS : []);
+        const preambleMeta = extractPreambleMetadata(lines, headerIndex);
 
         let csvText = text;
         if (headerIndex > 0) {
           csvText = lines.slice(headerIndex).join('\n');
-          console.log(`Header found at line ${headerIndex + 1}`);
+          console.log(`Header found at line ${headerIndex + 1}`, preambleMeta);
         }
 
         // 体組成CSVは「部位別筋肉量」のような2行ヘッダーで出力されることがあるため、1行のヘッダーに統合する
@@ -136,13 +137,13 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
           skipEmptyLines: true,
           complete: (results) => {
             const headers = results.meta.fields || [];
-            const fileDate = parseAnyDate(file.name);
+            const fileDate = parseAnyDate(file.name) || parseAnyDate(preambleMeta.date);
 
             // Process and normalize rows
             const rows = (results.data || []).map(row => {
               if (!row) return row;
               
-              // Normalize Date & backfill from filename if missing
+              // Normalize Date & backfill from preamble or filename if missing
               const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS);
               let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
               if (!normD && fileDate) normD = fileDate;
@@ -150,6 +151,22 @@ function UploadPage({ savantFiles, savantPitchingFiles = [], blastFiles, combine
               if (normD) {
                 row.date = normD;
                 row.game_date = normD;
+              }
+
+              // Backfill player name from preamble if CSV table has no player column (common in single-player Blast exports)
+              const hasPlayer = row.player_name || row.batter_name || row['選手名'] || row['名前'] || row['氏名'] || row['Player Name'] || row['Player'] || row['Athlete'] || row['User'];
+              if (!hasPlayer && preambleMeta.playerName) {
+                row.player_name = preambleMeta.playerName;
+                row['選手名'] = preambleMeta.playerName;
+              }
+
+              // Backfill team name from preamble or user profile if missing
+              const hasTeam = row.team_name || row['チーム名'] || row['チーム'] || row['Team'];
+              if (!hasTeam && (preambleMeta.teamName || profile?.team_name || profile?.team_id)) {
+                const fallbackTeam = preambleMeta.teamName || profile?.team_name || profile?.team_id;
+                if (fallbackTeam && fallbackTeam !== '管理者' && fallbackTeam !== 'admin') {
+                  row.team_name = fallbackTeam;
+                }
               }
 
               // Ensure launch_speed alias backfill

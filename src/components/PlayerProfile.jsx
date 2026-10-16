@@ -1,6 +1,4 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import { 
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Radar, RadarChart, PolarGrid, PolarAngleAxis, LineChart, Line, ComposedChart, Legend
@@ -17,6 +15,7 @@ import {
   calculateAverages,
   parseAnyDate,
   parseDateToTimestamp,
+  isBarrel,
   DEFAULT_DATE_KEYS,
   BS_KEYS,
   PLANE_KEYS,
@@ -382,7 +381,7 @@ const PlayerProfile = ({ playerName, stats, isCombined = false, sourceType = 'co
     
     const total = filteredData.length;
     const hardHit = validEvRows.filter(r => getDataValue(r, EV_KEYS) >= 153).length;
-    const barrel = validEvRows.filter(r => getDataValue(r, EV_KEYS) >= 158 && getDataValue(r, LA_KEYS) >= 26 && getDataValue(r, LA_KEYS) <= 30).length;
+    const barrel = validEvRows.filter(r => isBarrel(getDataValue(r, EV_KEYS), getDataValue(r, LA_KEYS))).length;
     const sweetSpot = filteredData.filter(r => getDataValue(r, LA_KEYS) >= 8 && getDataValue(r, LA_KEYS) <= 32).length;
 
     return {

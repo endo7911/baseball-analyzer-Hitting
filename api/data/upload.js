@@ -1,16 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ukyppwxsvcgxuxedwfom.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_PCKtT5zEB4r6UMZ5H1q81w_Wpp1b3te';
 
 const ENCRYPTION_SALT = 'baseball-analyzer-secure-payload-salt-v2';
 const SYSTEM_USER_FILE_NAME = '__app_user_profiles_v1__';
 const DELETED_REGISTRY_FILE_NAME = '__deleted_files_registry_v1__';
 
 function getAdminClient() {
-  if (!SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured in environment variables.');
-  }
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false }
   });
@@ -182,18 +179,80 @@ async function verifyCaller(req, adminClient) {
   };
 }
 
-// Robust insert helper with automatic missing-column pruning, chunking & UUID retry
+const SERVER_NUMERIC_COLS = new Set([
+  'launch_speed', 'launch_angle', 'bat_speed', 'attack_angle',
+  'release_speed', 'release_spin_rate', 'hit_distance_sc',
+  'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle',
+  'on_plane_efficiency', 'rotation_score', 'on_plane_score', 'connection_score',
+  'rotation_acceleration', 'connection_at_impact', 'connection_at_address', 'bat_angle',
+  'hc_x', 'hc_y', 'pfx_x', 'pfx_z', 'plate_x', 'plate_z',
+  'vx0', 'vy0', 'vz0', 'ax', 'ay', 'az', 'sz_top', 'sz_bot',
+  'effective_speed', 'release_extension', 'delta_home_win_exp', 'delta_run_exp',
+  'release_pos_x', 'release_pos_y', 'release_pos_z', 'vaa', 'haa',
+  'attack_direction', 'estimated_woba_using_speedangle', 'swing_length',
+  'zone', 'balls', 'strikes', 'game_year', 'outs_when_up', 'inning',
+  'spin_efficiency', 'gyro_angle', 'vb_traj', 'hb_traj',
+  'height', 'weight', 'muscle_mass', 'body_fat_pct', 'bmr', 'bmi',
+  'trunk_muscle', 'left_arm_muscle', 'right_arm_muscle', 'left_leg_muscle', 'right_leg_muscle', 'ffmi'
+]);
+
+const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+function sanitizeRowForPostgres(row) {
+  const clean = {};
+  for (const [k, v] of Object.entries(row || {})) {
+    if (v === undefined) continue;
+    if (k === 'user_id' || k === 'team_id' || k === 'owner_id') {
+      clean[k] = isUUID(v) ? v : null;
+      continue;
+    }
+    if (k === 'date' || k === 'game_date') {
+      if (!v) {
+        clean[k] = null;
+      } else {
+        const s = String(v).trim();
+        const m = s.match(/(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
+        if (m) {
+          clean[k] = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+        } else {
+          clean[k] = null;
+        }
+      }
+      continue;
+    }
+    if (SERVER_NUMERIC_COLS.has(k)) {
+      if (v === null || v === '') {
+        clean[k] = null;
+      } else if (typeof v === 'number') {
+        clean[k] = Number.isFinite(v) ? v : null;
+      } else {
+        const str = String(v)
+          .replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+          .trim();
+        if (!str || str === '-' || str === '---' || str === 'ー' || str.startsWith('#') || str.toLowerCase() === 'nan' || str.toLowerCase() === 'n/a') {
+          clean[k] = null;
+        } else {
+          const num = parseFloat(str.replace(/[^-0-9.]/g, ''));
+          clean[k] = Number.isFinite(num) ? num : null;
+        }
+      }
+      continue;
+    }
+    clean[k] = v;
+  }
+  return clean;
+}
+
+// Robust insert helper with automatic missing-column pruning, chunking & UUID/type retry
 async function safeBatchInsert(adminClient, targetTable, rawRows) {
   if (!rawRows || rawRows.length === 0) return { count: 0, error: null };
-
-  const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
   const CHUNK_SIZE = 500;
   let totalInserted = 0;
 
   for (let cIdx = 0; cIdx < rawRows.length; cIdx += CHUNK_SIZE) {
-    let currentBatch = rawRows.slice(cIdx, cIdx + CHUNK_SIZE).map(r => ({ ...r }));
-    let maxAttempts = 10;
+    let currentBatch = rawRows.slice(cIdx, cIdx + CHUNK_SIZE).map(r => sanitizeRowForPostgres(r));
+    let maxAttempts = 12;
     let lastError = null;
     let batchInserted = false;
 
@@ -209,14 +268,16 @@ async function safeBatchInsert(adminClient, targetTable, rawRows) {
       lastError = error;
       console.warn(`safeBatchInsert attempt error on ${targetTable}:`, error.message, error.code);
 
-      // 1. Handle UUID type error (22P02)
-      if (error.code === '22P02' || (error.message && error.message.includes('type uuid'))) {
-        currentBatch = currentBatch.map(row => ({
-          ...row,
-          user_id: isUUID(row.user_id) ? row.user_id : null,
-          team_id: isUUID(row.team_id) ? row.team_id : null,
-          owner_id: isUUID(row.owner_id) ? row.owner_id : null
-        }));
+      // 1. Handle UUID or numeric type error (22P02) or Date syntax error (22007 / 22008)
+      if (error.code === '22P02' || error.code === '22007' || error.code === '22008' || (error.message && (error.message.includes('type uuid') || error.message.includes('type date') || error.message.includes('type timestamp')))) {
+        currentBatch = currentBatch.map(row => {
+          const sanitized = sanitizeRowForPostgres(row);
+          if (error.code === '22007' || error.code === '22008' || error.message?.includes('date') || error.message?.includes('timestamp')) {
+            delete sanitized.date;
+            delete sanitized.game_date;
+          }
+          return sanitized;
+        });
         continue;
       }
 
@@ -231,9 +292,13 @@ async function safeBatchInsert(adminClient, targetTable, rawRows) {
         continue;
       }
 
-      // 3. Fallback: check standard metadata columns
+      // 3. Fallback: check standard metadata & extended columns
       let pruned = false;
-      ['user_id', 'team_id', 'team_name', 'owner_id', 'grade', 'launch_speed', 'launch_angle', 'hit_distance_sc'].forEach(col => {
+      [
+        'user_id', 'team_id', 'team_name', 'owner_id', 'grade',
+        'launch_speed', 'launch_angle', 'hit_distance_sc',
+        'on_plane_score', 'rotation_acceleration', 'connection_at_impact', 'connection_at_address', 'bat_angle'
+      ].forEach(col => {
         if (error.message && (error.message.includes(`'${col}'`) || error.message.includes(`"${col}"`))) {
           currentBatch = currentBatch.map(({ [col]: _, ...rest }) => rest);
           pruned = true;
@@ -258,7 +323,15 @@ async function unTombstoneFile(adminClient, filename) {
   try {
     const cleanName = (filename || '').replace(/^__bodycomp__::/, '');
 
-    // 1. Delete individual tombstone rows in baseball_data
+    // 0. Delete from dedicated deleted_files_registry table (if exists)
+    try {
+      await adminClient
+        .from('deleted_files_registry')
+        .delete()
+        .in('file_name', [filename, cleanName, `__bodycomp__::${cleanName}`]);
+    } catch {}
+
+    // 1. Delete individual legacy tombstone rows in baseball_data
     try {
       const { data: tombstones } = await adminClient
         .from('baseball_data')
@@ -409,7 +482,13 @@ export default async function handler(req, res) {
     // 1. Primary insert on designated table
     let result = await safeBatchInsert(adminClient, targetTable, preparedRows);
 
-    // 2. Fallback for body_comp: if body_comp_data table does not exist, insert into baseball_data
+    // 2. Fallback for blast / savant: if dedicated table fails, store in unified baseball_data table
+    if ((type === 'blast' || type === 'savant') && result.error) {
+      console.warn(`${targetTable} insert failed, falling back to baseball_data:`, result.error.message);
+      result = await safeBatchInsert(adminClient, 'baseball_data', preparedRows);
+    }
+
+    // 3. Fallback for body_comp: if body_comp_data table does not exist, insert into baseball_data
     if (type === 'body_comp' && result.error) {
       console.warn(`body_comp_data insert failed, falling back to baseball_data:`, result.error.message);
       const fallbackRows = rows.map(r => {

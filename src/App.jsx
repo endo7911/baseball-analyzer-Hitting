@@ -1,31 +1,34 @@
 // Baseball Analyzer - Vite React App (Vercel Build Trigger)
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import Papa from 'papaparse';
 import Sidebar from './components/Sidebar';
-import UploadPage from './pages/UploadPage';
-import TeamAnalysis from './pages/TeamAnalysis';
-import PlayerAnalysis from './pages/PlayerAnalysis';
-import PitcherAnalysis from './pages/PitcherAnalysis';
-import CustomCharts from './pages/CustomCharts';
-import GameStats from './pages/GameStats';
-import CloudDataManager from './pages/CloudDataManager';
 import LoginPage from './pages/LoginPage';
-import AdminPanel from './pages/AdminPanel';
-import GuidePage from './pages/GuidePage';
-import BodyCompAnalysis from './pages/BodyCompAnalysis';
 import AccountModal from './components/AccountModal';
 import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from './config';
 import './App.css';
 
-import { supabase, getSupabase } from './lib/supabase';
+import { supabase } from './lib/supabase';
 import { getGlobalUsers } from './lib/userSync';
 import { saveDatasetToLocalDB, getDatasetFromLocalDB, clearLocalDB } from './lib/db';
-import { 
-  extractRowVal, toAsciiNumbers, parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS,
-  getDataValue, PITCH_VELO_KEYS, SPIN_RATE_KEYS, SPIN_EFFICIENCY_KEYS, GYRO_ANGLE_KEYS,
-  VB_TRAJ_KEYS, HB_TRAJ_KEYS, RELEASE_HEIGHT_KEYS, RELEASE_SIDE_KEYS 
-} from './utils/dataHelpers';
-import { toBodyCompDbRow, extractBodyValues, getBodyName, getBodyTeam, getBodyDate } from './utils/bodyComp';
+import { parseAnyDate } from './utils/dataHelpers';
+import {
+  saveDatasetToCloud,
+  fetchDatasetsFromCloud,
+  mergeDatasetFiles
+} from './services/cloudSync';
+
+// Code Splitting: ページ単位の遅延読み込み（初期バンドルサイズを大幅削減）
+const UploadPage = lazy(() => import('./pages/UploadPage'));
+const TeamAnalysis = lazy(() => import('./pages/TeamAnalysis'));
+const PlayerAnalysis = lazy(() => import('./pages/PlayerAnalysis'));
+const PitcherAnalysis = lazy(() => import('./pages/PitcherAnalysis'));
+const BodyCompAnalysis = lazy(() => import('./pages/BodyCompAnalysis'));
+const GrowthReport = lazy(() => import('./pages/GrowthReport'));
+const CustomCharts = lazy(() => import('./pages/CustomCharts'));
+const GameStats = lazy(() => import('./pages/GameStats'));
+const CloudDataManager = lazy(() => import('./pages/CloudDataManager'));
+const AdminPanel = lazy(() => import('./pages/AdminPanel'));
+const GuidePage = lazy(() => import('./pages/GuidePage'));
 
 function App() {
   const [savantFiles, setSavantFiles] = useState([]);
@@ -72,11 +75,10 @@ function App() {
     const initAuth = async () => {
       try {
         // 1. Check Supabase Auth official session first
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
+        const { data: { session } } = await supabase.auth.getSession();
+
         if (session?.user) {
           const authUser = session.user;
-          // Fetch latest profile from profiles table
           const { data: profileData } = await supabase
             .from('profiles')
             .select('*')
@@ -236,16 +238,16 @@ function App() {
             getDatasetFromLocalDB(`${userKey}_savant_pitching`),
             getDatasetFromLocalDB(`${userKey}_body_comp`)
           ]);
-          
+
           if (Array.isArray(cCombined) && cCombined.length > 0) setCombinedFiles(cCombined);
           if (Array.isArray(cSavant) && cSavant.length > 0) setSavantFiles(cSavant);
           if (Array.isArray(cBlast) && cBlast.length > 0) setBlastFiles(cBlast);
           if (Array.isArray(cPitching) && cPitching.length > 0) setSavantPitchingFiles(cPitching);
           if (Array.isArray(cBodyComp) && cBodyComp.length > 0) setBodyCompFiles(cBodyComp);
         } catch (e) {
-          console.warn("Local DB restore failed:", e);
+          console.warn('Local DB restore failed:', e);
         }
-        
+
         // Always fetch cloud data for analysis views
         fetchFromCloud();
       };
@@ -256,12 +258,11 @@ function App() {
   const handleLogin = (u, p) => { setUser(u); setProfile(p); };
 
   const handleLogout = async () => {
-    // Clear mock session from both sessionStorage and localStorage
     sessionStorage.removeItem('mockUser');
     sessionStorage.removeItem('mockProfile');
     localStorage.removeItem('mockUser');
     localStorage.removeItem('mockProfile');
-    
+
     try {
       await supabase.auth.signOut();
     } catch (e) {
@@ -274,796 +275,25 @@ function App() {
 
   const saveToCloud = async (type, dataObj) => {
     if (!dataObj || !dataObj.data) {
-      alert("保存するデータがありません。");
+      alert('保存するデータがありません。');
       return;
     }
 
     setSyncState(prev => ({ ...prev, saving: true, lastError: null }));
-    const client = getSupabase();
-    
-    const table = type === 'savant' ? 'savant_data' 
-                : (type === 'blast' ? 'blast_data' 
-                : (type === 'savant_pitching' ? 'pitching_data' 
-                : (type === 'body_comp' ? 'body_comp_data' : 'baseball_data')));
-
-    // Define allowed columns matching exact Supabase schemas
-    const SAVANT_COLUMNS = [
-      'game_date', 'pitcher_name', 'batter_name', 'player_name', 'pitch_name', 'release_speed', 'release_spin_rate', 
-      'launch_speed', 'launch_angle', 'bat_speed', 'attack_angle', 'hit_distance_sc', 'events', 'description', 'zone', 'stand', 
-      'p_throws', 'home_team', 'away_team', 'type', 'hit_location', 'bb_type', 'balls', 'strikes', 
-      'game_year', 'pfx_x', 'pfx_z', 'plate_x', 'plate_z', 'on_3b', 'on_2b', 'on_1b', 
-      'outs_when_up', 'inning', 'inning_topbot', 'hc_x', 'hc_y', 'vx0', 'vy0', 'vz0', 
-      'ax', 'ay', 'az', 'sz_top', 'sz_bot', 'effective_speed', 'release_extension', 
-      'game_pk', 'spin_axis', 'delta_home_win_exp', 'delta_run_exp', 'file_name', 'upload_id', 'user_id', 'team_id', 'team_name',
-      'pitch_type', 'release_pos_x', 'release_pos_y', 'release_pos_z', 'vaa', 'haa',
-      'attack_direction', 'estimated_woba_using_speedangle', 'pitcher', 'batter', 'swing_length'
-    ];
-    
-    const BLAST_COLUMNS = [
-      'date', 'player_name', 'batter_name', 'bat_speed', 'attack_angle', 'vertical_bat_angle', 'power', 
-      'time_to_contact', 'peak_hand_speed', 'on_plane_efficiency', 'rotation_score', 
-      'on_plane_score', 'connection_score', 'rotation_acceleration', 'connection_at_impact', 
-      'connection_at_address', 'bat_angle', 'file_name', 'upload_id', 'user_id', 'team_id', 'team_name',
-      'launch_speed', 'launch_angle', 'hit_distance_sc'
-    ];
-
-    const COMBINED_COLUMNS = [
-      'date', 'game_date', 'player_name', 'batter_name', 'team_name', 'grade',
-      'bat_speed', 'launch_speed', 'attack_angle', 'launch_angle', 'hit_distance_sc',
-      'hc_x', 'on_plane_efficiency', 'connection_score', 'rotation_score',
-      'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle',
-      'release_speed', 'file_name', 'upload_id', 'user_id', 'team_id',
-      'on_plane_score', 'rotation_acceleration', 'connection_at_impact', 'connection_at_address', 'bat_angle'
-    ];
-
-    const PITCHING_COLUMNS = [
-      'date', 'game_date', 'pitcher_name', 'player_name', 'team_name',
-      'pitch_type', 'pitch_name', 'release_speed', 'release_spin_rate',
-      'spin_axis', 'spin_efficiency', 'gyro_angle', 'vb_traj', 'hb_traj',
-      'release_pos_x', 'release_pos_z', 'vaa', 'p_throws',
-      'file_name', 'upload_id', 'user_id', 'team_id'
-    ];
-
-    const BODY_COMP_COLUMNS = [
-      'date', 'player_name', 'team_name', 'height', 'weight', 'muscle_mass',
-      'body_fat_pct', 'bmr', 'bmi', 'trunk_muscle', 'left_arm_muscle',
-      'right_arm_muscle', 'left_leg_muscle', 'right_leg_muscle', 'ffmi',
-      'file_name', 'upload_id', 'user_id', 'team_id'
-    ];
-
-    const allowedColumns = table === 'savant_data' ? SAVANT_COLUMNS 
-      : (table === 'blast_data' ? BLAST_COLUMNS 
-      : (table === 'pitching_data' ? PITCHING_COLUMNS 
-      : (table === 'body_comp_data' ? BODY_COMP_COLUMNS : COMBINED_COLUMNS)));
-
-    // Mapping for Japanese/Rapsodo/Blast keys to DB columns
-    const COLUMN_MAP = {
-      // 選手名 / 投手名
-      '選手名': 'player_name',
-      'Player Name': 'player_name',
-      'Player': 'player_name',
-      'PlayerName': 'player_name',
-      'Athlete': 'player_name',
-      'Athlete Name': 'player_name',
-      'User': 'player_name',
-      'User Name': 'player_name',
-      'batter_name': 'player_name',
-      '氏名': 'player_name',
-      '名前': 'player_name',
-      '投手名': 'pitcher_name',
-      'Pitcher Name': 'pitcher_name',
-      'Pitcher': 'pitcher_name',
-      'PitcherName': 'pitcher_name',
-      'pitcher_name': 'pitcher_name',
-      // 体組成 (Body Composition)
-      '身長': 'height', 'Height': 'height', 'height': 'height',
-      '体重': 'weight', 'Weight': 'weight', 'weight': 'weight',
-      '筋肉量': 'muscle_mass', '全身筋肉量': 'muscle_mass', '骨格筋量': 'muscle_mass', 'Muscle Mass': 'muscle_mass', 'muscle_mass': 'muscle_mass', 'SMM': 'muscle_mass',
-      '体脂肪率': 'body_fat_pct', 'Body Fat': 'body_fat_pct', 'body_fat_pct': 'body_fat_pct', 'PBF': 'body_fat_pct',
-      '基礎代謝量': 'bmr', '基礎代謝': 'bmr', 'BMR': 'bmr', 'bmr': 'bmr',
-      'BMI': 'bmi', 'bmi': 'bmi',
-      '体幹': 'trunk_muscle', '体幹筋肉量': 'trunk_muscle', 'Trunk': 'trunk_muscle', 'trunk_muscle': 'trunk_muscle',
-      '左腕': 'left_arm_muscle', '左腕筋肉量': 'left_arm_muscle', 'Left Arm': 'left_arm_muscle', 'left_arm_muscle': 'left_arm_muscle',
-      '右腕': 'right_arm_muscle', '右腕筋肉量': 'right_arm_muscle', 'Right Arm': 'right_arm_muscle', 'right_arm_muscle': 'right_arm_muscle',
-      '左足': 'left_leg_muscle', '左脚': 'left_leg_muscle', 'Left Leg': 'left_leg_muscle', 'left_leg_muscle': 'left_leg_muscle',
-      '右足': 'right_leg_muscle', '右脚': 'right_leg_muscle', 'Right Leg': 'right_leg_muscle', 'right_leg_muscle': 'right_leg_muscle',
-      'FFMI': 'ffmi', 'ffmi': 'ffmi',
-      // 学年
-      '学年': 'grade',
-      'grade': 'grade',
-      'Grade': 'grade',
-      '年次': 'grade',
-      '学年・年次': 'grade',
-      // バットスピード
-      'バットスピード': 'bat_speed',
-      'スイング速度': 'bat_speed',
-      'bat_speed': 'bat_speed',
-      'BatSpeed': 'bat_speed',
-      'Bat Speed': 'bat_speed',
-      'Bat Speed (mph)': 'bat_speed',
-      'バット速度': 'bat_speed',
-      // 打球速度
-      '打球速度': 'launch_speed',
-      'ExitVelocity': 'launch_speed',
-      'Exit Velocity': 'launch_speed',
-      'Exit Velocity (mph)': 'launch_speed',
-      'launch_speed': 'launch_speed',
-      'exit_velocity': 'launch_speed',
-      'EV': 'launch_speed',
-      '打球スピード': 'launch_speed',
-      '打球初速': 'launch_speed',
-      // 打球角度
-      '打球角度': 'launch_angle',
-      'LaunchAngle': 'launch_angle',
-      'Launch Angle': 'launch_angle',
-      'Launch Angle (deg)': 'launch_angle',
-      'launch_angle': 'launch_angle',
-      'LA': 'launch_angle',
-      '角度': 'launch_angle',
-      // 飛距離
-      '飛距離': 'hit_distance_sc',
-      'Distance': 'hit_distance_sc',
-      'hit_distance_sc': 'hit_distance_sc',
-      'distance': 'hit_distance_sc',
-      '推定飛距離': 'hit_distance_sc',
-      'Estimated Distance (ft)': 'hit_distance_sc',
-      // アタックアングル
-      'アタックアングル': 'attack_angle',
-      'attack_angle': 'attack_angle',
-      'AttackAngle': 'attack_angle',
-      'Attack Angle': 'attack_angle',
-      'Attack Angle (deg)': 'attack_angle',
-      'AA': 'attack_angle',
-      'アッパースイング度': 'attack_angle',
-      'アッパー角度': 'attack_angle',
-      'アッパースイング': 'attack_angle',
-      'アッパー': 'attack_angle',
-      // スイング時間
-      'スイング時間': 'time_to_contact',
-      'time_to_contact': 'time_to_contact',
-      'TimeToContact': 'time_to_contact',
-      'Time to Contact (sec)': 'time_to_contact',
-      'Time to Contact': 'time_to_contact',
-      'インパクトまでの時間': 'time_to_contact',
-      // オンプレーン効率 / オンプレーンスコア
-      'オンプレーンの効率': 'on_plane_efficiency',
-      'オンプレーン効率': 'on_plane_efficiency',
-      'オンプレーン': 'on_plane_efficiency',
-      'on_plane_efficiency': 'on_plane_efficiency',
-      'OnPlaneEfficiency': 'on_plane_efficiency',
-      'On Plane Efficiency': 'on_plane_efficiency',
-      'On Plane Efficiency (%)': 'on_plane_efficiency',
-      'オンプレーンスコア': 'on_plane_score',
-      'プレーンスコア': 'on_plane_score',
-      'Plane Score': 'on_plane_score',
-      'PlaneScore': 'on_plane_score',
-      'Plane Score (80)': 'on_plane_score',
-      'Plane (80)': 'on_plane_score',
-      'Plane': 'on_plane_score',
-      'plane_score': 'on_plane_score',
-      // コネクションスコア
-      '体とバットの角度スコア': 'connection_score',
-      'コネクションスコア': 'connection_score',
-      'コネクション': 'connection_score',
-      'Connection Score': 'connection_score',
-      'ConnectionScore': 'connection_score',
-      'Connection Score (80)': 'connection_score',
-      'Connection (80)': 'connection_score',
-      'Connection': 'connection_score',
-      'connection_score': 'connection_score',
-      // ローテーションスコア
-      '体の回転による加速スコア': 'rotation_score',
-      'ローテーションスコア': 'rotation_score',
-      'ローテーション': 'rotation_score',
-      'Rotation Score': 'rotation_score',
-      'RotationScore': 'rotation_score',
-      'Rotation Score (80)': 'rotation_score',
-      'Rotation (80)': 'rotation_score',
-      'Rotation': 'rotation_score',
-      'rotation_score': 'rotation_score',
-      // 回転加速度 (初動)
-      '初動': 'rotation_acceleration',
-      '回転加速度': 'rotation_acceleration',
-      'Rotational Acceleration': 'rotation_acceleration',
-      'RotationalAcceleration': 'rotation_acceleration',
-      'Rotational Acceleration (g)': 'rotation_acceleration',
-      'rotational_acceleration': 'rotation_acceleration',
-      'rotation_acceleration': 'rotation_acceleration',
-      // 垂直バット角度 / バット角度
-      '垂直バット角度': 'vertical_bat_angle',
-      'Vertical Bat Angle': 'vertical_bat_angle',
-      'VerticalBatAngle': 'vertical_bat_angle',
-      'Vertical Bat Angle (deg)': 'vertical_bat_angle',
-      'vertical_bat_angle': 'vertical_bat_angle',
-      'バット角度': 'bat_angle',
-      'Bat Angle': 'bat_angle',
-      'bat_angle': 'bat_angle',
-      // インパクト時・構え時コネクション
-      'インパクト': 'connection_at_impact',
-      'インパクト時のコネクション': 'connection_at_impact',
-      'Connection at Impact': 'connection_at_impact',
-      'Connection at Impact (deg)': 'connection_at_impact',
-      'ConnectionAtImpact': 'connection_at_impact',
-      'connection_at_impact': 'connection_at_impact',
-      '構え': 'connection_at_address',
-      '構え時のコネクション': 'connection_at_address',
-      'Connection at Address': 'connection_at_address',
-      'Connection at Address (deg)': 'connection_at_address',
-      'ConnectionAtAddress': 'connection_at_address',
-      'connection_at_address': 'connection_at_address',
-      // パワー
-      'パワー': 'power',
-      'Power': 'power',
-      'Power (kW)': 'power',
-      'power': 'power',
-      // 手の最大速度
-      '手の最大速度': 'peak_hand_speed',
-      '手の最大': 'peak_hand_speed',
-      'peak_hand_speed': 'peak_hand_speed',
-      'PeakHandSpeed': 'peak_hand_speed',
-      'Peak Hand Speed': 'peak_hand_speed',
-      'Peak Hand Speed (mph)': 'peak_hand_speed',
-      'Hand Speed': 'peak_hand_speed',
-      // 球速
-      '球速': 'release_speed',
-      'release_speed': 'release_speed',
-      'PitchBallVelo': 'release_speed',
-      'pitch_velocity': 'release_speed',
-      'Pitch Speed': 'release_speed',
-      'PitchSpeed': 'release_speed',
-      // 球種
-      '球種': 'pitch_type',
-      'Pitch Type': 'pitch_type',
-      'PitchType': 'pitch_type',
-      'pitch_type': 'pitch_type',
-      'pitch_name': 'pitch_type',
-      // 回転数
-      '回転数': 'release_spin_rate',
-      'Spin Rate': 'release_spin_rate',
-      'SpinRate': 'release_spin_rate',
-      'release_spin_rate': 'release_spin_rate',
-      // 回転軸
-      '回転軸': 'spin_axis',
-      'Spin Axis': 'spin_axis',
-      'SpinAxis': 'spin_axis',
-      'spin_axis': 'spin_axis',
-      // 回転効率
-      '回転効率': 'spin_efficiency',
-      'Spin Efficiency': 'spin_efficiency',
-      'SpinEfficiency': 'spin_efficiency',
-      'Spin Efficiency (release)': 'spin_efficiency',
-      'spin_efficiency': 'spin_efficiency',
-      // ジャイロ角
-      'ジャイロ角': 'gyro_angle',
-      'ジャイロ角度': 'gyro_angle',
-      'ジャイロ度': 'gyro_angle',
-      'ジャイロ': 'gyro_angle',
-      'Gyro Angle': 'gyro_angle',
-      'GyroAngle': 'gyro_angle',
-      'Gyro Degree (deg)': 'gyro_angle',
-      'Gyro Degree': 'gyro_angle',
-      'Gyro (deg)': 'gyro_angle',
-      'Gyro': 'gyro_angle',
-      'gyro_angle': 'gyro_angle',
-      // 変化量
-      '縦変化量': 'vb_traj',
-      'VB (trajectory)': 'vb_traj',
-      'VB': 'vb_traj',
-      'vbreak_traj': 'vb_traj',
-      '横変化量': 'hb_traj',
-      'HB (trajectory)': 'hb_traj',
-      'HB': 'hb_traj',
-      'hbreak_traj': 'hb_traj',
-      // リリリース位置
-      'リリース高度': 'release_pos_z',
-      'Release Height': 'release_pos_z',
-      'ReleaseHeight': 'release_pos_z',
-      'release_pos_z': 'release_pos_z',
-      'リリース幅': 'release_pos_x',
-      'Release Side': 'release_pos_x',
-      'ReleaseSide': 'release_pos_x',
-      'release_pos_x': 'release_pos_x',
-      // VAA
-      'VAA': 'vaa',
-      'VerticalApproachAngle': 'vaa',
-      // 利き腕
-      '利き腕': 'p_throws',
-      'Throws': 'p_throws',
-      'p_throws': 'p_throws',
-      // 日付
-      '日付': 'date',
-      'Date': 'game_date',
-      'game_date': 'game_date',
-      // その他
-      'チーム名': 'team_name',
-      'Team': 'team_name',
-      'Direction': 'hc_x',
-      'Bearing': 'hc_x',
-      'HitDirection': 'hc_x',
-      '打球方向': 'hc_x'
-    };
 
     try {
-      const dataArray = Array.isArray(dataObj.data) ? dataObj.data : [];
-      const totalRows = dataArray.length;
-      const batchSize = 500;
-      const uploaderEmail = (user?.email || profile?.email || 'guest').trim().toLowerCase();
-      const currentTeamName = profile?.team_name || profile?.team_id || 'Team A';
-      const currentTeamId = profile?.team_id || profile?.team_name || 'Team A';
-      const currentUserId = user?.id || profile?.id || null;
-      const isAdmin = profile?.role === 'admin' || user?.user_metadata?.role === 'admin';
-      const uploadId = `${uploaderEmail}::team:${encodeURIComponent(currentTeamName)}::up-${Date.now()}`;
+      const { totalRows } = await saveDatasetToCloud({ type, dataObj, user, profile });
 
-      const isUUID = (str) => {
-        if (!str || typeof str !== 'string') return false;
-        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-      };
-
-      console.log(`Starting cloud save for ${totalRows} rows to table ${table}...`);
-
-      // If this file was previously deleted, un-tombstone it in localStorage and DB
-      try {
-        const localSaved = JSON.parse(localStorage.getItem('__deleted_files_registry__') || '[]');
-        if (Array.isArray(localSaved)) {
-          const updated = localSaved.filter(x => x.filename !== dataObj.filename && x.filename !== (dataObj.filename || '').replace(/^__bodycomp__::/, ''));
-          localStorage.setItem('__deleted_files_registry__', JSON.stringify(updated));
-        }
-        // Also remove from deleted tombstones in baseball_data
-        client.from('baseball_data').delete().eq('file_name', '__deleted_files_registry_v1__').ilike('upload_id', `%"filename":"${dataObj.filename}"%`).then(() => {}).catch(() => {});
-      } catch {}
-
-      // Date parsing helper - flexible extraction of year/month/day
-      const parseJapaneseDate = (dateStr) => {
-        if (!dateStr || typeof dateStr !== 'string') return null;
-        if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return dateStr;
-        
-        const enMonthMap = {'jan':'01','feb':'02','mar':'03','apr':'04','may':'05','jun':'06','jul':'07','aug':'08','sep':'09','oct':'10','nov':'11','dec':'12'};
-        
-        try {
-          const yearMatch = dateStr.match(/\b(20\d{2})\b/);
-          const monMatch = dateStr.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i);
-          if (yearMatch && monMatch) {
-            const year = yearMatch[1];
-            const month = enMonthMap[monMatch[1].toLowerCase()];
-            const dayMatch = dateStr.match(/\b(\d{1,2})\b/);
-            const day = dayMatch ? dayMatch[1].padStart(2, '0') : '01';
-            return `${year}-${month}-${day}`;
-          }
-          
-          let cleaned = dateStr;
-          const months = ['12月','11月','10月','9月','8月','7月','6月','5月','4月','3月','2月','1月'];
-          const monthMap = {'1月':'01','2月':'02','3月':'03','4月':'04','5月':'05','6月':'06','7月':'07','8月':'08','9月':'09','10月':'10','11月':'11','12月':'12'};
-          months.forEach(m => { if (cleaned.includes(m)) cleaned = cleaned.replace(m, monthMap[m]); });
-          const isPM = cleaned.includes('午後');
-          cleaned = cleaned.replace('午前', '').replace('午後', '').trim();
-          const parts = cleaned.split(/[\s,:]+/);
-          if (parts.length >= 6) {
-            const [month, day, year, hour, minute, second] = parts;
-            let h = parseInt(hour);
-            if (isPM && h < 12) h += 12;
-            if (!isPM && h === 12) h = 0;
-            return `${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}T${String(h).padStart(2,'0')}:${minute.padStart(2,'0')}:${second.padStart(2,'0')}`;
-          }
-        } catch (e) {
-          console.warn("Date parse failed:", dateStr, e);
-        }
-        return null;
-      };
-
-      const insertRowsToTable = async (targetTable, targetColumns) => {
-        for (let i = 0; i < totalRows; i += batchSize) {
-          const batch = dataArray.slice(i, i + batchSize).map(row => {
-            const filteredRow = {};
-            
-            Object.keys(row).forEach(key => {
-              let targetKey = key;
-              const normalizedKey = key.trim();
-              const lowerKey = normalizedKey.toLowerCase();
-              
-              let mapKey = Object.keys(COLUMN_MAP).find(k => normalizedKey === k || lowerKey === k.toLowerCase());
-              if (!mapKey) {
-                mapKey = Object.keys(COLUMN_MAP).find(k => k.length >= 2 && (normalizedKey.includes(k) || lowerKey.includes(k.toLowerCase())));
-              }
-              if (mapKey) {
-                targetKey = COLUMN_MAP[mapKey];
-              }
-
-              if (targetColumns.includes(targetKey)) {
-                const val = row[key];
-                
-                const numericColumns = [
-                  'launch_speed', 'launch_angle', 'bat_speed', 'attack_angle', 
-                  'release_speed', 'release_spin_rate', 'hit_distance_sc', 
-                  'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle',
-                  'spin_efficiency', 'gyro_angle', 'vb_traj', 'hb_traj', 'release_pos_x', 'release_pos_z', 'vaa'
-                ];
-
-                if (numericColumns.includes(targetKey)) {
-                  if (val === '-' || val === '' || val === null || val === undefined) {
-                    if (filteredRow[targetKey] === undefined) {
-                      filteredRow[targetKey] = null;
-                    }
-                  } else {
-                    const ascii = toAsciiNumbers(val);
-                    const cleaned = String(ascii).replace(/[^-0-9.]/g, '');
-                    const num = parseFloat(cleaned);
-                    if (!isNaN(num)) {
-                      filteredRow[targetKey] = num;
-                    } else if (filteredRow[targetKey] === undefined) {
-                      filteredRow[targetKey] = null;
-                    }
-                  }
-                } else {
-                  if (val != null && val !== '') {
-                    filteredRow[targetKey] = val;
-                  } else if (filteredRow[targetKey] === undefined) {
-                    filteredRow[targetKey] = null;
-                  }
-                }
-              }
-            });
-
-            // Backfill numeric fields from aliases if missing
-            if (filteredRow.launch_speed == null) {
-              filteredRow.launch_speed = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
-            }
-            if (filteredRow.bat_speed == null) {
-              filteredRow.bat_speed = extractRowVal(row, ['bat_speed', 'BatSpeed', 'Bat Speed', 'スイング速度', 'バットスピード']);
-            }
-            if (filteredRow.launch_angle == null) {
-              filteredRow.launch_angle = extractRowVal(row, ['launch_angle', 'LaunchAngle', 'Launch Angle', '打球角度']);
-            }
-            if (filteredRow.attack_angle == null) {
-              filteredRow.attack_angle = extractRowVal(row, ['attack_angle', 'AttackAngle', 'Attack Angle', 'アタックアングル']);
-            }
-
-            if (targetTable === 'blast_data') {
-              if (!filteredRow.player_name) {
-                filteredRow.player_name = filteredRow.batter_name || row['選手名'] || row['名前'] || row['Player Name'] || row['Player'] || row['Athlete'] || row['User'] || 'Unknown Player';
-              }
-            }
-            if (targetTable === 'baseball_data') {
-              if (!filteredRow.player_name) {
-                filteredRow.player_name = filteredRow.batter_name || row['選手名'] || row['名前'] || row['Player Name'] || row['Player'] || row['Athlete'] || row['User'] || 'Unknown Player';
-              }
-              if (!filteredRow.batter_name) {
-                filteredRow.batter_name = filteredRow.player_name;
-              }
-            }
-            if (targetTable === 'savant_data') {
-              if (!filteredRow.batter_name) {
-                filteredRow.batter_name = filteredRow.player_name || row['選手名'] || row['名前'] || row['Player Name'] || row['Player'] || row['Athlete'] || row['User'] || 'Unknown Player';
-              }
-              if (!filteredRow.player_name) {
-                filteredRow.player_name = filteredRow.batter_name;
-              }
-            }
-            if (targetTable === 'pitching_data') {
-              if (!filteredRow.pitcher_name) {
-                filteredRow.pitcher_name = filteredRow.player_name || row['投手名'] || row['投手'] || row['Pitcher Name'] || row['選手名'] || 'Unknown Pitcher';
-              }
-              if (!filteredRow.player_name) {
-                filteredRow.player_name = filteredRow.pitcher_name;
-              }
-
-              // Robust pitching metrics extraction & backfill
-              if (filteredRow.release_speed == null || filteredRow.release_speed === 0) {
-                const v = getDataValue(row, PITCH_VELO_KEYS);
-                if (v > 0) filteredRow.release_speed = v;
-              }
-              if (filteredRow.release_spin_rate == null || filteredRow.release_spin_rate === 0) {
-                const s = getDataValue(row, SPIN_RATE_KEYS);
-                if (s > 0) filteredRow.release_spin_rate = s;
-              }
-              if (filteredRow.spin_efficiency == null || filteredRow.spin_efficiency === 0) {
-                const eff = getDataValue(row, SPIN_EFFICIENCY_KEYS);
-                if (eff > 0) filteredRow.spin_efficiency = eff;
-              }
-              if (filteredRow.vb_traj == null || filteredRow.vb_traj === 0) {
-                const vb = getDataValue(row, VB_TRAJ_KEYS);
-                if (vb !== 0) filteredRow.vb_traj = vb;
-              }
-              if (filteredRow.hb_traj == null || filteredRow.hb_traj === 0) {
-                const hb = getDataValue(row, HB_TRAJ_KEYS);
-                if (hb !== 0) filteredRow.hb_traj = hb;
-              }
-              if (filteredRow.release_pos_z == null || filteredRow.release_pos_z === 0) {
-                const rz = getDataValue(row, RELEASE_HEIGHT_KEYS);
-                if (rz > 0) filteredRow.release_pos_z = rz;
-              }
-              if (filteredRow.release_pos_x == null || filteredRow.release_pos_x === 0) {
-                const rx = getDataValue(row, RELEASE_SIDE_KEYS);
-                if (rx !== 0) filteredRow.release_pos_x = rx;
-              }
-              if (filteredRow.gyro_angle == null || filteredRow.gyro_angle === 0) {
-                let g = getDataValue(row, GYRO_ANGLE_KEYS);
-                if ((g == null || g === 0 || isNaN(g)) && filteredRow.spin_efficiency > 0 && filteredRow.spin_efficiency <= 100) {
-                  const rad = Math.acos(filteredRow.spin_efficiency / 100);
-                  g = Math.round((rad * 180 / Math.PI) * 10) / 10;
-                }
-                if (g) filteredRow.gyro_angle = g;
-              }
-            }
-
-            let finalRow = { ...filteredRow };
-            const rawDateVal = getRawDataValue(finalRow, DEFAULT_DATE_KEYS) || getRawDataValue(row, DEFAULT_DATE_KEYS);
-            if (rawDateVal) {
-              const normD = parseAnyDate(rawDateVal);
-              if (normD) {
-                finalRow.date = normD;
-                finalRow.game_date = normD;
-              }
-            }
-
-            const rowPayload = {};
-            targetColumns.forEach(col => {
-              if (finalRow[col] !== undefined && finalRow[col] !== null) {
-                rowPayload[col] = finalRow[col];
-              }
-            });
-
-            if (targetColumns.includes('file_name')) rowPayload.file_name = dataObj.filename;
-            if (targetColumns.includes('upload_id')) rowPayload.upload_id = uploadId;
-            const detectedTeam = finalRow.team_name || row['チーム名'] || row['チーム'] || row['Team'] || row['team_name'];
-            if (targetColumns.includes('team_name')) {
-              const isGenericAdmin = isAdmin || currentTeamName === '管理者' || currentTeamName === 'admin' || currentTeamName === 'administrator';
-              rowPayload.team_name = (detectedTeam && String(detectedTeam).trim() !== '' && String(detectedTeam).trim() !== 'Unknown Team') 
-                ? String(detectedTeam).trim() 
-                : (isGenericAdmin ? 'Unknown Team' : currentTeamName);
-            }
-            if (targetColumns.includes('team_id')) {
-              const rawTId = finalRow.team_id || currentTeamId;
-              rowPayload.team_id = isUUID(rawTId) ? rawTId : null;
-            }
-            if (targetColumns.includes('owner_id') && currentUserId) {
-              rowPayload.owner_id = isUUID(currentUserId) ? currentUserId : null;
-            }
-            if (currentUserId) {
-              rowPayload.user_id = isUUID(currentUserId) ? currentUserId : null;
-            }
-            if (targetColumns.includes('updated_at')) rowPayload.updated_at = new Date().toISOString();
-
-            return rowPayload;
-          });
-
-          // 1. Primary: Attempt privileged Serverless Upload API (/api/data/upload)
-          // Uses SUPABASE_SERVICE_ROLE_KEY to bypass RLS and dynamically prune incompatible columns
-          let savedViaApi = false;
-          try {
-            const { data: { session } } = await client.auth.getSession();
-            const headers = { 'Content-Type': 'application/json' };
-            if (session?.access_token) {
-              headers['Authorization'] = `Bearer ${session.access_token}`;
-            }
-            if (uploaderEmail) headers['X-User-Email'] = uploaderEmail;
-            if (currentTeamName) headers['X-User-Team'] = encodeURIComponent(currentTeamName);
-            if (profile?.role) headers['X-User-Role'] = profile.role || 'user';
-
-            const res = await fetch('/api/data/upload', {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                type,
-                filename: dataObj.filename,
-                rows: batch,
-                team_name: currentTeamName,
-                team_id: currentTeamId,
-                user_id: currentUserId,
-                email: uploaderEmail
-              })
-            });
-
-            if (res.ok) {
-              const resData = await res.json().catch(() => ({}));
-              if (resData.success) {
-                savedViaApi = true;
-              }
-            } else {
-              const errData = await res.json().catch(() => ({}));
-              console.warn("Upload API returned non-OK status, falling back to direct client insert:", errData.error || res.status);
-            }
-          } catch (apiErr) {
-            console.warn("Direct upload API attempt skipped or failed, falling back to direct client insert:", apiErr);
-          }
-
-          if (savedViaApi) {
-            await new Promise(resolve => setTimeout(resolve, 50));
-            continue;
-          }
-
-          // 2. Secondary Fallback: Direct client insert (for offline / direct connection)
-          let { error } = await client.from(targetTable).insert(batch);
-
-          // Handle 22P02 (invalid input syntax for type uuid)
-          if (error && (error.code === '22P02' || (error.message && error.message.includes('type uuid')))) {
-            console.warn(`UUID type constraint error in ${targetTable}, retrying insert with null UUID fields`);
-            const safeBatch = batch.map(row => ({
-              ...row,
-              team_id: isUUID(row.team_id) ? row.team_id : null,
-              user_id: isUUID(row.user_id) ? row.user_id : null,
-              owner_id: isUUID(row.owner_id) ? row.owner_id : null
-            }));
-            const fbResult = await client.from(targetTable).insert(safeBatch);
-            error = fbResult.error;
-          }
-
-          // Dynamic column pruning: extract any missing column name from Postgres error message and retry
-          let retryCount = 0;
-          let fallbackBatch = [...batch];
-          while (error && error.message && retryCount < 10) {
-            retryCount++;
-            const colMatch = error.message.match(/column ["']?([a-zA-Z0-9_]+)["']?.*does not exist/i) ||
-                             error.message.match(/Could not find the ['"]?([a-zA-Z0-9_]+)['"]? column/i);
-            if (colMatch && colMatch[1]) {
-              const missingCol = colMatch[1];
-              console.warn(`Column "${missingCol}" not present in ${targetTable}, retrying insert without it...`);
-              fallbackBatch = fallbackBatch.map(({ [missingCol]: _, ...rest }) => rest);
-              const fbResult = await client.from(targetTable).insert(fallbackBatch);
-              error = fbResult.error;
-            } else {
-              // Try common metadata columns
-              let pruned = false;
-              ['user_id', 'team_id', 'team_name', 'owner_id', 'grade', 'launch_speed', 'launch_angle', 'hit_distance_sc'].forEach(col => {
-                if (error.message && (error.message.includes(`'${col}'`) || error.message.includes(`"${col}"`))) {
-                  fallbackBatch = fallbackBatch.map(({ [col]: _, ...rest }) => rest);
-                  pruned = true;
-                }
-              });
-              if (pruned) {
-                const fbResult = await client.from(targetTable).insert(fallbackBatch);
-                error = fbResult.error;
-              } else {
-                break;
-              }
-            }
-          }
-
-          if (error) {
-            console.error(`Error inserting into ${targetTable} at batch ${i}:`, error);
-            throw error;
-          }
-
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-      };
-
-      if (type === 'savant') {
-        await insertRowsToTable('savant_data', SAVANT_COLUMNS);
-      } else if (type === 'blast') {
-        await insertRowsToTable('blast_data', BLAST_COLUMNS);
-      } else if (type === 'savant_pitching') {
-        await insertRowsToTable('pitching_data', PITCHING_COLUMNS);
-      } else if (type === 'body_comp') {
-        let savedToDedicated = false;
-        try {
-          const bodyCompDbRows = dataArray.map(row => {
-            const dbRow = toBodyCompDbRow(row) || {};
-            const d = dbRow.date || parseAnyDate(getRawDataValue(row, DEFAULT_DATE_KEYS)) || null;
-            return {
-              ...dbRow,
-              file_name: dataObj.filename,
-              upload_id: `${uploaderEmail}::up-${Date.now()}`,
-              team_name: dbRow.team_name || getBodyTeam(row) || currentTeamName,
-              team_id: isUUID(dbRow.team_id || currentTeamId) ? (dbRow.team_id || currentTeamId) : null,
-              user_id: isUUID(currentUserId) ? currentUserId : null,
-              player_name: dbRow.player_name || getBodyName(row) || 'Unknown Player',
-              date: d
-            };
-          }).filter(r => r.player_name);
-
-          // Try Serverless API first for body_comp
-          try {
-            const { data: { session } } = await client.auth.getSession();
-            const headers = { 'Content-Type': 'application/json' };
-            if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
-            if (uploaderEmail) headers['X-User-Email'] = uploaderEmail;
-            if (currentTeamName) headers['X-User-Team'] = encodeURIComponent(currentTeamName);
-            if (profile?.role) headers['X-User-Role'] = profile.role || 'user';
-
-            const res = await fetch('/api/data/upload', {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                type: 'body_comp',
-                filename: dataObj.filename,
-                rows: bodyCompDbRows,
-                team_name: currentTeamName,
-                team_id: currentTeamId,
-                user_id: currentUserId,
-                email: uploaderEmail
-              })
-            });
-            if (res.ok) {
-              const resJson = await res.json().catch(() => ({}));
-              if (resJson.success) {
-                savedToDedicated = true;
-              }
-            }
-          } catch (apiErr) {
-            console.warn("body_comp API upload attempt failed, trying client direct insert:", apiErr);
-          }
-
-          if (!savedToDedicated && bodyCompDbRows.length > 0) {
-            let { error: bcErr } = await client.from('body_comp_data').insert(bodyCompDbRows);
-            if (bcErr && (bcErr.code === '22P02' || (bcErr.message && bcErr.message.includes('type uuid')))) {
-              console.warn("body_comp_data UUID constraint error, retrying without non-UUID user_id/team_id");
-              const sanitizedRows = bodyCompDbRows.map(r => ({ ...r, user_id: null, team_id: null }));
-              const retryRes = await client.from('body_comp_data').insert(sanitizedRows);
-              bcErr = retryRes.error;
-            }
-            if (!bcErr) {
-              savedToDedicated = true;
-            } else {
-              console.warn("body_comp_data table insert failed, falling back to baseball_data storage:", bcErr);
-            }
-          }
-        } catch (e) {
-          console.warn("body_comp_data table error, falling back to baseball_data storage:", e);
-        }
-
-        if (!savedToDedicated) {
-          const fallbackRows = dataArray.map(row => {
-            const values = extractBodyValues(row);
-            const name = getBodyName(row) || row['選手名'] || row['Player'] || 'Unknown Player';
-            const team = getBodyTeam(row) || row['チーム名'] || row['Team'] || currentTeamName;
-            const d = getBodyDate(row) || parseAnyDate(getRawDataValue(row, DEFAULT_DATE_KEYS)) || null;
-
-            const payloadObj = {
-              h: values.height,
-              w: values.weight,
-              m: values.muscle,
-              f: values.fatPct,
-              bmr: values.bmr,
-              bmi: values.bmi,
-              t: values.trunk,
-              la: values.leftArm,
-              ra: values.rightArm,
-              ll: values.leftLeg,
-              rl: values.rightLeg,
-              ffmi: values.ffmi
-            };
-            const jsonStr = JSON.stringify(payloadObj);
-            const rowUploadId = `${uploaderEmail}::bodycomp::${Date.now()}::${jsonStr}`;
-
-            return {
-              file_name: `__bodycomp__::${dataObj.filename}`,
-              player_name: name,
-              team_name: team && team !== 'Unknown Team' ? team : currentTeamName,
-              team_id: isUUID(currentTeamId) ? currentTeamId : null,
-              user_id: isUUID(currentUserId) ? currentUserId : null,
-              game_date: d,
-              date: d,
-              upload_id: rowUploadId
-            };
-          }).filter(r => r.player_name);
-
-          for (let i = 0; i < fallbackRows.length; i += 500) {
-            const batch = fallbackRows.slice(i, i + 500);
-            let { error: fbErr } = await client.from('baseball_data').insert(batch);
-            if (fbErr && (fbErr.code === '22P02' || (fbErr.message && fbErr.message.includes('type uuid')))) {
-              const sanitizedBatch = batch.map(r => ({ ...r, user_id: null, team_id: null }));
-              const retryRes = await client.from('baseball_data').insert(sanitizedBatch);
-              fbErr = retryRes.error;
-            }
-            if (fbErr) throw fbErr;
-          }
-        }
-      } else {
-        // combined: Save directly to dedicated baseball_data table in Supabase
-        await insertRowsToTable('baseball_data', COMBINED_COLUMNS);
-      }
-      
       alert(`「${dataObj.filename}」(${totalRows.toLocaleString()}件)のクラウド同期が完了しました！\n「データ読み込み」の枠をクリアしました。クラウド管理画面でいつでも閲覧・管理が可能です。`);
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Saved!' }));
-      
-      // Auto-fetch latest cloud files and remove the synced local file entry from local drop list
+
       await fetchFromCloud();
       await updateDataState(type, dataObj.id || dataObj.filename, 'remove');
     } catch (err) {
-      console.warn("Cloud save unavailable, fallback to local storage:", err);
-      const currentFiles = type === 'savant' ? savantFiles 
-        : (type === 'blast' ? blastFiles 
-        : (type === 'savant_pitching' ? savantPitchingFiles 
+      console.warn('Cloud save unavailable, fallback to local storage:', err);
+      const currentFiles = type === 'savant' ? savantFiles
+        : (type === 'blast' ? blastFiles
+        : (type === 'savant_pitching' ? savantPitchingFiles
         : (type === 'body_comp' ? bodyCompFiles : combinedFiles)));
       const userKey = user?.id ? `user_${user.id}` : 'guest';
       await saveDatasetToLocalDB(`${userKey}_${type}`, currentFiles);
@@ -1074,477 +304,25 @@ function App() {
 
   const fetchFromCloud = async () => {
     setSyncState(prev => ({ ...prev, saving: true, lastError: null }));
-    const client = getSupabase();
-    
     try {
-      console.log("Starting full sync from cloud...");
-      
-      // Fetch ALL rows with pagination (Supabase default limit is 1000)
-      const fetchTable = async (table) => {
-        const PAGE_SIZE = 1000;
-        let allRows = [];
-        let from = 0;
-        let hasMore = true;
+      const {
+        savantFilesCloud,
+        blastFilesCloud,
+        pitchingFilesCloud,
+        combinedFilesCloud,
+        bodyCompFilesCloud
+      } = await fetchDatasetsFromCloud({ user, profile });
 
-        while (hasMore) {
-          let query = client.from(table).select('*').range(from, from + PAGE_SIZE - 1);
-          const { data, error } = await query;
-          if (error) {
-            console.error(`Error fetching table ${table}:`, error);
-            throw error;
-          }
-          const rows = data || [];
-          allRows = allRows.concat(rows);
-          if (rows.length < PAGE_SIZE) {
-            hasMore = false; // Got fewer than a full page → done
-          } else {
-            from += PAGE_SIZE;
-          }
-        }
-        console.log(`Fetched ${allRows.length} rows from ${table}`);
-        return allRows;
-      };
-
-      const [savantRaw, blastRaw, combinedRaw, pitchingRaw, bodyCompRaw] = await Promise.all([
-        fetchTable('savant_data').catch(() => []),
-        fetchTable('blast_data').catch(() => []),
-        fetchTable('baseball_data').catch(() => []),
-        fetchTable('pitching_data').catch(() => []),
-        fetchTable('body_comp_data').catch(() => [])
-      ]);
-
-      const rawEmail = (user?.email || profile?.email || '').trim().toLowerCase();
-      const uploaderEmail = rawEmail.includes('@') ? rawEmail : 'guest';
-      const isAdmin = profile?.role === 'admin';
-      const currentTeamName = (profile?.team_name || profile?.team_id || '').trim().toLowerCase();
-      const currentTeamId = (profile?.team_id || profile?.team_name || '').trim().toLowerCase();
-
-      // 0. Extract deleted files registry from baseball_data and localStorage
-      const deletedFilesMap = new Map();
-      try {
-        const localSaved = JSON.parse(localStorage.getItem('__deleted_files_registry__') || '[]');
-        if (Array.isArray(localSaved)) {
-          localSaved.forEach(item => {
-            if (item.filename) {
-              const t = new Date(item.deleted_at || 0).getTime();
-              deletedFilesMap.set(item.filename, t);
-              deletedFilesMap.set(item.filename.replace(/^__bodycomp__::/, ''), t);
-            }
-          });
-        }
-      } catch {}
-
-      (combinedRaw || []).forEach(r => {
-        if (r?.file_name === '__deleted_files_registry_v1__') {
-          try {
-            const parsed = JSON.parse(r.upload_id);
-            if (parsed.filename) {
-              const curTime = new Date(parsed.deleted_at || 0).getTime();
-              const prev = deletedFilesMap.get(parsed.filename);
-              if (!prev || curTime > prev) {
-                deletedFilesMap.set(parsed.filename, curTime);
-                deletedFilesMap.set(parsed.filename.replace(/^__bodycomp__::/, ''), curTime);
-              }
-            }
-          } catch {}
-        }
-      });
-
-      const isRowDeleted = (row) => {
-        if (!row) return false;
-        const fName = String(row.file_name || '');
-        const cleanName = fName.replace(/^__bodycomp__::/, '');
-        const uId = String(row.upload_id || '');
-
-        let uploadTimestamp = 0;
-        const upMatch = uId.match(/::(?:up|bodycomp)::?(\d+)/);
-        if (upMatch && upMatch[1]) {
-          uploadTimestamp = parseInt(upMatch[1], 10);
-        }
-
-        const effectiveRowTime = Math.max(
-          uploadTimestamp,
-          row.updated_at ? new Date(row.updated_at).getTime() : 0,
-          row.created_at ? new Date(row.created_at).getTime() : 0
-        );
-
-        for (const [delName, delTime] of deletedFilesMap.entries()) {
-          if (
-            fName === delName || 
-            cleanName === delName || 
-            uId === delName || 
-            uId.endsWith(`::${delName}`) || 
-            uId.includes(`::${delName}::`)
-          ) {
-            if (effectiveRowTime > 0 && effectiveRowTime > delTime) {
-              // Row was re-uploaded after deletion: NOT deleted!
-              continue;
-            }
-            if (effectiveRowTime > 0 && effectiveRowTime <= delTime) return true;
-          }
-        }
-        return false;
-      };
-
-      const filterByUserEmail = (rows) => {
-        if (!Array.isArray(rows)) return [];
-        return rows.filter(row => {
-          if (!row) return false;
-          if (isRowDeleted(row)) return false;
-
-          const uId = String(row.upload_id || '').toLowerCase();
-          let tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
-          const tId = String(row.team_id || '').toLowerCase();
-
-          // Extract team encoded in upload_id if present (e.g. ::team:team%20a::)
-          if (!tName && uId.includes('::team:')) {
-            const match = uId.match(/::team:([^:]+)::/);
-            if (match && match[1]) {
-              try { tName = decodeURIComponent(match[1]).toLowerCase(); } catch {}
-            }
-          }
-
-          // Skip system rows
-          const fName = String(row.file_name || '').toLowerCase();
-          if (fName.startsWith('__') && !fName.startsWith('__bodycomp__::')) return false;
-
-          // Admin has access to all datasets
-          if (isAdmin) return true;
-
-          // Team match: team members see all data for their team
-          if (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) return true;
-          if (currentTeamId && (tId === currentTeamId || tName === currentTeamId)) return true;
-
-          if (uId.includes('::')) {
-            const uploader = uId.split('::')[0];
-            const uploaderUsername = uploader.split('@')[0];
-            const userUsername = uploaderEmail.split('@')[0];
-            // Allow: own data, guest-uploaded
-            if (
-              uploader === uploaderEmail ||
-              uploaderUsername === userUsername ||
-              uploader === userUsername ||
-              uploaderUsername === uploaderEmail ||
-              uploader === 'guest'
-            ) return true;
-            return false; // belongs to a different real user
-          }
-
-          // Rows tagged with another user's email in team_name
-          if (tName.includes('@') && tName !== uploaderEmail && tName !== uploaderEmail.split('@')[0]) {
-            return false;
-          }
-
-          return true;
-        });
-      };
-
-      const sRaw = filterByUserEmail(savantRaw);
-      const bRaw = filterByUserEmail(blastRaw);
-      const cRawHitting = (combinedRaw || []).filter(r => {
-        const fName = String(r?.file_name || '');
-        const uId = String(r?.upload_id || '');
-        return !fName.startsWith('__bodycomp__::') && !uId.includes('::bodycomp::');
-      });
-      const cRaw = filterByUserEmail(cRawHitting);
-      const pRaw = filterByUserEmail(pitchingRaw).map(row => {
-        const speed = row.release_speed ?? row['Pitch Speed'] ?? row['PitchSpeed'] ?? row['球速'];
-        const spin = row.release_spin_rate ?? row['Spin Rate'] ?? row['SpinRate'] ?? row['回転数'];
-        const eff = row.spin_efficiency ?? row['Spin Efficiency'] ?? row['SpinEfficiency'] ?? row['回転効率'];
-        const vb = row.vb_traj ?? row['VB (trajectory)'] ?? row['VB(trajectory)'] ?? row['縦変化量'];
-        const hb = row.hb_traj ?? row['HB (trajectory)'] ?? row['HB(trajectory)'] ?? row['横変化量'];
-        const rz = row.release_pos_z ?? row['Release Height'] ?? row['ReleaseHeight'] ?? row['リリース高度'];
-        const rx = row.release_pos_x ?? row['Release Side'] ?? row['ReleaseSide'] ?? row['リリース横'];
-        const pName = row.pitcher_name ?? row.player_name ?? row['投手名'] ?? row['選手名'] ?? row['Pitcher'];
-        const pType = row.pitch_type ?? row['Pitch Type'] ?? row['PitchType'] ?? row['球種'];
-        const pThrows = row.p_throws ?? row['Throws'] ?? row['利き腕'] ?? row['投球腕'];
-        const sAxis = row.spin_axis ?? row['Spin Direction'] ?? row['SpinDirection'] ?? row['回転軸'];
-        let gyro = row.gyro_angle ?? row['Gyro Degree (deg)'] ?? row['Gyro Degree'] ?? row['Gyro Angle'] ?? row['GyroAngle'] ?? row['ジャイロ角度'] ?? row['ジャイロ角'];
-        if ((gyro == null || gyro === 0 || isNaN(gyro)) && eff > 0 && eff <= 100) {
-          const rad = Math.acos(eff / 100);
-          gyro = Math.round((rad * 180 / Math.PI) * 10) / 10;
-        }
-        const vaaVal = row.vaa ?? row['VAA'] ?? row['垂直アプローチ角度'];
-
-        return {
-          ...row,
-          release_speed: speed,
-          'Pitch Speed': speed,
-          '球速': speed,
-          release_spin_rate: spin,
-          'Spin Rate': spin,
-          '回転数': spin,
-          spin_efficiency: eff,
-          'Spin Efficiency': eff,
-          'Spin Efficiency (release)': eff,
-          '回転効率': eff,
-          vb_traj: vb,
-          'VB (trajectory)': vb,
-          '縦変化量': vb,
-          hb_traj: hb,
-          'HB (trajectory)': hb,
-          '横変化量': hb,
-          release_pos_z: rz,
-          'Release Height': rz,
-          'リリース高度': rz,
-          release_pos_x: rx,
-          'Release Side': rx,
-          'リリース横': rx,
-          pitcher_name: pName,
-          player_name: pName,
-          '投手名': pName,
-          '選手名': pName,
-          pitch_type: pType,
-          'Pitch Type': pType,
-          '球種': pType,
-          p_throws: pThrows,
-          'Throws': pThrows,
-          spin_axis: sAxis,
-          'Spin Direction': sAxis,
-          gyro_angle: gyro,
-          'Gyro Angle': gyro,
-          'Gyro Degree (deg)': gyro,
-          'Gyro Degree': gyro,
-          'ジャイロ角': gyro,
-          vaa: vaaVal,
-          'VAA': vaaVal
-        };
-      });
-
-      // Dedicated body_comp_data rows
-      const bcDedicated = filterByUserEmail(bodyCompRaw).map(row => ({
-        ...row,
-        '身長': row.height ?? row['身長'],
-        '体重': row.weight ?? row['体重'],
-        '筋肉量': row.muscle_mass ?? row['筋肉量'],
-        '体脂肪率': row.body_fat_pct ?? row['体脂肪率'],
-        '基礎代謝量': row.bmr ?? row['基礎代謝量'],
-        'BMI': row.bmi ?? row['BMI'],
-        '体幹': row.trunk_muscle ?? row['体幹'],
-        '左腕': row.left_arm_muscle ?? row['左腕'],
-        '右腕': row.right_arm_muscle ?? row['右腕'],
-        '左足': row.left_leg_muscle ?? row['左足'],
-        '右足': row.right_leg_muscle ?? row['右足'],
-        'FFMI': row.ffmi ?? row['FFMI'],
-        height: row.height ?? row['身長'],
-        weight: row.weight ?? row['体重'],
-        muscle_mass: row.muscle_mass ?? row['筋肉量'],
-        body_fat_pct: row.body_fat_pct ?? row['体脂肪率'],
-        bmr: row.bmr ?? row['基礎代謝量'],
-        bmi: row.bmi ?? row['BMI'],
-        trunk_muscle: row.trunk_muscle ?? row['体幹'],
-        left_arm_muscle: row.left_arm_muscle ?? row['左腕'],
-        right_arm_muscle: row.right_arm_muscle ?? row['右腕'],
-        left_leg_muscle: row.left_leg_muscle ?? row['左足'],
-        right_leg_muscle: row.right_leg_muscle ?? row['右足'],
-        ffmi: row.ffmi ?? row['FFMI'],
-      }));
-
-      // Fallback body_comp rows stored in baseball_data (combinedRaw)
-      const bcFallbackRaw = (combinedRaw || []).filter(row => {
-        if (!row) return false;
-        const fName = String(row.file_name || '');
-        const uId = String(row.upload_id || '').toLowerCase();
-        return fName.startsWith('__bodycomp__::') || uId.includes('::bodycomp::');
-      });
-
-      const bcFallback = filterByUserEmail(bcFallbackRaw).map(row => {
-        const cleanFileName = String(row.file_name || '').replace(/^__bodycomp__::/, '');
-        const uId = String(row.upload_id || '');
-        let parsedVals = {};
-        if (uId.includes('::bodycomp::')) {
-          const bodyCompIdx = uId.indexOf('::bodycomp::');
-          const remainder = uId.slice(bodyCompIdx + '::bodycomp::'.length);
-          const parts = remainder.split('::');
-          const jsonPart = parts.slice(1).join('::');
-          if (jsonPart) {
-            try {
-              const p = JSON.parse(jsonPart);
-              parsedVals = {
-                '身長': p.h ?? p.height, 'height': p.h ?? p.height,
-                '体重': p.w ?? p.weight, 'weight': p.w ?? p.weight,
-                '筋肉量': p.m ?? p.muscle_mass, 'muscle_mass': p.m ?? p.muscle_mass,
-                '体脂肪率': p.f ?? p.body_fat_pct, 'body_fat_pct': p.f ?? p.body_fat_pct,
-                '基礎代謝量': p.bmr, 'bmr': p.bmr,
-                'BMI': p.bmi, 'bmi': p.bmi,
-                '体幹': p.t ?? p.trunk_muscle, 'trunk_muscle': p.t ?? p.trunk_muscle,
-                '左腕': p.la ?? p.left_arm_muscle, 'left_arm_muscle': p.la ?? p.left_arm_muscle,
-                '右腕': p.ra ?? p.right_arm_muscle, 'right_arm_muscle': p.ra ?? p.right_arm_muscle,
-                '左足': p.ll ?? p.left_leg_muscle, 'left_leg_muscle': p.ll ?? p.left_leg_muscle,
-                '右足': p.rl ?? p.right_leg_muscle, 'right_leg_muscle': p.rl ?? p.right_leg_muscle,
-                'FFMI': p.ffmi, 'ffmi': p.ffmi
-              };
-            } catch (e) {}
-          }
-        }
-        return {
-          ...row,
-          ...parsedVals,
-          file_name: cleanFileName,
-          player_name: row.player_name,
-          team_name: row.team_name,
-          date: row.date || row.game_date
-        };
-      });
-
-      // Avoid duplicating fallback rows if identical file already exists in dedicated
-      const dedicatedFiles = new Set(bcDedicated.map(r => r.file_name).filter(Boolean));
-      const filteredBcFallback = bcFallback.filter(r => !dedicatedFiles.has(r.file_name));
-      const allBcRows = [...bcDedicated, ...filteredBcFallback];
-
-      // Helper to group flat rows into the "Files" format the app expects
-      const groupIntoFiles = (rows, type) => {
-        if (!Array.isArray(rows)) return [];
-        const grouped = {};
-        rows.forEach(row => {
-          if (!row) return;
-          let fileName = row.file_name || row.filename || 'Cloud Data';
-          if (fileName.startsWith('__bodycomp__::')) {
-            fileName = fileName.replace(/^__bodycomp__::/, '');
-          } else if (fileName.startsWith('__')) {
-            return;
-          }
-          
-          const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS) || row.date || row.game_date;
-          let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
-          if (!normD && (row.file_name || row.filename || fileName)) {
-            normD = parseAnyDate(row.file_name || row.filename || fileName);
-          }
-          if (normD) {
-            row.date = normD;
-            row.game_date = normD;
-          }
-
-          // Backfill launch_speed if present under alias keys
-          const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
-          if (evVal != null) {
-            row.launch_speed = evVal;
-          }
-
-          // Backfill pitching fields if present
-          if (type === 'savant_pitching' || row.pitcher_name || row['Pitch Speed'] || row.release_speed != null || row.vb_traj != null) {
-            const v = getDataValue(row, PITCH_VELO_KEYS);
-            if (v > 0) { row.release_speed = v; row['Pitch Speed'] = v; }
-            const s = getDataValue(row, SPIN_RATE_KEYS);
-            if (s > 0) { row.release_spin_rate = s; row['Spin Rate'] = s; }
-            const eff = getDataValue(row, SPIN_EFFICIENCY_KEYS);
-            if (eff > 0) { row.spin_efficiency = eff; row['Spin Efficiency'] = eff; }
-            const vb = getDataValue(row, VB_TRAJ_KEYS);
-            if (vb !== 0) { row.vb_traj = vb; row['VB (trajectory)'] = vb; }
-            const hb = getDataValue(row, HB_TRAJ_KEYS);
-            if (hb !== 0) { row.hb_traj = hb; row['HB (trajectory)'] = hb; }
-            const rz = getDataValue(row, RELEASE_HEIGHT_KEYS);
-            if (rz > 0) { row.release_pos_z = rz; row['Release Height'] = rz; }
-            const rx = getDataValue(row, RELEASE_SIDE_KEYS);
-            if (rx !== 0) { row.release_pos_x = rx; row['Release Side'] = rx; }
-            let g = getDataValue(row, GYRO_ANGLE_KEYS);
-            if ((g == null || g === 0 || isNaN(g)) && (row.spin_efficiency > 0 || eff > 0)) {
-              const curEff = row.spin_efficiency || eff;
-              if (curEff <= 100) {
-                const rad = Math.acos(curEff / 100);
-                g = Math.round((rad * 180 / Math.PI) * 10) / 10;
-              }
-            }
-            if (g) { row.gyro_angle = g; row['Gyro Angle'] = g; row['Gyro Degree (deg)'] = g; }
-          }
-
-          if (!grouped[fileName]) {
-            grouped[fileName] = {
-              id: row.upload_id || `cloud-${fileName}`,
-              filename: fileName,
-              updated_at: row.updated_at || row.created_at,
-              data: [],
-              headers: Object.keys(row).filter(k => !['id', 'owner_id', 'team_id', 'updated_at', 'upload_id'].includes(k))
-            };
-          }
-          grouped[fileName].data.push(row);
-        });
-        return Object.values(grouped);
-      };
-
-      // Grouping logic for files
-      const savantFileNames = new Set(sRaw.map(r => r?.file_name).filter(Boolean));
-      const blastFileNames = new Set(bRaw.map(r => r?.file_name).filter(Boolean));
-      
-      const combinedFileNames = new Set();
-      savantFileNames.forEach(name => {
-        if (blastFileNames.has(name)) {
-          combinedFileNames.add(name);
-        }
-      });
-      sRaw.forEach(r => {
-        if (r?.file_name && (r.bat_speed != null || r.attack_angle != null)) {
-          combinedFileNames.add(r.file_name);
-        }
-      });
-
-      // Construct combined dataset rows from sRaw & bRaw
-      const combinedRawList = [...cRaw];
-      combinedFileNames.forEach(name => {
-        const sRows = sRaw.filter(r => r?.file_name === name);
-        const bRows = bRaw.filter(r => r?.file_name === name);
-        const maxLen = Math.max(sRows.length, bRows.length);
-        for (let i = 0; i < maxLen; i++) {
-          const s = sRows[i] || {};
-          const b = bRows[i] || {};
-          
-          const ev = extractRowVal(s, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速']) 
-                ?? extractRowVal(b, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速']);
-          const bs = extractRowVal(s, ['bat_speed', 'BatSpeed', 'Bat Speed', 'スイング速度', 'バットスピード']) 
-                ?? extractRowVal(b, ['bat_speed', 'BatSpeed', 'Bat Speed', 'スイング速度', 'バットスピード']);
-          const la = extractRowVal(s, ['launch_angle', 'LaunchAngle', 'Launch Angle', '打球角度']) 
-                ?? extractRowVal(b, ['launch_angle', 'LaunchAngle', 'Launch Angle', '打球角度']);
-          const aa = extractRowVal(s, ['attack_angle', 'AttackAngle', 'Attack Angle', 'アタックアングル']) 
-                ?? extractRowVal(b, ['attack_angle', 'AttackAngle', 'Attack Angle', 'アタックアングル']);
-
-          combinedRawList.push({
-            ...b,
-            ...s,
-            player_name: s.batter_name || s.player_name || b.player_name || 'Unknown',
-            batter_name: s.batter_name || s.player_name || b.player_name || 'Unknown',
-            bat_speed: bs,
-            launch_speed: ev,
-            attack_angle: aa,
-            launch_angle: la,
-            hit_distance_sc: s.hit_distance_sc ?? b.hit_distance_sc,
-            date: s.game_date || s.date || b.date,
-            game_date: s.game_date || s.date || b.date,
-            file_name: name
-          });
-        }
-      });
-
-      const bcRaw = filterByUserEmail(bodyCompRaw);
-      const savantFilesCloud = groupIntoFiles(sRaw, 'savant');
-      const blastFilesCloud = groupIntoFiles(bRaw, 'blast');
-      const pitchingFilesCloud = groupIntoFiles(pRaw, 'savant_pitching');
-      const combinedFilesCloud = groupIntoFiles(combinedRawList, 'combined');
-      const bodyCompFilesCloud = groupIntoFiles(allBcRows, 'body_comp');
-
-      console.log('[fetchFromCloud] sRaw:', sRaw.length, 'bRaw:', bRaw.length, 'cRaw:', cRaw.length, 'pRaw:', pRaw.length, 'bcRaw:', bcRaw.length);
-      console.log('[fetchFromCloud] combinedRawList:', combinedRawList.length, 'combinedFilesCloud:', combinedFilesCloud.length);
-      console.log('[fetchFromCloud] savantFilesCloud:', savantFilesCloud.length, 'blastFilesCloud:', blastFilesCloud.length, 'bodyCompFilesCloud:', bodyCompFilesCloud.length);
-
-      // Update cloud files for analysis views
       setCloudSavantFiles(savantFilesCloud);
       setCloudBlastFiles(blastFilesCloud);
       setCloudSavantPitchingFiles(pitchingFilesCloud);
       setCloudCombinedFiles(combinedFilesCloud);
       setCloudBodyCompFiles(bodyCompFilesCloud);
-      
+
       setSyncState(prev => ({ ...prev, saving: false, lastSuccess: 'Synced!', cloudConnected: true, lastError: null }));
-      console.log("Cloud sync complete.");
-      // DEBUG (有効化するには下行のコメントを解除): alert(`[デバッグ] クラウド同期完了\ncRaw(baseball_data): ${cRaw.length}件\nsRaw(savant_data): ${sRaw.length}件\nbRaw(blast_data): ${bRaw.length}件\ncombinedFilesCloud: ${combinedFilesCloud.length}ファイル\ncloudCombinedFilesに設定しました`);
     } catch (err) {
-      /*
-       * =========================================================================
-       * 【元の仕様 (Supabase クラウド同期エラー処理)】
-       * クラウドが一時停止・非接続時はローカルのIndexedDBデータを読み込んで利用
-       * =========================================================================
-       */
-      console.warn("Cloud sync skipped (using local cached data):", err);
-      // DEBUG (有効化するには下行のコメントを解除): alert(`[デバッグ] クラウド同期失敗\nエラー: ${err?.message || JSON.stringify(err)}`);
-      setSyncState(prev => ({ ...prev, saving: false, lastError: "ローカルモード動作中" }));
+      console.warn('Cloud sync skipped (using local cached data):', err);
+      setSyncState(prev => ({ ...prev, saving: false, lastError: 'ローカルモード動作中' }));
     }
   };
 
@@ -1556,7 +334,7 @@ function App() {
     else if (type === 'combined') { setter = setCombinedFiles; currentFiles = combinedFiles; }
     else if (type === 'body_comp' || type === 'bodyComp') { setter = setBodyCompFiles; currentFiles = bodyCompFiles; }
     else { setter = setSavantFiles; currentFiles = savantFiles; }
-    
+
     let newFiles = [...currentFiles];
 
     if (action === 'set') {
@@ -1576,8 +354,7 @@ function App() {
         return 'id-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
       };
       const processed = { ...payload, data: finalData, id: payload.id || generateId() };
-      
-      // Prevent duplicate file entries by filename
+
       const existingIdx = newFiles.findIndex(f => f.filename === payload.filename);
       if (existingIdx !== -1) {
         newFiles[existingIdx] = { ...processed, id: newFiles[existingIdx].id };
@@ -1614,145 +391,26 @@ function App() {
     await saveDatasetToLocalDB(`${userKey}_${type}`, newFiles);
   };
 
-  // Helper to merge multiple files into one dataset for analysis views with strict data isolation
-  const mergeFiles = (files) => {
-    if (!Array.isArray(files) || files.length === 0) return null;
-
-    const rawEmail = (user?.email || profile?.email || '').trim().toLowerCase();
-    const userEmail = rawEmail.includes('@') ? rawEmail : 'guest';
-    const isAdmin = profile?.role === 'admin';
-    const currentTeamName = (profile?.team_name || profile?.team_id || '').trim().toLowerCase();
-    const currentTeamId = (profile?.team_id || profile?.team_name || '').trim().toLowerCase();
-
-    const allHeaders = new Set();
-    const safeRows = [];
-
-    // Deduplicate files by filename (e.g. avoid duplicate counting if both local and cloud exist)
-    const seenFilenames = new Set();
-    const uniqueFiles = [];
-    files.forEach(f => {
-      if (!f) return;
-      const fn = f.filename || f.id;
-      if (fn && seenFilenames.has(fn)) {
-        return;
-      }
-      if (fn) seenFilenames.add(fn);
-      uniqueFiles.push(f);
-    });
-
-    uniqueFiles.forEach(f => {
-      if (f.headers && Array.isArray(f.headers)) f.headers.forEach(h => allHeaders.add(h));
-      if (Array.isArray(f.data)) {
-        f.data.forEach(row => {
-          if (!row) return;
-          
-          // Populate headers from row keys as safety net
-          Object.keys(row).forEach(k => {
-            if (!['id', 'owner_id', 'team_id', 'updated_at', 'upload_id'].includes(k)) {
-              allHeaders.add(k);
-            }
-          });
-
-          // Normalize Date & backfill from filename if missing
-          const rawDateVal = getRawDataValue(row, DEFAULT_DATE_KEYS) || row.date || row.game_date;
-          let normD = rawDateVal ? parseAnyDate(rawDateVal) : '';
-          if (!normD && (row.file_name || row.filename || f?.filename)) {
-            normD = parseAnyDate(row.file_name || row.filename || f?.filename);
-          }
-          if (normD) {
-            row.date = normD;
-            row.game_date = normD;
-          }
-
-          // Ensure launch_speed alias backfill
-          if (row.launch_speed == null) {
-            const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
-            if (evVal != null) {
-              row.launch_speed = evVal;
-            }
-          }
-
-          // Pitching metric backfill
-          if (row.pitcher_name || row['Pitch Speed'] || row.release_speed != null || row.vb_traj != null) {
-            const v = getDataValue(row, PITCH_VELO_KEYS);
-            if (v > 0) { row.release_speed = v; row['Pitch Speed'] = v; }
-            const s = getDataValue(row, SPIN_RATE_KEYS);
-            if (s > 0) { row.release_spin_rate = s; row['Spin Rate'] = s; }
-            const eff = getDataValue(row, SPIN_EFFICIENCY_KEYS);
-            if (eff > 0) { row.spin_efficiency = eff; row['Spin Efficiency'] = eff; }
-            const vb = getDataValue(row, VB_TRAJ_KEYS);
-            if (vb !== 0) { row.vb_traj = vb; row['VB (trajectory)'] = vb; }
-            const hb = getDataValue(row, HB_TRAJ_KEYS);
-            if (hb !== 0) { row.hb_traj = hb; row['HB (trajectory)'] = hb; }
-            const rz = getDataValue(row, RELEASE_HEIGHT_KEYS);
-            if (rz > 0) { row.release_pos_z = rz; row['Release Height'] = rz; }
-            const rx = getDataValue(row, RELEASE_SIDE_KEYS);
-            if (rx !== 0) { row.release_pos_x = rx; row['Release Side'] = rx; }
-            let g = getDataValue(row, GYRO_ANGLE_KEYS);
-            if ((g == null || g === 0 || isNaN(g)) && (row.spin_efficiency > 0 || eff > 0)) {
-              const curEff = row.spin_efficiency || eff;
-              if (curEff <= 100) {
-                const rad = Math.acos(curEff / 100);
-                g = Math.round((rad * 180 / Math.PI) * 10) / 10;
-              }
-            }
-            if (g) { row.gyro_angle = g; row['Gyro Angle'] = g; row['Gyro Degree (deg)'] = g; }
-          }
-
-          // Data isolation: Admin sees all; Team members see team data or own uploads
-          if (!isAdmin) {
-            const uId = String(row.upload_id || '').toLowerCase();
-            let tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
-            const tId = String(row.team_id || '').toLowerCase();
-
-            // Extract team encoded in upload_id if present (e.g. ::team:team%20a::)
-            if (!tName && uId.includes('::team:')) {
-              const match = uId.match(/::team:([^:]+)::/);
-              if (match && match[1]) {
-                try { tName = decodeURIComponent(match[1]).toLowerCase(); } catch {}
-              }
-            }
-
-            const isTeamMatch = (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) ||
-                                (currentTeamId && (tId === currentTeamId || tName === currentTeamId));
-
-            if (!isTeamMatch) {
-              if (uId.includes('::')) {
-                const uploader = uId.split('::')[0];
-                const uploaderUsername = uploader.split('@')[0];
-                const userUsername = userEmail.split('@')[0];
-                const isUserMatch = (
-                  uploader === userEmail ||
-                  uploaderUsername === userUsername ||
-                  uploader === userUsername ||
-                  uploaderUsername === userEmail ||
-                  uploader === 'guest'
-                );
-                if (!isUserMatch) return;
-              } else if (tName.includes('@') && tName !== userEmail && tName !== userEmail.split('@')[0]) {
-                return;
-              }
-            }
-          }
-
-          safeRows.push(row);
-        });
-      }
-    });
-
-    if (safeRows.length === 0) return null;
-
-    return {
-      headers: Array.from(allHeaders),
-      data: safeRows
-    };
-  };
-
-  const savantData = useMemo(() => mergeFiles([...cloudSavantFiles, ...savantFiles]), [savantFiles, cloudSavantFiles]);
-  const savantPitchingData = useMemo(() => mergeFiles([...cloudSavantPitchingFiles, ...savantPitchingFiles]), [savantPitchingFiles, cloudSavantPitchingFiles]);
-  const blastData = useMemo(() => mergeFiles([...cloudBlastFiles, ...blastFiles]), [blastFiles, cloudBlastFiles]);
-  const combinedData = useMemo(() => mergeFiles([...cloudCombinedFiles, ...combinedFiles]), [combinedFiles, cloudCombinedFiles]);
-  const bodyCompData = useMemo(() => mergeFiles([...cloudBodyCompFiles, ...bodyCompFiles]), [bodyCompFiles, cloudBodyCompFiles]);
+  const savantData = useMemo(
+    () => mergeDatasetFiles([...cloudSavantFiles, ...savantFiles], { user, profile }),
+    [savantFiles, cloudSavantFiles, user, profile]
+  );
+  const savantPitchingData = useMemo(
+    () => mergeDatasetFiles([...cloudSavantPitchingFiles, ...savantPitchingFiles], { user, profile }),
+    [savantPitchingFiles, cloudSavantPitchingFiles, user, profile]
+  );
+  const blastData = useMemo(
+    () => mergeDatasetFiles([...cloudBlastFiles, ...blastFiles], { user, profile }),
+    [blastFiles, cloudBlastFiles, user, profile]
+  );
+  const combinedData = useMemo(
+    () => mergeDatasetFiles([...cloudCombinedFiles, ...combinedFiles], { user, profile }),
+    [combinedFiles, cloudCombinedFiles, user, profile]
+  );
+  const bodyCompData = useMemo(
+    () => mergeDatasetFiles([...cloudBodyCompFiles, ...bodyCompFiles], { user, profile }),
+    [bodyCompFiles, cloudBodyCompFiles, user, profile]
+  );
 
   const renderActiveView = () => {
     const uploadProps = {
@@ -1763,12 +421,18 @@ function App() {
     const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
     const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
 
+    const handleViewPlayer = (player, team, source) => {
+      setAnalysisState({ player, team, source });
+      setActiveView('player');
+    };
+
     switch (activeView) {
       case 'upload':   return <UploadPage {...uploadProps} />;
-      case 'team':     return allowHitting ? <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} /> : <UploadPage {...uploadProps} />;
-      case 'pitcher':  return (SHOW_PITCHER_MODULE && allowPitching) ? <PitcherAnalysis savantData={savantPitchingData} blastData={null} combinedData={null} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source }); setActiveView('player'); }} /> : <UploadPage {...uploadProps} />;
-      case 'bodyComp': return (SHOW_BODY_COMP_MODULE && allowBodyComp) ? <BodyCompAnalysis bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} setActiveView={setActiveView} onViewPlayer={(player, team, source) => { setAnalysisState({ player, team, source: source || 'body_comp' }); setActiveView('player'); }} /> : <UploadPage {...uploadProps} />;
+      case 'team':     return allowHitting ? <TeamAnalysis savantData={savantData} blastData={blastData} combinedData={combinedData} onViewPlayer={handleViewPlayer} /> : <UploadPage {...uploadProps} />;
+      case 'pitcher':  return (SHOW_PITCHER_MODULE && allowPitching) ? <PitcherAnalysis savantData={savantPitchingData} blastData={null} combinedData={null} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={handleViewPlayer} /> : <UploadPage {...uploadProps} />;
+      case 'bodyComp': return (SHOW_BODY_COMP_MODULE && allowBodyComp) ? <BodyCompAnalysis bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} setActiveView={setActiveView} onViewPlayer={(player, team, source) => handleViewPlayer(player, team, source || 'body_comp')} /> : <UploadPage {...uploadProps} />;
       case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} bodyCompData={bodyCompData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} profile={profile} />;
+      case 'growth':   return <GrowthReport savantData={savantData} blastData={blastData} combinedData={combinedData} savantPitchingData={savantPitchingData} bodyCompData={bodyCompData} profile={profile} onViewPlayer={handleViewPlayer} />;
       case 'game':     return <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'custom':   return <CustomCharts savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'cloud':    return <CloudDataManager updateDataState={updateDataState} profile={profile} syncState={syncState} fetchFromCloud={fetchFromCloud} />;
@@ -1807,7 +471,7 @@ function App() {
           sessionStorage.removeItem('mockProfile');
           try {
             await supabase.auth.signOut();
-          } catch (e) {}
+          } catch {}
           setUser(null);
           setProfile(null);
           alert('このアカウントは管理者により停止されました。');
@@ -1838,12 +502,11 @@ function App() {
         });
       }
     } catch (e) {
-      console.warn("Account status check skipped:", e);
+      console.warn('Account status check skipped:', e);
     }
     return true;
   };
 
-  // Lightweight event-driven status check (on tab focus, view change & local storage updates)
   useEffect(() => {
     if (!user) return;
 
@@ -1868,14 +531,13 @@ function App() {
     };
   }, [user, activeView]);
 
-  const handleViewChange = async (view) => { 
+  const handleViewChange = async (view) => {
     const isOk = await checkAccountStatus();
     if (!isOk) return;
-    setActiveView(view); 
-    setIsMenuOpen(false); 
+    setActiveView(view);
+    setIsMenuOpen(false);
   };
 
-  // Loading
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -1884,7 +546,6 @@ function App() {
     );
   }
 
-  // Not logged in → show login
   if (!user) return <LoginPage onLogin={handleLogin} />;
 
   const viewLabels = {
@@ -1894,6 +555,7 @@ function App() {
     pitcher: '投手分析',
     bodyComp: '体組成分析',
     player: '個人分析',
+    growth: '成長レポート',
     game: '試合スタッツ',
     custom: 'カスタムグラフ',
     guide: '使い方ガイド',
@@ -1936,8 +598,8 @@ function App() {
             </button>
           )}
 
-          <button 
-            onClick={() => setIsMenuOpen(!isMenuOpen)} 
+          <button
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
             className="p-2 text-slate-300 hover:text-white bg-slate-800 border border-slate-700 rounded-xl transition-all"
             title="メニュー開閉"
           >
@@ -1982,7 +644,15 @@ function App() {
 
       <main className="content-area pt-20 lg:pt-10">
         <div className="max-container">
-          {renderActiveView()}
+          <Suspense
+            fallback={
+              <div className="min-h-[400px] flex items-center justify-center">
+                <div className="text-slate-400 text-sm animate-pulse">モジュールを読み込み中...</div>
+              </div>
+            }
+          >
+            {renderActiveView()}
+          </Suspense>
         </div>
       </main>
     </div>
@@ -2000,7 +670,7 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error("App Error Boundary caught an error:", error, errorInfo);
+    console.error('App Error Boundary caught an error:', error, errorInfo);
   }
 
   handleResetCache = async () => {
@@ -2028,13 +698,13 @@ class ErrorBoundary extends React.Component {
             )}
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-              <button 
+              <button
                 onClick={() => window.location.reload()}
                 className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-6 rounded-xl transition-all shadow-lg text-sm"
               >
                 再読み込み
               </button>
-              <button 
+              <button
                 onClick={this.handleResetCache}
                 className="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-6 rounded-xl transition-all border border-slate-700 text-sm"
               >

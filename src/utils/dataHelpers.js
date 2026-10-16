@@ -25,19 +25,28 @@ export const extractPlayersByTeam = (savantData, team, nameKey = 'player_name') 
   return Array.from(players).sort();
 };
 
+// Helper to normalize player names (ignoring whitespace differences)
+const normalizePlayerName = (name) => String(name || '').replace(/[\s　]+/g, '').trim().toLowerCase();
+
 // Helper to get stats for a specific player
 export const getPlayerStats = (savantData, blastData, playerName, nameKey = 'player_name') => {
-  // Use fuzzy equality (==) or String conversion to handle cases where ID is parsed as number
-  const savantEvents = savantData ? savantData.filter(row => String(row[nameKey]) === String(playerName)) : [];
-  
-  // Blast data doesn't explicitly have the same "player_name" column if it's named differently,
-  // but let's assume either the filename matches or there's a name column. 
-  // Blast CSV usually has "Player" or it might just be the whole file for one player.
-  // The user said "それ以外のバット起動の数値はブラストで", we will assume the uploaded Blast data 
-  // corresponds to the selected player if there is no explicit Player column in Blast, 
-  // or we just use all Blast data assuming they upload per-player, or we filter if a column exists.
-  // Looking at Blast headers: "日付", "バット", etc., there is no "選手名". So Blast data is likely per-player.
-  const blastEvents = blastData || [];
+  const targetNorm = normalizePlayerName(playerName);
+  const savantEvents = savantData
+    ? savantData.filter(row => String(row[nameKey]) === String(playerName) || normalizePlayerName(row[nameKey] || row.player_name || row['選手名']) === targetNorm)
+    : [];
+
+  let blastEvents = blastData || [];
+  if (Array.isArray(blastData) && blastData.length > 0 && targetNorm) {
+    const nameCols = [nameKey, 'player_name', 'batter_name', '選手名', '氏名', '名前', 'Player Name', 'Player', 'Athlete'];
+    const hasAnyNameColumn = blastData.some(row => row && nameCols.some(col => row[col] != null && String(row[col]).trim() !== ''));
+    if (hasAnyNameColumn) {
+      const matched = blastData.filter(row => {
+        if (!row) return false;
+        return nameCols.some(col => row[col] != null && normalizePlayerName(row[col]) === targetNorm);
+      });
+      blastEvents = matched;
+    }
+  }
 
   return {
     savantEvents,
@@ -63,12 +72,21 @@ export const parseNumeric = (val) => {
 };
 
 export const isBarrel = (ev, la) => {
-  if (isNaN(ev) || isNaN(la) || ev < 98) return false;
-  // Statcast Barrel definition: 98mph -> 26-30 deg. 
-  // Range expands 1 degree each way for every 1 mph increase.
-  const lower = 26 - (ev - 98);
-  const upper = 30 + (ev - 98);
-  return la >= lower && la <= upper;
+  const numEv = parseNumeric(ev);
+  const numLa = parseNumeric(la);
+  if (isNaN(numEv) || isNaN(numLa) || numEv <= 0) return false;
+
+  // サイト内の打球速度は km/h 基準（98 mph ≒ 157.7 km/h）。
+  // 万が一 MLB Statcast の mph 原データ（85〜122 mph 程度）が渡された場合も自動判別して対応。
+  const mph = numEv >= 125 ? numEv / 1.60934 : numEv;
+  if (mph < 98) return false;
+
+  // Statcast Barrel definition: 98 mph -> 26° to 30°.
+  // 98 mph から 1 mph 上がるごとに下限が -1°（最小 8°）、上限が +1°（最大 50°）広がる。
+  const delta = mph - 98;
+  const lower = Math.max(8, 26 - delta);
+  const upper = Math.min(50, 30 + delta);
+  return numLa >= lower && numLa <= upper;
 };
 
 export const isHit = (event) => {
