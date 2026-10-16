@@ -532,10 +532,12 @@ export default function GrowthReport({
       );
     }
 
-    const isPositiveGood = metric?.higherIsBetter !== false;
-    const isGood = metric?.higherIsBetter === null
-      ? true
-      : (isPositiveGood ? delta > 0 : delta < 0);
+    // 数値の変化による色分けを統一:
+    // 体脂肪率 (higherIsBetter === false) のみ減少が良 (緑)
+    // それ以外の全指標 (打球速度、スイング速度、打球角度、アタック角等) は、
+    // 上がった時 (プラス) は緑 (Emerald)、下がった時 (マイナス) は赤 (Rose) で完全統一
+    const isPositive = delta > 0;
+    const isGood = metric?.higherIsBetter === false ? !isPositive : isPositive;
 
     return (
       <span
@@ -545,7 +547,7 @@ export default function GrowthReport({
             : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
         }`}
       >
-        {delta > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+        {isPositive ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
         {formatted}
       </span>
     );
