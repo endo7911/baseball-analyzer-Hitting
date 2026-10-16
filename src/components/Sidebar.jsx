@@ -33,6 +33,7 @@ function Sidebar({
   const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
   const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
   const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
+  const allowCalendar = (profile?.role === 'admin') || (profile?.allow_calendar === true || profile?.permissions?.calendar === true);
   const allowGame = profile?.allow_game !== false && profile?.permissions?.game !== false;
 
   const allMenuItems = [
@@ -43,7 +44,7 @@ function Sidebar({
     ...(SHOW_PITCHER_MODULE && allowPitching ? [{ id: 'pitcher', label: '投手分析', icon: Target, disabled: !hasData }] : []),
     { id: 'player', label: '個人分析', icon: User, disabled: !hasData },
     { id: 'growth', label: '成長レポート', icon: TrendingUp, disabled: !hasData },
-    { id: 'schedule', label: 'チームカレンダー', icon: Calendar },
+    ...(allowCalendar ? [{ id: 'schedule', label: 'チームカレンダー', icon: Calendar }] : []),
     ...(allowGame ? [{ id: 'game', label: '試合スタッツ', icon: Trophy, disabled: !hasData }] : []),
     { id: 'custom', label: 'カスタムグラフ', icon: LineChart, disabled: !hasData },
     { id: 'guide', label: '使い方ガイド', icon: BookOpen },

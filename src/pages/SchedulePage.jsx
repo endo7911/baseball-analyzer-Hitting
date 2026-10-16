@@ -9,7 +9,9 @@ function SchedulePage({
   combinedFiles = [],
   bodyCompFiles = [],
   setActiveView,
-  onViewPlayer
+  onViewPlayer,
+  profile,
+  user
 }) {
   return (
     <div className="animate-in fade-in duration-300">
@@ -20,7 +22,9 @@ function SchedulePage({
               <Calendar className="w-3.5 h-3.5" />
               チームスケジュール
             </span>
-            <span className="text-xs text-slate-400">チーム活動予定 ＆ 測定データ自動集約</span>
+            <span className="text-xs text-slate-400">
+              {profile?.team_name || profile?.team_id || 'チーム'} 専用スケジュール ＆ 測定データ集約
+            </span>
           </div>
           <h2 className="text-3xl font-extrabold text-white">チームスケジュール＆活動カレンダー</h2>
           <p className="text-sm text-slate-400 mt-1">
@@ -49,6 +53,8 @@ function SchedulePage({
           bodyCompFiles={bodyCompFiles}
           setActiveView={setActiveView}
           onViewPlayer={onViewPlayer}
+          profile={profile}
+          user={user}
         />
       </div>
     </div>

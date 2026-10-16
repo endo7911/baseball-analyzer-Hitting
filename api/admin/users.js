@@ -278,9 +278,11 @@ export default async function handler(req, res) {
         if (!u || !u.email) return;
         const key = u.email.toLowerCase();
         const hasAuth = authUserMap.has(key) || (u.id && authUserMap.has(u.id));
+        const isAdmin = u.role === 'admin';
         const hitting = u.allow_hitting !== false && u.permissions?.hitting !== false;
         const pitching = u.allow_pitching !== false && u.permissions?.pitching !== false;
         const bodyComp = u.allow_body_comp !== false && u.permissions?.bodyComp !== false;
+        const calendar = isAdmin ? true : (u.allow_calendar === true || u.permissions?.calendar === true);
         const game = u.allow_game !== false && u.permissions?.game !== false;
 
         userMap.set(key, {
@@ -296,11 +298,13 @@ export default async function handler(req, res) {
           allow_hitting: hitting,
           allow_pitching: pitching,
           allow_body_comp: bodyComp,
+          allow_calendar: calendar,
           allow_game: game,
           permissions: {
             hitting,
             pitching,
             bodyComp,
+            calendar,
             game
           },
           temp_password: u.temp_password || null,
@@ -308,18 +312,29 @@ export default async function handler(req, res) {
         });
       });
 
-      // Second, overlay Supabase profiles
+      // Second, overlay Supabase profiles and Auth metadata
       if (Array.isArray(profiles)) {
         profiles.forEach(p => {
           if (!p || !p.email) return;
           const key = p.email.toLowerCase();
           const existing = userMap.get(key) || {};
-          const hasAuth = authUserMap.has(key) || (p.id && authUserMap.has(p.id));
+          const authUser = authUserMap.get(key) || (p.id ? authUserMap.get(p.id) : null);
+          const hasAuth = !!authUser;
+          const authMeta = authUser?.user_metadata || {};
+          const isAdmin = p.role === 'admin' || existing.role === 'admin' || authMeta.role === 'admin';
 
-          const hitting = (p.allow_hitting !== undefined ? p.allow_hitting !== false : existing.allow_hitting !== false) && p.permissions?.hitting !== false && existing.permissions?.hitting !== false;
-          const pitching = (p.allow_pitching !== undefined ? p.allow_pitching !== false : existing.allow_pitching !== false) && p.permissions?.pitching !== false && existing.permissions?.pitching !== false;
-          const bodyComp = (p.allow_body_comp !== undefined ? p.allow_body_comp !== false : existing.allow_body_comp !== false) && p.permissions?.bodyComp !== false && existing.permissions?.bodyComp !== false;
-          const game = (p.allow_game !== undefined ? p.allow_game !== false : existing.allow_game !== false) && p.permissions?.game !== false && existing.permissions?.game !== false;
+          const hitting = (p.allow_hitting !== undefined ? p.allow_hitting !== false : (authMeta.allow_hitting !== undefined ? authMeta.allow_hitting !== false : existing.allow_hitting !== false)) && p.permissions?.hitting !== false && authMeta.permissions?.hitting !== false && existing.permissions?.hitting !== false;
+          const pitching = (p.allow_pitching !== undefined ? p.allow_pitching !== false : (authMeta.allow_pitching !== undefined ? authMeta.allow_pitching !== false : existing.allow_pitching !== false)) && p.permissions?.pitching !== false && authMeta.permissions?.pitching !== false && existing.permissions?.pitching !== false;
+          const bodyComp = (p.allow_body_comp !== undefined ? p.allow_body_comp !== false : (authMeta.allow_body_comp !== undefined ? authMeta.allow_body_comp !== false : existing.allow_body_comp !== false)) && p.permissions?.bodyComp !== false && authMeta.permissions?.bodyComp !== false && existing.permissions?.bodyComp !== false;
+          const calendar = isAdmin ? true : (
+            p.allow_calendar === true ||
+            p.permissions?.calendar === true ||
+            authMeta.allow_calendar === true ||
+            authMeta.permissions?.calendar === true ||
+            existing.allow_calendar === true ||
+            existing.permissions?.calendar === true
+          );
+          const game = (p.allow_game !== undefined ? p.allow_game !== false : (authMeta.allow_game !== undefined ? authMeta.allow_game !== false : existing.allow_game !== false)) && p.permissions?.game !== false && authMeta.permissions?.game !== false && existing.permissions?.game !== false;
 
           userMap.set(key, {
             ...existing,
@@ -335,11 +350,13 @@ export default async function handler(req, res) {
             allow_hitting: hitting,
             allow_pitching: pitching,
             allow_body_comp: bodyComp,
+            allow_calendar: calendar,
             allow_game: game,
             permissions: {
               hitting,
               pitching,
               bodyComp,
+              calendar,
               game
             },
             temp_password: p.temp_password_info || existing.temp_password || null,
@@ -705,7 +722,7 @@ export default async function handler(req, res) {
       if (updates && typeof updates === 'object') {
         const allowedFields = [
           'team_id', 'team_name', 'display_name', 'is_disabled',
-          'allow_hitting', 'allow_pitching', 'allow_body_comp', 'allow_game', 'role', 'permissions'
+          'allow_hitting', 'allow_pitching', 'allow_body_comp', 'allow_calendar', 'allow_game', 'role', 'permissions'
         ];
         const safeUpdates = {};
         for (const k of allowedFields) {
@@ -726,9 +743,9 @@ export default async function handler(req, res) {
               .update(profileColumnsUpdates)
               .eq(filterCol, filterVal);
 
-            // If error is due to allow_game column not existing, retry without it
-            if (upErr && (upErr.message?.includes('allow_game') || upErr.code === 'PGRST204')) {
-              const { allow_game, ...restUpdates } = profileColumnsUpdates;
+            // If error is due to allow_game or allow_calendar column not existing, retry without them
+            if (upErr && (upErr.message?.includes('allow_game') || upErr.message?.includes('allow_calendar') || upErr.code === 'PGRST204')) {
+              const { allow_game, allow_calendar, ...restUpdates } = profileColumnsUpdates;
               await adminClient.from('profiles').update(restUpdates).eq(filterCol, filterVal);
             }
           } catch (err) {
@@ -766,10 +783,12 @@ export default async function handler(req, res) {
             const matchId = (id && u.id === id);
             const matchEmail = (targetEmail && u.email && u.email.toLowerCase() === targetEmail);
             if (matchId || matchEmail) {
+              const isAdmin = u.role === 'admin' || safeUpdates.role === 'admin';
               const basePerms = {
                 hitting: u.allow_hitting !== false && u.permissions?.hitting !== false,
                 pitching: u.allow_pitching !== false && u.permissions?.pitching !== false,
                 bodyComp: u.allow_body_comp !== false && u.permissions?.bodyComp !== false,
+                calendar: isAdmin ? true : (u.allow_calendar === true || u.permissions?.calendar === true),
                 game: u.allow_game !== false && u.permissions?.game !== false,
                 ...(u.permissions || {})
               };
@@ -777,6 +796,7 @@ export default async function handler(req, res) {
               if (safeUpdates.allow_hitting !== undefined) basePerms.hitting = safeUpdates.allow_hitting;
               if (safeUpdates.allow_pitching !== undefined) basePerms.pitching = safeUpdates.allow_pitching;
               if (safeUpdates.allow_body_comp !== undefined) basePerms.bodyComp = safeUpdates.allow_body_comp;
+              if (safeUpdates.allow_calendar !== undefined) basePerms.calendar = safeUpdates.allow_calendar;
               if (safeUpdates.allow_game !== undefined) basePerms.game = safeUpdates.allow_game;
               if (safeUpdates.permissions && typeof safeUpdates.permissions === 'object') {
                 Object.assign(basePerms, safeUpdates.permissions);
@@ -788,6 +808,7 @@ export default async function handler(req, res) {
                 allow_hitting: basePerms.hitting,
                 allow_pitching: basePerms.pitching,
                 allow_body_comp: basePerms.bodyComp,
+                allow_calendar: basePerms.calendar,
                 allow_game: basePerms.game,
                 permissions: basePerms
               };

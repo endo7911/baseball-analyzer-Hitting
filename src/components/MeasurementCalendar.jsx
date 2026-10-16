@@ -27,13 +27,26 @@ export default function MeasurementCalendar({
   combinedFiles = [],
   bodyCompFiles = [],
   setActiveView,
-  onViewPlayer
+  onViewPlayer,
+  profile,
+  user
 }) {
   // Calendar current view month
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState(null); // 'YYYY-MM-DD'
   const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'timeline'
   const [filterType, setFilterType] = useState('all');
+
+  // Strict Per-Account Storage Key (Isolates schedules per team/user; eliminates any cross-account leak)
+  const tenantId = (
+    profile?.team_id ||
+    profile?.team_name ||
+    user?.email ||
+    profile?.email ||
+    'team'
+  ).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+
+  const tenantStorageKey = `baseball_team_schedules_v2_${tenantId}`;
 
   // Modal State for Add & Edit
   const [showModal, setShowModal] = useState(false);
@@ -48,71 +61,38 @@ export default function MeasurementCalendar({
   const [formPlayers, setFormPlayers] = useState('全員');
   const [formNotes, setFormNotes] = useState('');
 
-  // Manual schedules state loaded from localStorage
+  // Manual schedules state strictly loaded from account-isolated localStorage
   const [manualSchedules, setManualSchedules] = useState(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      // Purge old shared mock storage key to prevent any cross-team data contamination
+      localStorage.removeItem('baseball_measurement_schedules_v1');
+      const saved = localStorage.getItem(tenantStorageKey);
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn("Failed to load schedules from localStorage:", e);
     }
-    // Default initial sample schedules
-    return [
-      {
-        id: 'sched_default_1',
-        date: '2026-10-18',
-        title: '秋季練習試合 vs ○○高校 (OP戦 ダブルヘッダー)',
-        type: 'game',
-        time: '09:30 試合開始 (第1試合) / 13:30 (第2試合)',
-        location: '本校第1グラウンド',
-        status: 'scheduled',
-        targetPlayers: 'Aチーム・Bチーム全員',
-        notes: '集合 07:30。白ユニフォーム着用。昼食持参。',
-        createdAt: '2026-10-01'
-      },
-      {
-        id: 'sched_default_2',
-        date: '2026-10-19',
-        title: '完全休養日 (アクティブレスト)',
-        type: 'rest',
-        time: '終日',
-        location: '-',
-        status: 'scheduled',
-        targetPlayers: '全員',
-        notes: '疲労回復と各自ストレッチ・アイシング。',
-        createdAt: '2026-10-01'
-      },
-      {
-        id: 'sched_default_3',
-        date: '2026-10-21',
-        title: 'バッティング強化練習 ＆ ウェイト',
-        type: 'practice',
-        time: '15:30〜18:30',
-        location: '屋内雨天練習場・トレーニングルーム',
-        status: 'scheduled',
-        targetPlayers: '野手陣・投手陣(トレーニング組)',
-        notes: 'Blast Motion装着でスイングスピード測定併用。',
-        createdAt: '2026-10-01'
-      },
-      {
-        id: 'sched_default_4',
-        date: '2026-11-20',
-        title: '冬季 定期ラプソード＆体組成 合同測定',
-        type: 'measurement',
-        time: '09:00〜15:00',
-        location: 'メイングラウンド ＆ 体力測定室',
-        status: 'scheduled',
-        targetPlayers: '全選手対象',
-        notes: '新球にて投球・打撃およびInBody同時計測。前回測定からの成長率を分析。',
-        createdAt: '2026-10-01'
-      }
-    ];
+    // Accounts start completely clean with zero mock schedules
+    return [];
   });
+
+  // Re-sync when switching accounts / teams
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(tenantStorageKey);
+      if (saved) {
+        setManualSchedules(JSON.parse(saved));
+      } else {
+        setManualSchedules([]);
+      }
+    } catch (e) {
+      setManualSchedules([]);
+    }
+  }, [tenantStorageKey]);
 
   const saveManualSchedules = (newList) => {
     setManualSchedules(newList);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
+      localStorage.setItem(tenantStorageKey, JSON.stringify(newList));
     } catch (e) {
       console.warn("Failed to save schedules to localStorage:", e);
     }

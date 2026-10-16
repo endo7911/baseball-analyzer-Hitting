@@ -7,7 +7,7 @@ import {
   Users, Plus, Trash2, Shield, RefreshCw, CheckCircle2, XCircle, 
   Ban, PlayCircle, Key, Clock, Copy, Check, Target, Dumbbell, 
   ArrowUpRight, AlertTriangle, ShieldAlert, Monitor, Activity, Eye, UserCheck,
-  MessageSquare, Trophy
+  MessageSquare, Trophy, Calendar
 } from 'lucide-react';
 
 function AdminPanel() {
@@ -73,10 +73,11 @@ function AdminPanel() {
       }
     } catch {}
 
-    const options = { method, headers };
+    const options = { method, headers, cache: 'no-store' };
     if (body) options.body = JSON.stringify(body);
 
-    const res = await fetch(`/api/admin/users${queryParams}`, options);
+    const separator = queryParams ? (queryParams.includes('?') ? '&' : '?') : '?';
+    const res = await fetch(`/api/admin/users${queryParams}${separator}_t=${Date.now()}`, options);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || `HTTP ${res.status}`);
@@ -359,18 +360,28 @@ function AdminPanel() {
     }
   };
 
-  const getEffectivePermissions = (u) => ({
-    hitting: u?.allow_hitting !== false && u?.permissions?.hitting !== false,
-    pitching: u?.allow_pitching !== false && u?.permissions?.pitching !== false,
-    bodyComp: u?.allow_body_comp !== false && u?.permissions?.bodyComp !== false,
-    game: u?.allow_game !== false && u?.permissions?.game !== false
-  });
+  const getEffectivePermissions = (u) => {
+    const isAdmin = u?.role === 'admin';
+    return {
+      hitting: u?.allow_hitting !== false && u?.permissions?.hitting !== false,
+      pitching: u?.allow_pitching !== false && u?.permissions?.pitching !== false,
+      bodyComp: u?.allow_body_comp !== false && u?.permissions?.bodyComp !== false,
+      calendar: isAdmin || (u?.allow_calendar === true || u?.permissions?.calendar === true),
+      game: u?.allow_game !== false && u?.permissions?.game !== false
+    };
+  };
 
   const toggleModulePermission = async (user, moduleKey) => {
     const curPerms = getEffectivePermissions(user);
     const newStatus = !curPerms[moduleKey];
 
-    const moduleLabels = { hitting: '打撃分析', pitching: '投手分析', bodyComp: '体組成分析', game: '試合スタッツ' };
+    const moduleLabels = {
+      hitting: '打撃分析',
+      pitching: '投手分析',
+      bodyComp: '体組成分析',
+      calendar: 'チームカレンダー',
+      game: '試合スタッツ'
+    };
     const label = moduleLabels[moduleKey] || moduleKey;
     const actionText = newStatus ? 'オン（表示）' : 'オフ（非表示）';
 
@@ -381,7 +392,8 @@ function AdminPanel() {
     try {
       const updateField = moduleKey === 'hitting' ? 'allow_hitting' 
         : (moduleKey === 'pitching' ? 'allow_pitching' 
-        : (moduleKey === 'bodyComp' ? 'allow_body_comp' : 'allow_game'));
+        : (moduleKey === 'bodyComp' ? 'allow_body_comp' 
+        : (moduleKey === 'calendar' ? 'allow_calendar' : 'allow_game')));
       const targetId = user.id || user.email;
 
       const newPerms = {
@@ -389,6 +401,29 @@ function AdminPanel() {
         [moduleKey]: newStatus
       };
 
+      // 1. Optimistic UI update: instantly update table button so user sees change with ZERO delay
+      setUsers(prevUsers => prevUsers.map(u => {
+        const matchId = user.id && (u.id === user.id);
+        const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
+        if (matchId || matchEmail) {
+          return {
+            ...u,
+            [updateField]: newStatus,
+            allow_hitting: moduleKey === 'hitting' ? newStatus : (u.allow_hitting !== false && u.permissions?.hitting !== false),
+            allow_pitching: moduleKey === 'pitching' ? newStatus : (u.allow_pitching !== false && u.permissions?.pitching !== false),
+            allow_body_comp: moduleKey === 'bodyComp' ? newStatus : (u.allow_body_comp !== false && u.permissions?.bodyComp !== false),
+            allow_calendar: moduleKey === 'calendar' ? newStatus : ((u.role === 'admin') || u.allow_calendar === true || u.permissions?.calendar === true),
+            allow_game: moduleKey === 'game' ? newStatus : (u.allow_game !== false && u.permissions?.game !== false),
+            permissions: {
+              ...getEffectivePermissions(u),
+              [moduleKey]: newStatus
+            }
+          };
+        }
+        return u;
+      }));
+
+      // 2. Persist to server via Vercel Admin API
       if (serverApiActive && targetId) {
         await callAdminApi('PUT', {
           id: targetId,
@@ -419,7 +454,7 @@ function AdminPanel() {
         console.warn("Direct profiles update non-fatal:", sbErr);
       }
 
-      // Also update local/global storage fallback (ensure all 4 permissions remain intact)
+      // Also update local/global storage fallback (ensure all 5 permissions remain intact)
       try {
         const globalUsers = await getGlobalUsers();
         const updatedUsers = globalUsers.map(u => {
@@ -432,6 +467,7 @@ function AdminPanel() {
               allow_hitting: moduleKey === 'hitting' ? newStatus : (u.allow_hitting !== false && u.permissions?.hitting !== false),
               allow_pitching: moduleKey === 'pitching' ? newStatus : (u.allow_pitching !== false && u.permissions?.pitching !== false),
               allow_body_comp: moduleKey === 'bodyComp' ? newStatus : (u.allow_body_comp !== false && u.permissions?.bodyComp !== false),
+              allow_calendar: moduleKey === 'calendar' ? newStatus : ((u.role === 'admin') || u.allow_calendar === true || u.permissions?.calendar === true),
               allow_game: moduleKey === 'game' ? newStatus : (u.allow_game !== false && u.permissions?.game !== false),
               permissions: {
                 ...getEffectivePermissions(u),
@@ -787,6 +823,15 @@ function AdminPanel() {
                                 title="体組成分析ページの表示/非表示"
                               >
                                 <Dumbbell className="w-3 h-3" /> 体組成
+                              </button>
+                              <button
+                                onClick={() => toggleModulePermission(u, 'calendar')}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                                  perms.calendar ? 'bg-cyan-600/20 border-cyan-500/40 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-500'
+                                }`}
+                                title="チームカレンダーページの表示/非表示"
+                              >
+                                <Calendar className="w-3 h-3" /> カレンダー
                               </button>
                               <button
                                 onClick={() => toggleModulePermission(u, 'game')}
