@@ -59,9 +59,23 @@ function App() {
     }
   }, [theme]);
 
-  // Auth state
-  const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);
+  // Auth state (initialize from cache to prevent UI flash/flicker on reload)
+  const [user, setUser] = useState(() => {
+    try {
+      const u = sessionStorage.getItem('mockUser') || localStorage.getItem('mockUser');
+      return u ? JSON.parse(u) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [profile, setProfile] = useState(() => {
+    try {
+      const p = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile');
+      return p ? JSON.parse(p) : null;
+    } catch {
+      return null;
+    }
+  });
   const [authLoading, setAuthLoading] = useState(true);
   const [showAccountModal, setShowAccountModal] = useState(false);
 
@@ -96,31 +110,62 @@ function App() {
             return;
           }
 
+          // Fetch permissions from global users / cached profile to ensure ZERO flicker on reload
+          let globalInfo = null;
+          try {
+            const globalUsers = await getGlobalUsers();
+            const targetEmail = (authUser.email || '').toLowerCase();
+            globalInfo = globalUsers.find(
+              u => (u.id && u.id === authUser.id) || (u.email && u.email.toLowerCase() === targetEmail)
+            );
+          } catch {}
+
+          const cachedProfileRaw = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile');
+          let cachedProfile = null;
+          try {
+            if (cachedProfileRaw) cachedProfile = JSON.parse(cachedProfileRaw);
+          } catch {}
+
           if (isMounted) {
             setUser(authUser);
-            const pData = profileData || {
+            const pData = {
               id: authUser.id,
               email: authUser.email,
               role: authUser.user_metadata?.role || 'user',
               team_id: authUser.user_metadata?.team_id || 'Team A',
               team_name: authUser.user_metadata?.team_id || 'Team A',
               display_name: authUser.email,
-              allow_hitting: authUser.user_metadata?.allow_hitting !== false,
-              allow_pitching: authUser.user_metadata?.allow_pitching !== false,
-              allow_body_comp: authUser.user_metadata?.allow_body_comp !== false,
+              ...(cachedProfile || {}),
+              ...(profileData || {}),
+              ...(globalInfo || {})
             };
-            setProfile({
+
+            const allowHitting = pData.allow_hitting !== false && pData.permissions?.hitting !== false;
+            const allowPitching = pData.allow_pitching !== false && pData.permissions?.pitching !== false;
+            const allowBodyComp = pData.allow_body_comp !== false && pData.permissions?.bodyComp !== false;
+
+            const finalProfile = {
               ...pData,
-              allow_hitting: pData.allow_hitting !== false,
-              allow_pitching: pData.allow_pitching !== false,
-              allow_body_comp: pData.allow_body_comp !== false,
+              allow_hitting: allowHitting,
+              allow_pitching: allowPitching,
+              allow_body_comp: allowBodyComp,
               permissions: {
-                hitting: pData.allow_hitting !== false,
-                pitching: pData.allow_pitching !== false,
-                bodyComp: pData.allow_body_comp !== false,
+                hitting: allowHitting,
+                pitching: allowPitching,
+                bodyComp: allowBodyComp,
                 ...(pData.permissions || {})
               }
-            });
+            };
+
+            setProfile(finalProfile);
+
+            try {
+              sessionStorage.setItem('mockProfile', JSON.stringify(finalProfile));
+              localStorage.setItem('mockProfile', JSON.stringify(finalProfile));
+              sessionStorage.setItem('mockUser', JSON.stringify({ id: authUser.id, email: authUser.email }));
+              localStorage.setItem('mockUser', JSON.stringify({ id: authUser.id, email: authUser.email }));
+            } catch {}
+
             setAuthLoading(false);
           }
           return;
@@ -203,27 +248,37 @@ function App() {
           .select('*')
           .eq('id', session.user.id)
           .single();
+        const cachedProfileRaw = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile');
+        let cachedProfile = null;
+        try {
+          if (cachedProfileRaw) cachedProfile = JSON.parse(cachedProfileRaw);
+        } catch {}
+
         setUser(session.user);
-        const pData = profileData || {
+        const pData = {
           id: session.user.id,
           email: session.user.email,
           role: session.user.user_metadata?.role || 'user',
           team_id: session.user.user_metadata?.team_id || 'Team A',
           team_name: session.user.user_metadata?.team_id || 'Team A',
           display_name: session.user.email,
-          allow_hitting: session.user.user_metadata?.allow_hitting !== false,
-          allow_pitching: session.user.user_metadata?.allow_pitching !== false,
-          allow_body_comp: session.user.user_metadata?.allow_body_comp !== false,
+          ...(cachedProfile || {}),
+          ...(profileData || {})
         };
+
+        const allowHitting = pData.allow_hitting !== false && pData.permissions?.hitting !== false;
+        const allowPitching = pData.allow_pitching !== false && pData.permissions?.pitching !== false;
+        const allowBodyComp = pData.allow_body_comp !== false && pData.permissions?.bodyComp !== false;
+
         setProfile({
           ...pData,
-          allow_hitting: pData.allow_hitting !== false,
-          allow_pitching: pData.allow_pitching !== false,
-          allow_body_comp: pData.allow_body_comp !== false,
+          allow_hitting: allowHitting,
+          allow_pitching: allowPitching,
+          allow_body_comp: allowBodyComp,
           permissions: {
-            hitting: pData.allow_hitting !== false,
-            pitching: pData.allow_pitching !== false,
-            bodyComp: pData.allow_body_comp !== false,
+            hitting: allowHitting,
+            pitching: allowPitching,
+            bodyComp: allowBodyComp,
             ...(pData.permissions || {})
           }
         });

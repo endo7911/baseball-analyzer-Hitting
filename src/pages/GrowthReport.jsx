@@ -239,6 +239,7 @@ export default function GrowthReport({
   const [selectedPlayer, setSelectedPlayer] = useState('');
   const [onlyMultipleDates, setOnlyMultipleDates] = useState(false);
   const [chartDisplayLimit, setChartDisplayLimit] = useState('all'); // 'all' (全選手) | '15' | '10'
+  const [sortMode, setSortMode] = useState('delta'); // 'delta' (伸び幅・変化量順) | 'after' (最新記録・実力順)
 
   // カテゴリ切替時にデフォルト指標を更新
   useEffect(() => {
@@ -304,6 +305,11 @@ export default function GrowthReport({
       setAfterDate('');
     }
   }, [dates]);
+
+  const currentMetricMeta = useMemo(() => {
+    const list = CATEGORY_METRICS[category] || [];
+    return list.find(m => m.key === selectedMetricKey) || list[0];
+  }, [category, selectedMetricKey]);
 
   // 選手ごと・日付ごとの集計データを構築
   const playerGrowthList = useMemo(() => {
@@ -426,18 +432,29 @@ export default function GrowthReport({
       });
     });
 
-    // 選択中の指標の成長量（delta）降順でソート
+    // 選択中の指標の並び順（成長量 delta または 最新記録 after）
+    const isHigherBetter = currentMetricMeta?.higherIsBetter !== false;
     results.sort((a, b) => {
+      if (sortMode === 'after') {
+        const va = a.afterStats?.[selectedMetricKey];
+        const vb = b.afterStats?.[selectedMetricKey];
+        if (va == null && vb == null) return a.playerName.localeCompare(b.playerName, 'ja');
+        if (va == null) return 1;
+        if (vb == null) return -1;
+        return isHigherBetter ? vb - va : va - vb;
+      }
+
+      // Default: sort by delta (伸び幅・向上量)
       const da = a.deltas[selectedMetricKey];
       const db = b.deltas[selectedMetricKey];
       if (da == null && db == null) return a.playerName.localeCompare(b.playerName, 'ja');
       if (da == null) return 1;
       if (db == null) return -1;
-      return db - da;
+      return isHigherBetter ? db - da : da - db;
     });
 
     return results;
-  }, [activeRows, category, selectedTeam, compareMode, beforeDate, afterDate, selectedMetricKey, onlyMultipleDates]);
+  }, [activeRows, category, selectedTeam, compareMode, beforeDate, afterDate, selectedMetricKey, onlyMultipleDates, sortMode, currentMetricMeta]);
 
   // 初期選択選手を自動セット
   useEffect(() => {
@@ -450,11 +467,6 @@ export default function GrowthReport({
       setSelectedPlayer('');
     }
   }, [playerGrowthList, selectedPlayer]);
-
-  const currentMetricMeta = useMemo(() => {
-    const list = CATEGORY_METRICS[category] || [];
-    return list.find(m => m.key === selectedMetricKey) || list[0];
-  }, [category, selectedMetricKey]);
 
   // チーム全体の平均成長サマリー
   const teamSummary = useMemo(() => {
@@ -750,41 +762,80 @@ export default function GrowthReport({
             <div className="xl:col-span-7 space-y-6">
               {/* Before / After 比較 水平バーチャート（全選手名をもれなく完全表示） */}
               <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
                   <div>
                     <h3 className="text-base font-black text-white flex items-center gap-2">
                       <Award size={18} className="text-amber-400 shrink-0" />
                       <span>
                         {currentMetricMeta?.label} Before → After 比較チャート
-                        {chartDisplayLimit === 'all' ? `（全 ${chartData.length} 名）` : `（上位${chartDisplayLimit}名）`}
+                        {chartDisplayLimit === 'all'
+                          ? `（全 ${chartData.length} 名）`
+                          : `（${sortMode === 'delta' ? '伸び幅' : '最新記録'} 上位${chartDisplayLimit}名）`}
                       </span>
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      全選手の名前を省略せず均等に表示しています。棒をクリックすると右側の「個人成長カルテ」が切り替わります。
+                      {sortMode === 'delta'
+                        ? '初回測定日から最新測定日までの「伸び幅（変化量 Δ = After - Before）」が大きい順に表示しています。'
+                        : '最新測定日（After）の実績記録が高い順に表示しています。'}
+                      全選手の名前をもれなく表示しています。
                     </p>
                   </div>
 
-                  {/* 表示人数の選択（全員・15名・10名） */}
-                  <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs self-start sm:self-auto shrink-0">
-                    <span className="text-slate-400 px-2 font-bold text-[11px]">表示:</span>
-                    {[
-                      { id: 'all', label: `全選手 (${playerGrowthList.length}名)` },
-                      { id: '15', label: '上位15名' },
-                      { id: '10', label: '上位10名' },
-                    ].map(opt => (
+                  {/* 並び順＆表示人数の選択コントロール */}
+                  <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto shrink-0">
+                    {/* ソート基準切替 */}
+                    <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs">
+                      <span className="text-slate-400 px-1.5 font-bold text-[11px]">並び順:</span>
                       <button
-                        key={opt.id}
+                        key="delta"
                         type="button"
-                        onClick={() => setChartDisplayLimit(opt.id)}
+                        onClick={() => setSortMode('delta')}
                         className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                          chartDisplayLimit === opt.id
+                          sortMode === 'delta'
                             ? 'bg-blue-600 text-white shadow-sm'
                             : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                         }`}
+                        title="期間内での伸び幅（変化量 Δ）が大きい順"
                       >
-                        {opt.label}
+                        📈 伸び幅 (Δ) 順
                       </button>
-                    ))}
+                      <button
+                        key="after"
+                        type="button"
+                        onClick={() => setSortMode('after')}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                          sortMode === 'after'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                        }`}
+                        title="最新測定日の記録が高い順"
+                      >
+                        🏆 最新値 (After) 順
+                      </button>
+                    </div>
+
+                    {/* 表示人数の選択（全員・15名・10名） */}
+                    <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs">
+                      <span className="text-slate-400 px-1.5 font-bold text-[11px]">表示:</span>
+                      {[
+                        { id: 'all', label: `全員 (${playerGrowthList.length}名)` },
+                        { id: '15', label: '上位15名' },
+                        { id: '10', label: '上位10名' },
+                      ].map(opt => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setChartDisplayLimit(opt.id)}
+                          className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                            chartDisplayLimit === opt.id
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -834,11 +885,18 @@ export default function GrowthReport({
 
               {/* チーム成長ランキング一覧テーブル */}
               <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-black text-white">
-                    選手別 成長ランキング（{currentMetricMeta?.label} 順）
-                  </h3>
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-800 text-slate-300">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                  <div>
+                    <h3 className="text-base font-black text-white">
+                      選手別 {sortMode === 'delta' ? `成長ランキング（${currentMetricMeta?.label} 伸び幅 Δ 順）` : `実力ランキング（${currentMetricMeta?.label} 最新記録 順）`}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {sortMode === 'delta'
+                        ? '変化量（Δ）が大きい順に並んでいます。行をクリックすると右側の個別カルテに反映されます。'
+                        : '最新測定値（After）が高い順に並んでいます。行をクリックすると右側の個別カルテに反映されます。'}
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 self-start sm:self-auto shrink-0">
                     全 {playerGrowthList.length} 名
                   </span>
                 </div>
