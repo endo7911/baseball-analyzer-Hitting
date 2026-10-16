@@ -297,9 +297,9 @@ function BodyCompAnalysis({ bodyCompData, blastData, combinedData, onViewPlayer,
           const m = getMetric(key);
           return (
             <div key={key} className={`${bg} border rounded-xl p-4 text-center`}>
-              <div className={`${color} text-xs font-bold mb-1`}>チーム平均 {m.label}</div>
-              <div className="text-2xl font-extrabold text-white">
-                {fmt(teamAvg[key], m.digits)} {m.unit && <span className="text-xs text-slate-400 font-normal">{m.unit}</span>}
+              <div className={`${color} text-xs font-bold mb-1 whitespace-nowrap`}>チーム平均 {m.label}</div>
+              <div className="text-2xl font-extrabold text-white whitespace-nowrap font-mono">
+                {fmt(teamAvg[key], m.digits)} {m.unit && <span className="text-xs text-slate-400 font-normal font-sans ml-1">{m.unit}</span>}
               </div>
             </div>
           );

@@ -501,26 +501,18 @@ export default function MeasurementCalendar({
   return (
     <div className="bg-slate-800/80 border-2 border-indigo-500/30 p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-2xl space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-700 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700 pb-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold flex items-center gap-1">
-              <CalendarIcon className="w-3.5 h-3.5 text-indigo-400" /> チームスケジュール ＆ 活動カレンダー
-            </span>
-            <span className="text-xs text-slate-400">
-              練習・試合・遠征・休養の管理 ＆ 測定データ自動集約
-            </span>
-          </div>
-          <h3 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2.5">
-            チーム活動・測定スケジュール管理
+          <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
+            <CalendarIcon className="w-5 h-5 text-indigo-400" /> チーム活動・測定スケジュール
           </h3>
-          <p className="text-xs text-slate-400 mt-1">
-            日々の練習や試合、休養を自由に登録・編集できます。CSVを読み込むと測定日や参加メンバーも自動で連携記録されます！
+          <p className="text-xs text-slate-400 mt-0.5">
+            練習・公式戦・OP戦・合宿・休養の登録と、測定データの自動集約
           </p>
         </div>
 
         {/* Action Controls */}
-        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
           {/* View mode toggle */}
           <div className="bg-slate-900/90 border border-slate-700 p-1 rounded-xl flex items-center gap-1 text-xs font-bold">
             <button
@@ -552,11 +544,11 @@ export default function MeasurementCalendar({
       </div>
 
       {/* Filter Category Tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/70 p-2.5 rounded-2xl border border-slate-700/60">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 bg-slate-900/80 p-3 rounded-2xl border border-slate-700/80">
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           <button
             onClick={() => setFilterType('all')}
-            className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all whitespace-nowrap cursor-pointer ${
               filterType === 'all'
                 ? 'bg-indigo-600 text-white shadow'
                 : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700/60'
@@ -568,10 +560,10 @@ export default function MeasurementCalendar({
             <button
               key={cat.id}
               onClick={() => setFilterType(cat.id)}
-              className={`px-2.5 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 ${
+              className={`px-2.5 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 filterType === cat.id
-                  ? 'bg-slate-700 text-white border border-slate-600 shadow'
-                  : 'bg-slate-800/60 text-slate-400 hover:text-white border border-slate-800'
+                  ? 'bg-slate-700 text-white border border-slate-500 shadow'
+                  : 'bg-slate-800/60 text-slate-400 hover:text-white border border-slate-700/60'
               }`}
             >
               <span>{cat.emoji}</span>
@@ -580,7 +572,7 @@ export default function MeasurementCalendar({
           ))}
         </div>
 
-        <div className="text-xs text-slate-400 font-mono flex items-center gap-2 self-end sm:self-auto">
+        <div className="text-xs text-slate-400 font-mono flex items-center gap-2.5 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700 shrink-0 self-start md:self-auto">
           <span>予定: <strong className="text-indigo-400">{manualSchedules.length}</strong> 件</span>
           <span className="text-slate-600">|</span>
           <span>測定記録: <strong className="text-cyan-400">{recordedEvents.length}</strong> 日</span>
@@ -1034,13 +1026,13 @@ export default function MeasurementCalendar({
                     className="w-full bg-slate-800 border border-slate-700 focus:border-indigo-500 rounded-xl px-3 py-2 text-white text-sm outline-none"
                   />
                   {/* Quick time chips */}
-                  <div className="flex gap-1.5 mt-1.5">
+                  <div className="flex flex-wrap gap-1.5 mt-2">
                     {['終日', '午前 (09:00〜12:00)', '午後 (13:00〜17:00)', '夜間 (18:00〜21:00)'].map(chip => (
                       <button
                         key={chip}
                         type="button"
                         onClick={() => setFormTime(chip)}
-                        className="text-[10px] bg-slate-800/60 hover:bg-slate-700 text-slate-400 hover:text-indigo-300 px-1.5 py-0.5 rounded border border-slate-700/60 cursor-pointer"
+                        className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-indigo-300 px-2 py-1 rounded-lg border border-slate-700 transition cursor-pointer whitespace-nowrap"
                       >
                         {chip.split(' ')[0]}
                       </button>
@@ -1063,14 +1055,14 @@ export default function MeasurementCalendar({
                   required
                 />
                 {/* Preset suggestions */}
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                  <span className="text-[10px] text-slate-500 font-bold self-center mr-1">おすすめ定型文:</span>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <span className="text-[11px] text-slate-400 font-bold self-center mr-1">おすすめ定型文:</span>
                   {activeTypeInfo.presets.map(preset => (
                     <button
                       key={preset}
                       type="button"
                       onClick={() => setFormTitle(preset)}
-                      className="text-[10px] bg-slate-800 hover:bg-indigo-950 hover:text-indigo-300 text-slate-400 px-2 py-0.5 rounded-md border border-slate-700/80 transition cursor-pointer"
+                      className="text-[11px] bg-slate-800 hover:bg-indigo-950 hover:text-indigo-300 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700 transition cursor-pointer whitespace-nowrap"
                     >
                       {preset}
                     </button>
@@ -1091,13 +1083,13 @@ export default function MeasurementCalendar({
                     onChange={e => setFormLocation(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 focus:border-indigo-500 rounded-xl px-3 py-2 text-white text-sm outline-none"
                   />
-                  <div className="flex gap-1.5 mt-1.5">
+                  <div className="flex flex-wrap gap-1.5 mt-2">
                     {['本校グラウンド', '雨天練習場', 'トレーニング室', '遠征球場'].map(chip => (
                       <button
                         key={chip}
                         type="button"
                         onClick={() => setFormLocation(chip)}
-                        className="text-[10px] bg-slate-800/60 hover:bg-slate-700 text-slate-400 hover:text-indigo-300 px-1.5 py-0.5 rounded border border-slate-700/60 cursor-pointer"
+                        className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-indigo-300 px-2.5 py-1 rounded-lg border border-slate-700 transition cursor-pointer whitespace-nowrap"
                       >
                         {chip}
                       </button>
@@ -1116,13 +1108,13 @@ export default function MeasurementCalendar({
                     onChange={e => setFormPlayers(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 focus:border-indigo-500 rounded-xl px-3 py-2 text-white text-sm outline-none"
                   />
-                  <div className="flex gap-1.5 mt-1.5">
+                  <div className="flex flex-wrap gap-1.5 mt-2">
                     {['全員', 'Aチーム', 'Bチーム', '野手陣', '投手陣'].map(chip => (
                       <button
                         key={chip}
                         type="button"
                         onClick={() => setFormPlayers(chip)}
-                        className="text-[10px] bg-slate-800/60 hover:bg-slate-700 text-slate-400 hover:text-indigo-300 px-1.5 py-0.5 rounded border border-slate-700/60 cursor-pointer"
+                        className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-indigo-300 px-2.5 py-1 rounded-lg border border-slate-700 transition cursor-pointer whitespace-nowrap"
                       >
                         {chip}
                       </button>

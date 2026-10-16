@@ -274,18 +274,18 @@ function BodyCompPlayerProfile({
       {/* フィジカル × パフォーマンス連動成長分析 Section */}
       <div className="bg-slate-800/70 border-2 border-emerald-500/30 p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-2xl space-y-5">
         {/* Header with Title & Metric Controls */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-700/80 pb-4">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-slate-700/80 pb-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold flex items-center gap-1">
+              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold flex items-center gap-1 whitespace-nowrap">
                 <Flame className="w-3.5 h-3.5 text-emerald-400" /> 連動シナジー分析
               </span>
-              <span className="text-xs text-slate-400 font-mono">
+              <span className="text-xs text-slate-400 font-mono whitespace-nowrap">
                 {hasMultiplePoints ? `測定比較: ${firstM?.date} → ${latestM?.date}` : `測定日: ${latestM?.date || '-'}`}
               </span>
             </div>
             <h3 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2.5">
-              <Scale className="w-6 h-6 text-emerald-400" /> フィジカル × パフォーマンス連動成長
+              <Scale className="w-6 h-6 text-emerald-400 shrink-0" /> フィジカル × パフォーマンス連動成長
             </h3>
             <p className="text-xs text-slate-400 mt-1">
               筋肉・体重が何kg増えたら、球速・打球速度が何km/h伸びたか（増量還元効率）を可視化します
@@ -294,14 +294,14 @@ function BodyCompPlayerProfile({
 
           {/* Metric Selector Controls */}
           {hasPerformanceData && (
-            <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+            <div className="flex flex-wrap items-center gap-2 self-start xl:self-auto">
               {/* Speed Metric Toggle */}
               <div className="bg-slate-900/90 border border-slate-700 p-1 rounded-xl flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setSelectedSpeed('ev')}
                   disabled={!hasBatting}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
                     selectedSpeed === 'ev'
                       ? 'bg-emerald-600 text-white shadow-md'
                       : !hasBatting
@@ -317,7 +317,7 @@ function BodyCompPlayerProfile({
                   type="button"
                   onClick={() => setSelectedSpeed('bs')}
                   disabled={!hasBatting}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
                     selectedSpeed === 'bs'
                       ? 'bg-cyan-600 text-white shadow-md'
                       : !hasBatting
@@ -333,7 +333,7 @@ function BodyCompPlayerProfile({
                   type="button"
                   onClick={() => setSelectedSpeed('velo')}
                   disabled={!hasPitching}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
                     selectedSpeed === 'velo'
                       ? 'bg-blue-600 text-white shadow-md'
                       : !hasPitching
@@ -354,7 +354,7 @@ function BodyCompPlayerProfile({
                     key={key}
                     type="button"
                     onClick={() => setSelectedPhysical(key)}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                       selectedPhysical === key
                         ? 'bg-slate-700 text-white shadow'
                         : 'text-slate-400 hover:text-white'
@@ -371,56 +371,56 @@ function BodyCompPlayerProfile({
         {hasPerformanceData ? (
           <>
             {/* Top 4 KPI Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-stretch">
               {/* Card 1: Physical Delta */}
-              <div className="bg-slate-900/80 border border-slate-700/80 p-4 rounded-2xl flex flex-col justify-between min-h-[160px]">
+              <div className="bg-slate-900/80 border border-slate-700/80 p-4 rounded-2xl flex flex-col justify-between h-full min-h-[165px]">
                 <div className="flex items-center justify-between text-xs text-slate-400 font-bold">
                   <span>{activePhysCfg.label}の変化</span>
-                  <span className="text-[10px] text-slate-500 font-medium">初回 → 最新</span>
+                  <span className="text-[10px] text-slate-500 font-medium whitespace-nowrap">初回 → 最新</span>
                 </div>
 
-                <div className="my-auto py-3 flex items-baseline gap-2 font-mono">
-                  <span className="text-base sm:text-lg font-bold text-slate-400">
+                <div className="my-auto py-2.5 flex items-baseline gap-1.5 sm:gap-2 font-mono flex-wrap">
+                  <span className="text-base sm:text-lg font-bold text-slate-400 shrink-0">
                     {fmt(firstM?.[selectedPhysical], activePhysCfg.digits)}
                   </span>
-                  <ArrowRight className="w-4 h-4 text-slate-500 shrink-0 self-center" />
-                  <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-500 shrink-0 self-center" />
+                  <span className="text-2xl sm:text-3xl font-black text-white tracking-tight shrink-0">
                     {fmt(latestM?.[selectedPhysical], activePhysCfg.digits)}
                   </span>
-                  <span className="text-xs sm:text-sm font-bold text-slate-400">{activePhysCfg.unit}</span>
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 font-sans whitespace-nowrap shrink-0">{activePhysCfg.unit}</span>
                 </div>
 
                 <div className="pt-2.5 border-t border-slate-800 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400 font-semibold">変化量</span>
+                  <span className="text-[11px] text-slate-400 font-semibold whitespace-nowrap">変化量</span>
                   {hasMultiplePoints ? (
                     renderDelta(deltaPhysical, activePhysCfg.unit, activePhysCfg.digits)
                   ) : (
-                    <span className="text-slate-500 text-xs font-mono">基準測定</span>
+                    <span className="text-slate-500 text-xs font-mono whitespace-nowrap">基準測定</span>
                   )}
                 </div>
               </div>
 
               {/* Card 2: Speed Delta */}
-              <div className="bg-slate-900/80 border border-slate-700/80 p-4 rounded-2xl flex flex-col justify-between min-h-[160px]">
+              <div className="bg-slate-900/80 border border-slate-700/80 p-4 rounded-2xl flex flex-col justify-between h-full min-h-[165px]">
                 <div className="flex items-center justify-between text-xs text-slate-400 font-bold">
                   <span>平均{activeSpeedCfg.label}の変化</span>
-                  <span className="text-[10px] text-slate-500 font-medium">初回 → 最新</span>
+                  <span className="text-[10px] text-slate-500 font-medium whitespace-nowrap">初回 → 最新</span>
                 </div>
 
-                <div className="my-auto py-3 flex items-baseline gap-2 font-mono">
-                  <span className="text-base sm:text-lg font-bold text-slate-400">
+                <div className="my-auto py-2.5 flex items-baseline gap-1.5 sm:gap-2 font-mono flex-wrap">
+                  <span className="text-base sm:text-lg font-bold text-slate-400 shrink-0">
                     {fmt(firstM?.[activeSpeedCfg.avgKey], 1)}
                   </span>
-                  <ArrowRight className="w-4 h-4 text-slate-500 shrink-0 self-center" />
-                  <span className="text-2xl sm:text-3xl font-black tracking-tight" style={{ color: activeSpeedCfg.color }}>
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-500 shrink-0 self-center" />
+                  <span className="text-2xl sm:text-3xl font-black tracking-tight shrink-0" style={{ color: activeSpeedCfg.color }}>
                     {fmt(latestM?.[activeSpeedCfg.avgKey], 1)}
                   </span>
-                  <span className="text-xs sm:text-sm font-bold text-slate-400">{activeSpeedCfg.unit}</span>
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 font-sans whitespace-nowrap shrink-0">{activeSpeedCfg.unit}</span>
                 </div>
 
                 <div className="pt-2.5 border-t border-slate-800 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400 font-semibold">最高速</span>
-                  <span className="text-xs font-mono font-bold text-amber-300">
+                  <span className="text-[11px] text-slate-400 font-semibold whitespace-nowrap">最高速</span>
+                  <span className="text-xs font-mono font-bold text-amber-300 whitespace-nowrap">
                     Max {fmt(latestM?.[activeSpeedCfg.maxKey], 1)} {activeSpeedCfg.unit}
                     {hasMultiplePoints && deltaMaxSpeed != null && (
                       <span className="ml-1 text-[11px]">
@@ -432,7 +432,7 @@ function BodyCompPlayerProfile({
               </div>
 
               {/* Card 3: Growth Efficiency (km/h per kg) */}
-              <div className="bg-slate-900/80 border border-emerald-500/40 p-4 rounded-2xl flex flex-col justify-between min-h-[160px]">
+              <div className="bg-slate-900/80 border border-emerald-500/40 p-4 rounded-2xl flex flex-col justify-between h-full min-h-[165px]">
                 <div>
                   <div className="flex items-center justify-between text-xs text-emerald-300 font-bold">
                     <span>増量還元効率</span>
@@ -441,15 +441,17 @@ function BodyCompPlayerProfile({
                   <p className="text-[10px] text-slate-400 mt-0.5 leading-tight">体重1kg増あたりの速度変化</p>
                 </div>
 
-                <div className="my-auto py-3 flex items-baseline gap-1.5 font-mono">
+                <div className="my-auto py-2.5 flex items-baseline gap-2 font-mono flex-wrap sm:flex-nowrap">
                   {efficiency != null ? (
                     <>
-                      <span className={`text-3xl sm:text-4xl font-black tracking-tight ${
+                      <span className={`text-2xl sm:text-3xl font-black tracking-tight shrink-0 ${
                         efficiency > 0 ? 'text-emerald-400' : efficiency < 0 ? 'text-rose-400' : 'text-slate-300'
                       }`}>
                         {efficiency > 0 ? `+${efficiency.toFixed(2)}` : efficiency.toFixed(2)}
                       </span>
-                      <span className="text-xs sm:text-sm font-bold text-slate-400 font-sans">km/h / kg</span>
+                      <span className="text-xs font-bold text-slate-400 font-sans whitespace-nowrap shrink-0">
+                        km/h / kg
+                      </span>
                     </>
                   ) : (
                     <div className="text-slate-400 text-xs font-semibold py-1">
@@ -459,8 +461,8 @@ function BodyCompPlayerProfile({
                 </div>
 
                 <div className="pt-2.5 border-t border-slate-800 flex items-center justify-between text-[11px]">
-                  <span className="text-slate-400">筋肉1kgあたり</span>
-                  <span className="font-mono font-bold text-cyan-300">
+                  <span className="text-slate-400 whitespace-nowrap">筋肉1kgあたり</span>
+                  <span className="font-mono font-bold text-cyan-300 whitespace-nowrap">
                     {muscleEfficiency != null
                       ? `${muscleEfficiency > 0 ? `+${muscleEfficiency.toFixed(2)}` : muscleEfficiency.toFixed(2)} km/h`
                       : '-'}
@@ -469,23 +471,23 @@ function BodyCompPlayerProfile({
               </div>
 
               {/* Card 4: Synergy Assessment */}
-              <div className={`p-4 rounded-2xl border flex flex-col justify-between min-h-[160px] ${assessment.color}`}>
+              <div className={`p-4 rounded-2xl border flex flex-col justify-between h-full min-h-[165px] ${assessment.color}`}>
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${assessment.badgeColor}`}>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${assessment.badgeColor} whitespace-nowrap`}>
                       {assessment.badge}
                     </span>
                   </div>
-                  <h4 className="text-sm font-extrabold text-white mb-1">{assessment.title}</h4>
+                  <h4 className="text-xs sm:text-sm font-extrabold text-white mb-1 leading-tight">{assessment.title}</h4>
                 </div>
 
                 <div className="my-auto py-1">
-                  <p className="text-xs leading-relaxed text-slate-200 font-medium">
+                  <p className="text-[11px] leading-relaxed text-slate-200 font-medium line-clamp-4">
                     {assessment.desc}
                   </p>
                 </div>
 
-                <div className="pt-2 border-t border-white/10 flex items-center justify-end text-[10px] text-slate-400 font-bold">
+                <div className="pt-2 border-t border-white/10 flex items-center justify-end text-[10px] text-slate-400 font-bold whitespace-nowrap">
                   <span>自動シナジー診断</span>
                 </div>
               </div>
@@ -495,13 +497,13 @@ function BodyCompPlayerProfile({
             <div className="bg-slate-900/80 border border-slate-700/80 p-4 sm:p-5 rounded-2xl space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
                 <div className="flex items-center gap-2">
-                  <ChartIcon className="w-4 h-4 text-emerald-400" />
-                  <h4 className="text-sm font-bold text-white">
+                  <ChartIcon className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <h4 className="text-sm font-bold text-white whitespace-nowrap">
                     {activePhysCfg.label} (棒) × {activeSpeedCfg.label} (折れ線) 複合推移
                   </h4>
                 </div>
-                <div className="flex items-center gap-3 text-xs">
-                  <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer select-none">
+                <div className="flex flex-wrap items-center gap-3 text-xs">
+                  <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer select-none whitespace-nowrap">
                     <input
                       type="checkbox"
                       checked={showMaxSpeed}
@@ -510,7 +512,7 @@ function BodyCompPlayerProfile({
                     />
                     <span>最高速度を表示 (点線)</span>
                   </label>
-                  <div className="flex items-center gap-2 text-[11px]">
+                  <div className="flex items-center gap-2 text-[11px] whitespace-nowrap">
                     <span className="flex items-center gap-1 text-cyan-400">
                       <span className="w-2.5 h-2.5 rounded-sm bg-cyan-500 inline-block"></span> 左軸: {activePhysCfg.label}
                     </span>
@@ -523,7 +525,7 @@ function BodyCompPlayerProfile({
 
               <div style={{ height: 320 }} className="w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={chartData} margin={{ top: 15, right: 20, bottom: 25, left: 5 }}>
+                  <ComposedChart data={chartData} margin={{ top: 15, right: 38, bottom: 25, left: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.6} />
                     <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} dy={10} />
                     <YAxis
@@ -532,7 +534,7 @@ function BodyCompPlayerProfile({
                       stroke="#06b6d4"
                       fontSize={11}
                       domain={['auto', 'auto']}
-                      width={50}
+                      width={55}
                       unit={` ${activePhysCfg.unit}`}
                     />
                     <YAxis
@@ -541,7 +543,7 @@ function BodyCompPlayerProfile({
                       stroke="#10b981"
                       fontSize={11}
                       domain={['auto', 'auto']}
-                      width={55}
+                      width={65}
                       unit=" km/h"
                     />
                     <Tooltip
@@ -630,13 +632,13 @@ function BodyCompPlayerProfile({
                 <table className="w-full text-xs text-slate-300">
                   <thead className="bg-slate-900 text-slate-400 border-b border-slate-700 select-none">
                     <tr>
-                      <th className="px-3 py-2 text-left">測定回 / 日付</th>
-                      <th className="px-3 py-2 text-right">体重 (kg)</th>
-                      <th className="px-3 py-2 text-right">筋肉量 (kg)</th>
-                      <th className="px-3 py-2 text-right text-emerald-400">打球速度 (km/h)</th>
-                      <th className="px-3 py-2 text-right text-cyan-400">スイング速 (km/h)</th>
-                      <th className="px-3 py-2 text-right text-blue-400">投球球速 (km/h)</th>
-                      <th className="px-3 py-2 text-right text-amber-300">増量還元 (前比)</th>
+                      <th className="px-3 py-2 text-left whitespace-nowrap">測定回 / 日付</th>
+                      <th className="px-3 py-2 text-right whitespace-nowrap">体重 (kg)</th>
+                      <th className="px-3 py-2 text-right text-cyan-400 whitespace-nowrap">筋肉量 (kg)</th>
+                      <th className="px-3 py-2 text-right text-emerald-400 whitespace-nowrap">打球速度 (km/h)</th>
+                      <th className="px-3 py-2 text-right text-cyan-400 whitespace-nowrap">スイング速 (km/h)</th>
+                      <th className="px-3 py-2 text-right text-blue-400 whitespace-nowrap">投球球速 (km/h)</th>
+                      <th className="px-3 py-2 text-right text-amber-300 whitespace-nowrap">増量還元 (前比)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800 font-mono">
@@ -823,13 +825,13 @@ function BodyCompPlayerProfile({
           <table className="w-full text-sm text-slate-300">
             <thead className="text-xs text-slate-400 bg-slate-900/80 border-b border-slate-700 select-none">
               <tr>
-                <th className="px-3 py-2 text-left">測定日</th>
-                <th className="px-3 py-2 text-right">身長 (cm)</th>
-                <th className="px-3 py-2 text-right">体重 (kg)</th>
-                <th className="px-3 py-2 text-right text-cyan-400">筋肉量 (kg)</th>
-                <th className="px-3 py-2 text-right text-amber-400">体脂肪率 (%)</th>
-                <th className="px-3 py-2 text-right text-purple-400">FFMI</th>
-                <th className="px-3 py-2 text-right">BMI</th>
+                <th className="px-3 py-2 text-left whitespace-nowrap">測定日</th>
+                <th className="px-3 py-2 text-right whitespace-nowrap">身長 (cm)</th>
+                <th className="px-3 py-2 text-right whitespace-nowrap">体重 (kg)</th>
+                <th className="px-3 py-2 text-right text-cyan-400 whitespace-nowrap">筋肉量 (kg)</th>
+                <th className="px-3 py-2 text-right text-amber-400 whitespace-nowrap">体脂肪率 (%)</th>
+                <th className="px-3 py-2 text-right text-purple-400 whitespace-nowrap">FFMI</th>
+                <th className="px-3 py-2 text-right whitespace-nowrap">BMI</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50 font-mono">
