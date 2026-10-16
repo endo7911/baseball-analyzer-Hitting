@@ -517,17 +517,36 @@ h2, h3, h4 {
     background-color: #f8fafc !important;
   }
 
-  /* Page Break Control */
+  /* Page Break & A4 Sheet Compartmentalization */
+  .print-only {
+    display: block !important;
+  }
+
   .print-page-break-before,
   .print\:break-before-page {
     page-break-before: always !important;
     break-before: page !important;
   }
 
+  .print-page-break-after {
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+
+  .print-avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .print-a4-sheet {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 4mm 2mm !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
   /* Hide progress bars, sort icons, and extra decorative elements in print mode to save horizontal space */
-  .w-12, .w-16, 
-  div[class*="w-12"], 
-  div[class*="w-16"],
   .lucide-arrow-down-up,
   .lucide-arrow-up-down {
     display: none !important;
@@ -559,3 +578,4 @@ h2, h3, h4 {
     stroke: #e2e8f0 !important;
   }
 }
+
