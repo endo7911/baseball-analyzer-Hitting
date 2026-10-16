@@ -186,6 +186,17 @@ function App() {
         localStorage.removeItem('mockProfile');
         setUser(null);
         setProfile(null);
+        setSavantFiles([]);
+        setSavantPitchingFiles([]);
+        setBlastFiles([]);
+        setCombinedFiles([]);
+        setBodyCompFiles([]);
+        setCloudSavantFiles([]);
+        setCloudSavantPitchingFiles([]);
+        setCloudBlastFiles([]);
+        setCloudCombinedFiles([]);
+        setCloudBodyCompFiles([]);
+        setAnalysisState({ team: '', player: '' });
       } else if (event === 'SIGNED_IN' && session?.user) {
         const { data: profileData } = await supabase
           .from('profiles')
@@ -227,7 +238,7 @@ function App() {
 
   // Load cached data from IndexedDB (Scoped by user ID to prevent cross-account leaks)
   useEffect(() => {
-    if (!authLoading) {
+    if (!authLoading && user) {
       const loadCachedData = async () => {
         const userKey = user?.id ? `user_${user.id}` : 'guest';
         try {
@@ -239,11 +250,11 @@ function App() {
             getDatasetFromLocalDB(`${userKey}_body_comp`)
           ]);
 
-          if (Array.isArray(cCombined) && cCombined.length > 0) setCombinedFiles(cCombined);
-          if (Array.isArray(cSavant) && cSavant.length > 0) setSavantFiles(cSavant);
-          if (Array.isArray(cBlast) && cBlast.length > 0) setBlastFiles(cBlast);
-          if (Array.isArray(cPitching) && cPitching.length > 0) setSavantPitchingFiles(cPitching);
-          if (Array.isArray(cBodyComp) && cBodyComp.length > 0) setBodyCompFiles(cBodyComp);
+          setCombinedFiles(Array.isArray(cCombined) ? cCombined : []);
+          setSavantFiles(Array.isArray(cSavant) ? cSavant : []);
+          setBlastFiles(Array.isArray(cBlast) ? cBlast : []);
+          setSavantPitchingFiles(Array.isArray(cPitching) ? cPitching : []);
+          setBodyCompFiles(Array.isArray(cBodyComp) ? cBodyComp : []);
         } catch (e) {
           console.warn('Local DB restore failed:', e);
         }
@@ -269,7 +280,10 @@ function App() {
       console.error('Sign out error:', e);
     }
     setUser(null); setProfile(null);
-    setSavantFiles([]); setBlastFiles([]); setCombinedFiles([]);
+    setSavantFiles([]); setSavantPitchingFiles([]); setBlastFiles([]); setCombinedFiles([]); setBodyCompFiles([]);
+    setCloudSavantFiles([]); setCloudSavantPitchingFiles([]); setCloudBlastFiles([]); setCloudCombinedFiles([]); setCloudBodyCompFiles([]);
+    setAnalysisState({ team: '', player: '' });
+    setActiveView('upload');
     await clearLocalDB();
   };
 

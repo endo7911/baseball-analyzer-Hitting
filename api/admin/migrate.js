@@ -45,6 +45,58 @@ async function decryptLegacyPayload(payloadStr) {
   return null;
 }
 
+async function verifyAdminCaller(req, adminClient) {
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    const { data: { user }, error } = await adminClient.auth.getUser(token);
+    if (!error && user) {
+      const { data: profile } = await adminClient
+        .from('profiles')
+        .select('role, is_disabled')
+        .eq('id', user.id)
+        .single();
+      if (profile && profile.role === 'admin' && !profile.is_disabled) {
+        return { ok: true, adminUser: user };
+      }
+      if (user.user_metadata?.role === 'admin') {
+        return { ok: true, adminUser: user };
+      }
+    }
+  }
+
+  const legacyEmail = req.headers['x-legacy-admin-email'] || req.headers['x-admin-email'] || req.headers['x-user-email'];
+  if (legacyEmail) {
+    const cleanEmail = String(legacyEmail).toLowerCase().trim();
+    try {
+      const { data: profile } = await adminClient
+        .from('profiles')
+        .select('role, is_disabled')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+      if (profile && profile.role === 'admin' && !profile.is_disabled) {
+        return { ok: true, adminUser: { email: cleanEmail } };
+      }
+    } catch {}
+
+    const { data: rows } = await adminClient
+      .from('baseball_data')
+      .select('upload_id')
+      .eq('file_name', '__app_user_profiles_v1__');
+    if (rows && rows.length > 0 && rows[0].upload_id) {
+      const legacyUsers = await decryptLegacyPayload(rows[0].upload_id);
+      if (Array.isArray(legacyUsers)) {
+        const matched = legacyUsers.find(u => (u.email || '').toLowerCase() === cleanEmail);
+        if (matched && matched.role === 'admin' && !matched.is_disabled) {
+          return { ok: true, adminUser: { email: cleanEmail } };
+        }
+      }
+    }
+  }
+
+  return { ok: false, status: 403, error: 'Administrator authentication required.' };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
@@ -56,6 +108,10 @@ export default async function handler(req, res) {
 
   try {
     const adminClient = getAdminClient();
+    const authCheck = await verifyAdminCaller(req, adminClient);
+    if (!authCheck.ok) {
+      return res.status(authCheck.status).json({ error: authCheck.error });
+    }
 
     // 1. Fetch legacy profiles from baseball_data
     const { data: rows, error: fetchErr } = await adminClient

@@ -16,11 +16,33 @@ export const INQUIRY_CATEGORIES = [
 export const categoryLabel = (id) =>
   INQUIRY_CATEGORIES.find(c => c.id === id)?.label || 'その他';
 
+async function getAuthHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+  } catch {}
+  try {
+    const rawProfile = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile') || localStorage.getItem('baseball_current_user');
+    if (rawProfile) {
+      const p = typeof rawProfile === 'string' && (rawProfile.startsWith('{') || rawProfile.startsWith('[')) ? JSON.parse(rawProfile) : rawProfile;
+      if (p?.email) {
+        headers['X-Legacy-Admin-Email'] = p.email;
+        headers['X-User-Email'] = p.email;
+      }
+    }
+  } catch {}
+  return headers;
+}
+
 // 全件取得（新しい順）
 export async function fetchInquiries() {
   // 1. Try serverless API
   try {
-    const res = await fetch('/api/inquiries');
+    const headers = await getAuthHeaders();
+    const res = await fetch('/api/inquiries', { headers });
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.inquiries)) {
@@ -108,9 +130,10 @@ export async function submitInquiry({ source, loginId, displayName, contact, cat
 export async function updateInquiry(inquiry, changes) {
   // 1. Try serverless API
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch('/api/inquiries', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ rowId: inquiry.rowId, changes })
     });
     if (res.ok) {

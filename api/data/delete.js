@@ -80,12 +80,8 @@ async function verifyCaller(req, adminClient) {
         .eq('id', user.id)
         .single();
 
-      const roleHeader = req.headers['x-user-role'];
-      const email = (user.email || profile?.email || '').toLowerCase();
       const isAdmin = profile?.role === 'admin' || 
-                      user.user_metadata?.role === 'admin' || 
-                      roleHeader === 'admin' || 
-                      email === 'admin@example.com';
+                      user.user_metadata?.role === 'admin';
 
       return {
         ok: true,
@@ -104,7 +100,6 @@ async function verifyCaller(req, adminClient) {
 
   // 2. Caller verification by email (Supabase profiles or legacy storage)
   const emailHeader = req.headers['x-user-email'] || req.headers['x-legacy-admin-email'];
-  const roleHeader = req.headers['x-user-role'];
   let teamHeader = req.headers['x-user-team'];
   if (teamHeader) {
     try {
@@ -127,7 +122,7 @@ async function verifyCaller(req, adminClient) {
           ok: true,
           user: { id: profile.id, email: profile.email },
           profile,
-          isAdmin: profile.role === 'admin' || roleHeader === 'admin' || cleanEmail === 'admin@example.com'
+          isAdmin: profile.role === 'admin'
         };
       }
     } catch {}
@@ -139,16 +134,16 @@ async function verifyCaller(req, adminClient) {
         ok: true,
         user: { id: matched.id || cleanEmail, email: matched.email },
         profile: matched,
-        isAdmin: matched.role === 'admin' || roleHeader === 'admin' || cleanEmail === 'admin@example.com'
+        isAdmin: matched.role === 'admin'
       };
     }
 
-    // Allow authenticated or role-bearing caller
+    // Allow authenticated caller as standard user
     return {
       ok: true,
       user: { id: cleanEmail, email: cleanEmail },
-      profile: { id: cleanEmail, email: cleanEmail, role: roleHeader || 'user', team_id: teamHeader || 'Team A', team_name: teamHeader || 'Team A' },
-      isAdmin: roleHeader === 'admin' || cleanEmail === 'admin@example.com'
+      profile: { id: cleanEmail, email: cleanEmail, role: 'user', team_id: teamHeader || 'Team A', team_name: teamHeader || 'Team A' },
+      isAdmin: false
     };
   }
 

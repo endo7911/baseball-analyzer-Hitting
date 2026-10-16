@@ -72,11 +72,69 @@ async function decryptPayload(payloadStr) {
   return null;
 }
 
+async function getLegacyUsers(adminClient) {
+  try {
+    const { data } = await adminClient
+      .from('baseball_data')
+      .select('upload_id')
+      .eq('file_name', '__app_user_profiles_v1__');
+    if (data && data.length > 0 && data[0].upload_id) {
+      const parsed = await decryptPayload(data[0].upload_id);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+async function verifyAdminCaller(req, adminClient) {
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    const { data: { user }, error } = await adminClient.auth.getUser(token);
+    if (!error && user) {
+      const { data: profile } = await adminClient
+        .from('profiles')
+        .select('role, is_disabled')
+        .eq('id', user.id)
+        .single();
+      if (profile && profile.role === 'admin' && !profile.is_disabled) {
+        return { ok: true, adminUser: user };
+      }
+      if (user.user_metadata?.role === 'admin') {
+        return { ok: true, adminUser: user };
+      }
+    }
+  }
+
+  const legacyEmail = req.headers['x-legacy-admin-email'] || req.headers['x-admin-email'] || req.headers['x-user-email'];
+  if (legacyEmail) {
+    const cleanEmail = String(legacyEmail).toLowerCase().trim();
+    try {
+      const { data: profile } = await adminClient
+        .from('profiles')
+        .select('role, is_disabled')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+      if (profile && profile.role === 'admin' && !profile.is_disabled) {
+        return { ok: true, adminUser: { email: cleanEmail } };
+      }
+    } catch {}
+
+    const legacyUsers = await getLegacyUsers(adminClient);
+    const matched = legacyUsers.find(u => (u.email || '').toLowerCase() === cleanEmail);
+    if (matched && matched.role === 'admin' && !matched.is_disabled) {
+      return { ok: true, adminUser: { email: cleanEmail } };
+    }
+  }
+
+  return { ok: false, status: 403, error: 'Administrator authentication required.' };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, X-User-Email');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, X-User-Email, X-Legacy-Admin-Email, X-Legacy-Admin-Role, X-Legacy-Admin-Id');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -92,6 +150,14 @@ export default async function handler(req, res) {
     // GET /api/inquiries
     if (req.method === 'GET') {
       const { user_email } = req.query || {};
+      // If fetching ALL inquiries (without a specific user_email filter), require admin verification
+      if (!user_email) {
+        const authCheck = await verifyAdminCaller(req, adminClient);
+        if (!authCheck.ok) {
+          return res.status(authCheck.status).json({ error: authCheck.error });
+        }
+      }
+
       const { data, error } = await adminClient
         .from('baseball_data')
         .select('id, upload_id, created_at')
@@ -161,6 +227,15 @@ export default async function handler(req, res) {
       const { rowId, changes } = req.body || {};
       if (!rowId || !changes) {
         return res.status(400).json({ error: 'rowId and changes are required.' });
+      }
+
+      // If updating reply or status (admin action), verify admin caller; allow read_by_user mark-as-read by user
+      const isMarkReadOnly = Object.keys(changes).every(k => k === 'read_by_user');
+      if (!isMarkReadOnly) {
+        const authCheck = await verifyAdminCaller(req, adminClient);
+        if (!authCheck.ok) {
+          return res.status(authCheck.status).json({ error: authCheck.error });
+        }
       }
 
       const { data, error: fetchErr } = await adminClient

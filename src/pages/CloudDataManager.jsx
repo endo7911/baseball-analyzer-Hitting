@@ -115,28 +115,41 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
           }
         }
 
-        // 2. Team match: team members see all data for their team
-        if (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) return true;
-        if (currentTeamId && (tId === currentTeamId || tName === currentTeamId)) return true;
+        const isExplicitTeam = tName && tName !== 'unknown team' && tName !== '__system__' && !tName.includes('@');
+        const isUserTeamMatch =
+          (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) ||
+          (currentTeamId && (tId === currentTeamId || tName === currentTeamId));
 
-        // 3. User upload match
+        // 2. Team match: team members see all data for their team
+        if (isUserTeamMatch) return true;
+
+        // 3. STRICT MULTI-TENANT ISOLATION: If row is explicitly tagged with a different team, reject immediately
+        if (isExplicitTeam && (currentTeamName || currentTeamId)) {
+          return false;
+        }
+
+        // 4. User upload match (only if row has no explicit conflicting team)
         if (uId.includes('::')) {
           const emailPrefix = uId.split('::')[0];
           const uploaderUsername = emailPrefix.split('@')[0];
-          return (
-            emailPrefix === userEmail || 
-            uploaderUsername === userUsername || 
-            emailPrefix === userUsername ||
-            uploaderUsername === userEmail ||
-            emailPrefix === 'guest' || 
-            userEmail === 'guest'
+          return Boolean(
+            userEmail &&
+            userEmail !== 'guest' &&
+            (emailPrefix === userEmail || 
+             uploaderUsername === userUsername || 
+             emailPrefix === userUsername ||
+             uploaderUsername === userEmail)
           );
         }
 
-        if (tName.includes('@') && tName !== userEmail && tName !== userUsername && userEmail !== 'guest') {
-          return false;
+        if (tName.includes('@')) {
+          return Boolean(
+            userEmail &&
+            userEmail !== 'guest' &&
+            (tName === userEmail || tName === userUsername)
+          );
         }
-        return true;
+        return false;
       };
 
       const datasetMap = new Map();

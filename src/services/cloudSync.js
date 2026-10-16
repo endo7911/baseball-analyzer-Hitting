@@ -7,7 +7,7 @@
  * 3. 各計測種別（打撃・投球・ブラスト・総合・体組成）の正規化と結合
  */
 
-import { getSupabase } from '../lib/supabase';
+import { getSupabase } from '../lib/supabase.js';
 import {
   SAVANT_COLUMNS,
   BLAST_COLUMNS,
@@ -15,7 +15,7 @@ import {
   PITCHING_COLUMNS,
   BODY_COMP_COLUMNS,
   COLUMN_MAP
-} from '../constants/columnMap';
+} from '../constants/columnMap.js';
 import {
   extractRowVal,
   toAsciiNumbers,
@@ -31,9 +31,9 @@ import {
   HB_TRAJ_KEYS,
   RELEASE_HEIGHT_KEYS,
   RELEASE_SIDE_KEYS
-} from '../utils/dataHelpers';
-import { toBodyCompDbRow, extractBodyValues, getBodyName, getBodyTeam, getBodyDate } from '../utils/bodyComp';
-import { fetchDeletedFilesMap, removeDeletedFileRecord } from './deletedRegistry';
+} from '../utils/dataHelpers.js';
+import { toBodyCompDbRow, extractBodyValues, getBodyName, getBodyTeam, getBodyDate } from '../utils/bodyComp.js';
+import { fetchDeletedFilesMap, removeDeletedFileRecord } from './deletedRegistry.js';
 
 const isUUID = (str) => {
   if (!str || typeof str !== 'string') return false;
@@ -613,28 +613,47 @@ export async function fetchDatasetsFromCloud({ user, profile }) {
 
       if (isAdmin) return true;
 
-      if (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) return true;
-      if (currentTeamId && (tId === currentTeamId || tName === currentTeamId)) return true;
+      const isExplicitTeam = tName && tName !== 'unknown team' && tName !== '__system__' && !tName.includes('@');
+      const isUserTeamMatch =
+        (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) ||
+        (currentTeamId && (tId === currentTeamId || tName === currentTeamId));
 
+      // 1. Exact team match for the logged-in user's team
+      if (isUserTeamMatch) return true;
+
+      // 2. STRICT MULTI-TENANT ISOLATION: If the row is explicitly tagged with a different team, reject immediately
+      if (isExplicitTeam && (currentTeamName || currentTeamId)) {
+        return false;
+      }
+
+      // 3. If row has no explicit team (or unknown team), only allow if uploaded by this exact user
       if (uId.includes('::')) {
         const uploader = uId.split('::')[0];
         const uploaderUsername = uploader.split('@')[0];
         const userUsername = uploaderEmail.split('@')[0];
         if (
-          uploader === uploaderEmail ||
-          uploaderUsername === userUsername ||
-          uploader === userUsername ||
-          uploaderUsername === uploaderEmail ||
-          uploader === 'guest'
-        ) return true;
+          uploaderEmail &&
+          uploaderEmail !== 'guest' &&
+          (uploader === uploaderEmail ||
+           uploaderUsername === userUsername ||
+           uploader === userUsername ||
+           uploaderUsername === uploaderEmail)
+        ) {
+          return true;
+        }
         return false;
       }
 
-      if (tName.includes('@') && tName !== uploaderEmail && tName !== uploaderEmail.split('@')[0]) {
-        return false;
+      if (tName.includes('@')) {
+        return Boolean(
+          uploaderEmail &&
+          uploaderEmail !== 'guest' &&
+          (tName === uploaderEmail || tName === uploaderEmail.split('@')[0])
+        );
       }
 
-      return true;
+      // Do not allow untagged cloud rows from unknown sources to leak to general accounts
+      return false;
     });
   };
 
@@ -978,23 +997,32 @@ export function mergeDatasetFiles(files, { user, profile }) {
             }
           }
 
+          const isExplicitTeam = tName && tName !== 'unknown team' && tName !== '__system__' && !tName.includes('@');
           const isTeamMatch = (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) ||
                               (currentTeamId && (tId === currentTeamId || tName === currentTeamId));
 
           if (!isTeamMatch) {
+            // Strictly block rows explicitly tagged with a different team
+            if (isExplicitTeam && (currentTeamName || currentTeamId)) {
+              return;
+            }
             if (uId.includes('::')) {
               const uploader = uId.split('::')[0];
               const uploaderUsername = uploader.split('@')[0];
               const userUsername = userEmail.split('@')[0];
-              const isUserMatch = (
-                uploader === userEmail ||
-                uploaderUsername === userUsername ||
-                uploader === userUsername ||
-                uploaderUsername === userEmail ||
-                uploader === 'guest'
+              const isUserMatch = Boolean(
+                userEmail &&
+                userEmail !== 'guest' &&
+                (uploader === userEmail ||
+                 uploaderUsername === userUsername ||
+                 uploader === userUsername ||
+                 uploaderUsername === userEmail)
               );
               if (!isUserMatch) return;
             } else if (tName.includes('@') && tName !== userEmail && tName !== userEmail.split('@')[0]) {
+              return;
+            } else if (uId) {
+              // Has a non-empty upload_id without '::' and doesn't match team -> block
               return;
             }
           }
