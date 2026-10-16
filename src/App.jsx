@@ -557,9 +557,18 @@ function App() {
       case 'pitcher':  return (SHOW_PITCHER_MODULE && allowPitching) ? <PitcherAnalysis savantData={savantPitchingData} blastData={null} combinedData={null} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={handleViewPlayer} /> : <UploadPage {...uploadProps} />;
       case 'bodyComp': return (SHOW_BODY_COMP_MODULE && allowBodyComp) ? <BodyCompAnalysis bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} setActiveView={setActiveView} onViewPlayer={(player, team, source) => handleViewPlayer(player, team, source || 'body_comp')} /> : <UploadPage {...uploadProps} />;
       case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} bodyCompData={bodyCompData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} profile={profile} />;
-      case 'growth':   return <GrowthReport savantData={savantData} blastData={blastData} combinedData={combinedData} savantPitchingData={savantPitchingData} bodyCompData={bodyCompData} profile={profile} onViewPlayer={handleViewPlayer} />;
-      case 'schedule': return allowCalendar ? <SchedulePage {...uploadProps} profile={profile} user={user} /> : <UploadPage {...uploadProps} />;
-      case 'game':     return allowGame ? <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} /> : <UploadPage {...uploadProps} />;
+      case 'schedule': return allowCalendar ? (
+        <SchedulePage
+          {...uploadProps}
+          savantFiles={[...cloudSavantFiles, ...savantFiles]}
+          savantPitchingFiles={[...cloudSavantPitchingFiles, ...savantPitchingFiles]}
+          blastFiles={[...cloudBlastFiles, ...blastFiles]}
+          combinedFiles={[...cloudCombinedFiles, ...combinedFiles]}
+          bodyCompFiles={[...cloudBodyCompFiles, ...bodyCompFiles]}
+          profile={profile}
+          user={user}
+        />
+      ) : <UploadPage {...uploadProps} />;
       case 'custom':   return <CustomCharts savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'cloud':    return <CloudDataManager updateDataState={updateDataState} profile={profile} syncState={syncState} fetchFromCloud={fetchFromCloud} />;
       case 'guide':    return <GuidePage setActiveView={setActiveView} user={user} profile={profile} />;

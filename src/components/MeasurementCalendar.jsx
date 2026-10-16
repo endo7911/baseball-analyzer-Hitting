@@ -256,8 +256,21 @@ export default function MeasurementCalendar({
       return '';
     };
 
+    const getUniqueFiles = (fileList) => {
+      const seen = new Set();
+      const unique = [];
+      (fileList || []).forEach(f => {
+        if (!f) return;
+        const key = f.id || f.filename || JSON.stringify(f);
+        if (key && seen.has(key)) return;
+        if (key) seen.add(key);
+        unique.push(f);
+      });
+      return unique;
+    };
+
     // 1. Batting events
-    const allBattingFiles = [...combinedFiles, ...savantFiles, ...blastFiles];
+    const allBattingFiles = getUniqueFiles([...combinedFiles, ...savantFiles, ...blastFiles]);
     allBattingFiles.forEach(file => {
       const fileDate = parseAnyDate(file.filename);
       (file.data || []).forEach(row => {
@@ -285,7 +298,7 @@ export default function MeasurementCalendar({
     });
 
     // 2. Pitching events
-    savantPitchingFiles.forEach(file => {
+    getUniqueFiles(savantPitchingFiles).forEach(file => {
       const fileDate = parseAnyDate(file.filename);
       (file.data || []).forEach(row => {
         const d = extractDate(row, fileDate);
@@ -312,7 +325,7 @@ export default function MeasurementCalendar({
     });
 
     // 3. Body composition events
-    bodyCompFiles.forEach(file => {
+    getUniqueFiles(bodyCompFiles).forEach(file => {
       const fileDate = parseAnyDate(file.filename);
       (file.data || []).forEach(row => {
         const d = extractDate(row, fileDate);
