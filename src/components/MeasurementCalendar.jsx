@@ -64,13 +64,31 @@ export default function MeasurementCalendar({
   const [formPlayers, setFormPlayers] = useState('全員');
   const [formNotes, setFormNotes] = useState('');
 
+  // Sanitize helper: completely removes any initial developer mock/sample schedules (e.g. sched_default_*)
+  const sanitizeSchedules = (list) => {
+    if (!Array.isArray(list)) return [];
+    return list.filter(item => {
+      if (!item) return false;
+      const id = String(item.id || '');
+      // Purge any mock/template schedules from initial development
+      if (id.startsWith('sched_default_') || id.startsWith('mock_')) return false;
+      return true;
+    });
+  };
+
   // Manual schedules state strictly loaded from account-isolated localStorage
   const [manualSchedules, setManualSchedules] = useState(() => {
     try {
       // Purge old shared mock storage key to prevent any cross-team data contamination
       localStorage.removeItem('baseball_measurement_schedules_v1');
       const saved = localStorage.getItem(tenantStorageKey);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const cleaned = sanitizeSchedules(JSON.parse(saved));
+        if (cleaned.length !== JSON.parse(saved).length) {
+          localStorage.setItem(tenantStorageKey, JSON.stringify(cleaned));
+        }
+        return cleaned;
+      }
 
       // Safe migration from v2 if valid non-colliding key exists
       const legacyKey = `baseball_team_schedules_v2_${(profile?.team_id || profile?.team_name || user?.email || 'team').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
@@ -79,8 +97,9 @@ export default function MeasurementCalendar({
         if (legacySaved) {
           const parsed = JSON.parse(legacySaved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            localStorage.setItem(tenantStorageKey, JSON.stringify(parsed));
-            return parsed;
+            const cleaned = sanitizeSchedules(parsed);
+            localStorage.setItem(tenantStorageKey, JSON.stringify(cleaned));
+            return cleaned;
           }
         }
       }
@@ -96,7 +115,11 @@ export default function MeasurementCalendar({
     try {
       const saved = localStorage.getItem(tenantStorageKey);
       if (saved) {
-        setManualSchedules(JSON.parse(saved));
+        const cleaned = sanitizeSchedules(JSON.parse(saved));
+        if (cleaned.length !== JSON.parse(saved).length) {
+          localStorage.setItem(tenantStorageKey, JSON.stringify(cleaned));
+        }
+        setManualSchedules(cleaned);
       } else {
         const legacyKey = `baseball_team_schedules_v2_${(profile?.team_id || profile?.team_name || user?.email || 'team').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
         if (legacyKey !== 'baseball_team_schedules_v2_____') {
@@ -104,8 +127,9 @@ export default function MeasurementCalendar({
           if (legacySaved) {
             const parsed = JSON.parse(legacySaved);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              localStorage.setItem(tenantStorageKey, JSON.stringify(parsed));
-              setManualSchedules(parsed);
+              const cleaned = sanitizeSchedules(parsed);
+              localStorage.setItem(tenantStorageKey, JSON.stringify(cleaned));
+              setManualSchedules(cleaned);
               return;
             }
           }
