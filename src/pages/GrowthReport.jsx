@@ -238,6 +238,7 @@ export default function GrowthReport({
   const [selectedMetricKey, setSelectedMetricKey] = useState('avgEv');
   const [selectedPlayer, setSelectedPlayer] = useState('');
   const [onlyMultipleDates, setOnlyMultipleDates] = useState(false);
+  const [chartDisplayLimit, setChartDisplayLimit] = useState('all'); // 'all' (全選手) | '15' | '10'
 
   // カテゴリ切替時にデフォルト指標を更新
   useEffect(() => {
@@ -475,13 +476,18 @@ export default function GrowthReport({
     });
   }, [playerGrowthList, category]);
 
-  // グラフ用データ（上位15名・水平バーチャート用に1位が最上段になるよう反転）
+  // グラフ用データ（全選手または選択上限・水平バーチャート用に1位が最上段になるよう反転）
   const chartData = useMemo(() => {
     if (!currentMetricMeta) return [];
     const decimals = currentMetricMeta.decimals ?? 1;
-    return playerGrowthList
-      .filter(p => p.beforeStats?.[selectedMetricKey] != null || p.afterStats?.[selectedMetricKey] != null)
-      .slice(0, 15)
+    const valid = playerGrowthList.filter(
+      p => p.beforeStats?.[selectedMetricKey] != null || p.afterStats?.[selectedMetricKey] != null
+    );
+    const sliced = chartDisplayLimit === 'all'
+      ? valid
+      : valid.slice(0, Number(chartDisplayLimit));
+
+    return sliced
       .map(p => ({
         name: p.playerName,
         Before: p.beforeStats?.[selectedMetricKey] != null ? Number(p.beforeStats[selectedMetricKey].toFixed(decimals)) : 0,
@@ -489,7 +495,12 @@ export default function GrowthReport({
         delta: p.deltas[selectedMetricKey] != null ? Number(p.deltas[selectedMetricKey].toFixed(decimals)) : 0
       }))
       .reverse();
-  }, [playerGrowthList, selectedMetricKey, currentMetricMeta]);
+  }, [playerGrowthList, selectedMetricKey, currentMetricMeta, chartDisplayLimit]);
+
+  // チャートの高さを選手数に応じて自動計算（1人あたり38pxを確保し、全選手名が100%確実に表示されるよう調整）
+  const chartHeight = useMemo(() => {
+    return Math.max(380, chartData.length * 38);
+  }, [chartData.length]);
 
   const activePlayerObj = useMemo(() => {
     return playerGrowthList.find(p => p.playerName === selectedPlayer) || playerGrowthList[0] || null;
@@ -737,26 +748,53 @@ export default function GrowthReport({
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
             {/* 左カラム（7列）：チャート＆ランキング */}
             <div className="xl:col-span-7 space-y-6">
-              {/* Before / After 比較 水平バーチャート（横棒グラフで文字被りを完全解消） */}
+              {/* Before / After 比較 水平バーチャート（全選手名をもれなく完全表示） */}
               <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <div>
                     <h3 className="text-base font-black text-white flex items-center gap-2">
                       <Award size={18} className="text-amber-400 shrink-0" />
-                      <span>{currentMetricMeta?.label} Before → After 比較チャート（上位15名）</span>
+                      <span>
+                        {currentMetricMeta?.label} Before → After 比較チャート
+                        {chartDisplayLimit === 'all' ? `（全 ${chartData.length} 名）` : `（上位${chartDisplayLimit}名）`}
+                      </span>
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      棒をクリックすると右側の「個人成長カルテ」が切り替わります
+                      全選手の名前を省略せず均等に表示しています。棒をクリックすると右側の「個人成長カルテ」が切り替わります。
                     </p>
+                  </div>
+
+                  {/* 表示人数の選択（全員・15名・10名） */}
+                  <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs self-start sm:self-auto shrink-0">
+                    <span className="text-slate-400 px-2 font-bold text-[11px]">表示:</span>
+                    {[
+                      { id: 'all', label: `全選手 (${playerGrowthList.length}名)` },
+                      { id: '15', label: '上位15名' },
+                      { id: '10', label: '上位10名' },
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setChartDisplayLimit(opt.id)}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                          chartDisplayLimit === opt.id
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                <div className="h-[520px] w-full">
+                <div style={{ height: `${chartHeight}px` }} className="w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       layout="vertical"
                       data={chartData}
                       margin={{ top: 10, right: 30, left: 15, bottom: 10 }}
+                      barGap={2}
                       onClick={state => {
                         if (state?.activeLabel) {
                           setSelectedPlayer(state.activeLabel);
@@ -774,8 +812,9 @@ export default function GrowthReport({
                         type="category"
                         dataKey="name"
                         stroke="#94a3b8"
-                        width={110}
-                        tick={{ fill: '#cbd5e1', fontSize: 12, fontWeight: 700 }}
+                        interval={0}
+                        width={115}
+                        tick={{ fill: '#cbd5e1', fontSize: 11, fontWeight: 700 }}
                       />
                       <Tooltip
                         contentStyle={{
@@ -786,8 +825,8 @@ export default function GrowthReport({
                         }}
                       />
                       <Legend verticalAlign="top" wrapperStyle={{ fontSize: '12px', paddingBottom: '12px' }} />
-                      <Bar dataKey="Before" name="Before (比較元)" fill="#64748b" radius={[0, 4, 4, 0]} barSize={12} />
-                      <Bar dataKey="After" name="After (最新)" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={12} />
+                      <Bar dataKey="Before" name="Before (比較元)" fill="#64748b" radius={[0, 4, 4, 0]} barSize={10} />
+                      <Bar dataKey="After" name="After (最新)" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={10} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -888,7 +927,7 @@ export default function GrowthReport({
                           <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
                             個人成長カルテ
                           </div>
-                          <h3 className="text-xl sm:text-2xl font-black text-white truncate" title={activePlayerObj.playerName}>
+                          <h3 className="text-xl sm:text-2xl font-black text-white break-words" title={activePlayerObj.playerName}>
                             {activePlayerObj.playerName}
                           </h3>
                         </div>
