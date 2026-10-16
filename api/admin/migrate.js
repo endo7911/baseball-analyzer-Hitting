@@ -173,6 +173,7 @@ export default async function handler(req, res) {
             allow_hitting: u.allow_hitting !== false,
             allow_pitching: u.allow_pitching !== false,
             allow_body_comp: u.allow_body_comp !== false,
+            allow_game: u.allow_game !== false,
             temp_password_info: {
               is_initial: true,
               pass_plain: tempPass,

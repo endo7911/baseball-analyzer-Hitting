@@ -29,6 +29,7 @@ const GameStats = lazy(() => import('./pages/GameStats'));
 const CloudDataManager = lazy(() => import('./pages/CloudDataManager'));
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const GuidePage = lazy(() => import('./pages/GuidePage'));
+const SchedulePage = lazy(() => import('./pages/SchedulePage'));
 
 function App() {
   const [savantFiles, setSavantFiles] = useState([]);
@@ -143,16 +144,19 @@ function App() {
             const allowHitting = pData.allow_hitting !== false && pData.permissions?.hitting !== false;
             const allowPitching = pData.allow_pitching !== false && pData.permissions?.pitching !== false;
             const allowBodyComp = pData.allow_body_comp !== false && pData.permissions?.bodyComp !== false;
+            const allowGame = pData.allow_game !== false && pData.permissions?.game !== false;
 
             const finalProfile = {
               ...pData,
               allow_hitting: allowHitting,
               allow_pitching: allowPitching,
               allow_body_comp: allowBodyComp,
+              allow_game: allowGame,
               permissions: {
                 hitting: allowHitting,
                 pitching: allowPitching,
                 bodyComp: allowBodyComp,
+                game: allowGame,
                 ...(pData.permissions || {})
               }
             };
@@ -269,16 +273,19 @@ function App() {
         const allowHitting = pData.allow_hitting !== false && pData.permissions?.hitting !== false;
         const allowPitching = pData.allow_pitching !== false && pData.permissions?.pitching !== false;
         const allowBodyComp = pData.allow_body_comp !== false && pData.permissions?.bodyComp !== false;
+        const allowGame = pData.allow_game !== false && pData.permissions?.game !== false;
 
         setProfile({
           ...pData,
           allow_hitting: allowHitting,
           allow_pitching: allowPitching,
           allow_body_comp: allowBodyComp,
+          allow_game: allowGame,
           permissions: {
             hitting: allowHitting,
             pitching: allowPitching,
             bodyComp: allowBodyComp,
+            game: allowGame,
             ...(pData.permissions || {})
           }
         });
@@ -482,18 +489,20 @@ function App() {
   );
 
   const renderActiveView = () => {
-    const uploadProps = {
-      savantFiles, savantPitchingFiles, blastFiles, combinedFiles, bodyCompFiles, updateDataState,
-      setActiveView, saveToCloud, syncState, profile, fetchFromCloud
-    };
-    const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
-    const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
-    const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
-
     const handleViewPlayer = (player, team, source) => {
       setAnalysisState({ player, team, source });
       setActiveView('player');
     };
+
+    const uploadProps = {
+      savantFiles, savantPitchingFiles, blastFiles, combinedFiles, bodyCompFiles, updateDataState,
+      setActiveView, saveToCloud, syncState, profile, fetchFromCloud,
+      onViewPlayer: handleViewPlayer
+    };
+    const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
+    const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
+    const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
+    const allowGame = profile?.allow_game !== false && profile?.permissions?.game !== false;
 
     switch (activeView) {
       case 'upload':   return <UploadPage {...uploadProps} />;
@@ -502,7 +511,8 @@ function App() {
       case 'bodyComp': return (SHOW_BODY_COMP_MODULE && allowBodyComp) ? <BodyCompAnalysis bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} setActiveView={setActiveView} onViewPlayer={(player, team, source) => handleViewPlayer(player, team, source || 'body_comp')} /> : <UploadPage {...uploadProps} />;
       case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} bodyCompData={bodyCompData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} profile={profile} />;
       case 'growth':   return <GrowthReport savantData={savantData} blastData={blastData} combinedData={combinedData} savantPitchingData={savantPitchingData} bodyCompData={bodyCompData} profile={profile} onViewPlayer={handleViewPlayer} />;
-      case 'game':     return <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} />;
+      case 'schedule': return <SchedulePage {...uploadProps} />;
+      case 'game':     return allowGame ? <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} /> : <UploadPage {...uploadProps} />;
       case 'custom':   return <CustomCharts savantData={savantData} blastData={blastData} combinedData={combinedData} />;
       case 'cloud':    return <CloudDataManager updateDataState={updateDataState} profile={profile} syncState={syncState} fetchFromCloud={fetchFromCloud} />;
       case 'guide':    return <GuidePage setActiveView={setActiveView} user={user} profile={profile} />;
@@ -552,20 +562,25 @@ function App() {
           const allowHitting = updated.allow_hitting !== false && updated.permissions?.hitting !== false;
           const allowPitching = updated.allow_pitching !== false && updated.permissions?.pitching !== false;
           const allowBodyComp = updated.allow_body_comp !== false && updated.permissions?.bodyComp !== false;
+          const allowGame = updated.allow_game !== false && updated.permissions?.game !== false;
 
           if (activeView === 'team' && !allowHitting) setActiveView('upload');
           if (activeView === 'pitcher' && (!SHOW_PITCHER_MODULE || !allowPitching)) setActiveView('upload');
           if (activeView === 'bodyComp' && (!SHOW_BODY_COMP_MODULE || !allowBodyComp)) setActiveView('upload');
+          if (activeView === 'game' && !allowGame) setActiveView('upload');
 
           return {
             ...updated,
             allow_hitting: allowHitting,
             allow_pitching: allowPitching,
             allow_body_comp: allowBodyComp,
+            allow_game: allowGame,
             permissions: {
               hitting: allowHitting,
               pitching: allowPitching,
-              bodyComp: allowBodyComp
+              bodyComp: allowBodyComp,
+              game: allowGame,
+              ...(updated.permissions || {})
             }
           };
         });

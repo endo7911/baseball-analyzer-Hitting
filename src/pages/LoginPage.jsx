@@ -163,10 +163,12 @@ function LoginPage({ onLogin }) {
           allow_hitting: profileData?.allow_hitting !== false,
           allow_pitching: profileData?.allow_pitching !== false,
           allow_body_comp: profileData?.allow_body_comp !== false,
+          allow_game: profileData?.allow_game !== false,
           permissions: {
             hitting: profileData?.allow_hitting !== false,
             pitching: profileData?.allow_pitching !== false,
-            bodyComp: profileData?.allow_body_comp !== false
+            bodyComp: profileData?.allow_body_comp !== false,
+            game: profileData?.allow_game !== false
           }
         };
 
@@ -236,10 +238,12 @@ function LoginPage({ onLogin }) {
               allow_hitting: foundGlobalUser.allow_hitting !== false,
               allow_pitching: foundGlobalUser.allow_pitching !== false,
               allow_body_comp: foundGlobalUser.allow_body_comp !== false,
+              allow_game: foundGlobalUser.allow_game !== false,
               permissions: {
                 hitting: foundGlobalUser.allow_hitting !== false,
                 pitching: foundGlobalUser.allow_pitching !== false,
-                bodyComp: foundGlobalUser.allow_body_comp !== false
+                bodyComp: foundGlobalUser.allow_body_comp !== false,
+                game: foundGlobalUser.allow_game !== false
               }
             };
 

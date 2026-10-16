@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X, BookOpen, Target, Dumbbell, Sun, Moon, KeyRound, TrendingUp } from 'lucide-react';
+import { UploadCloud, Users, User, LineChart, Trophy, HardDrive, RefreshCw, CheckCircle2, Shield, LogOut, X, BookOpen, Target, Dumbbell, Sun, Moon, KeyRound, TrendingUp, Calendar } from 'lucide-react';
 import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from '../config';
 
 function Sidebar({ 
@@ -33,6 +33,7 @@ function Sidebar({
   const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
   const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
   const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
+  const allowGame = profile?.allow_game !== false && profile?.permissions?.game !== false;
 
   const allMenuItems = [
     { id: 'upload', label: 'データ読み込み', icon: UploadCloud, mobileHidden: true },
@@ -42,7 +43,8 @@ function Sidebar({
     ...(SHOW_PITCHER_MODULE && allowPitching ? [{ id: 'pitcher', label: '投手分析', icon: Target, disabled: !hasData }] : []),
     { id: 'player', label: '個人分析', icon: User, disabled: !hasData },
     { id: 'growth', label: '成長レポート', icon: TrendingUp, disabled: !hasData },
-    { id: 'game', label: '試合スタッツ', icon: Trophy, disabled: !hasData },
+    { id: 'schedule', label: 'チームカレンダー', icon: Calendar },
+    ...(allowGame ? [{ id: 'game', label: '試合スタッツ', icon: Trophy, disabled: !hasData }] : []),
     { id: 'custom', label: 'カスタムグラフ', icon: LineChart, disabled: !hasData },
     { id: 'guide', label: '使い方ガイド', icon: BookOpen },
     ...(isAdmin ? [{ id: 'admin', label: '管理者パネル', icon: Shield }] : []),

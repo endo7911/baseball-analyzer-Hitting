@@ -433,7 +433,15 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
       {selectedPlayer ? (
         <div className="space-y-6">
           {SHOW_BODY_COMP_MODULE && allowBodyComp && (analysisMode === 'body_comp' || sourceType === 'body_comp') ? (
-            <BodyCompPlayerProfile playerName={selectedPlayer} teamName={selectedTeam} bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} />
+            <BodyCompPlayerProfile
+              playerName={selectedPlayer}
+              teamName={selectedTeam}
+              bodyCompData={bodyCompData}
+              blastData={blastData}
+              combinedData={combinedData}
+              savantData={savantData}
+              savantPitchingData={savantPitchingData}
+            />
           ) : SHOW_PITCHER_MODULE && allowPitching && analysisMode === 'pitching' ? (
             <PitcherProfile pitcherName={selectedPlayer} events={rawPlayerEvents} startDate={profileStartDate} endDate={profileEndDate} />
           ) : (

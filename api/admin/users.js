@@ -291,10 +291,12 @@ export default async function handler(req, res) {
           allow_hitting: u.allow_hitting !== false,
           allow_pitching: u.allow_pitching !== false,
           allow_body_comp: u.allow_body_comp !== false,
+          allow_game: u.allow_game !== false,
           permissions: {
             hitting: u.allow_hitting !== false,
             pitching: u.allow_pitching !== false,
-            bodyComp: u.allow_body_comp !== false
+            bodyComp: u.allow_body_comp !== false,
+            game: u.allow_game !== false
           },
           temp_password: u.temp_password || null,
           created_at: u.created_at || new Date().toISOString()
@@ -322,10 +324,12 @@ export default async function handler(req, res) {
             allow_hitting: p.allow_hitting !== false,
             allow_pitching: p.allow_pitching !== false,
             allow_body_comp: p.allow_body_comp !== false,
+            allow_game: p.allow_game !== false,
             permissions: {
               hitting: p.allow_hitting !== false,
               pitching: p.allow_pitching !== false,
-              bodyComp: p.allow_body_comp !== false
+              bodyComp: p.allow_body_comp !== false,
+              game: p.allow_game !== false
             },
             temp_password: p.temp_password_info || existing.temp_password || null,
             created_at: p.created_at || existing.created_at,
@@ -690,7 +694,7 @@ export default async function handler(req, res) {
       if (updates && typeof updates === 'object') {
         const allowedFields = [
           'team_id', 'team_name', 'display_name', 'is_disabled',
-          'allow_hitting', 'allow_pitching', 'allow_body_comp', 'role'
+          'allow_hitting', 'allow_pitching', 'allow_body_comp', 'allow_game', 'role'
         ];
         const safeUpdates = {};
         for (const k of allowedFields) {

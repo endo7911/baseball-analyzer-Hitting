@@ -7,7 +7,7 @@ import {
   Users, Plus, Trash2, Shield, RefreshCw, CheckCircle2, XCircle, 
   Ban, PlayCircle, Key, Clock, Copy, Check, Target, Dumbbell, 
   ArrowUpRight, AlertTriangle, ShieldAlert, Monitor, Activity, Eye, UserCheck,
-  MessageSquare
+  MessageSquare, Trophy
 } from 'lucide-react';
 
 function AdminPanel() {
@@ -363,11 +363,12 @@ function AdminPanel() {
     const curPerms = user.permissions || {
       hitting: user.allow_hitting !== false,
       pitching: user.allow_pitching !== false,
-      bodyComp: user.allow_body_comp !== false
+      bodyComp: user.allow_body_comp !== false,
+      game: user.allow_game !== false
     };
     const newStatus = !curPerms[moduleKey];
 
-    const moduleLabels = { hitting: '打撃分析', pitching: '投手分析', bodyComp: '体組成分析' };
+    const moduleLabels = { hitting: '打撃分析', pitching: '投手分析', bodyComp: '体組成分析', game: '試合スタッツ' };
     const label = moduleLabels[moduleKey] || moduleKey;
     const actionText = newStatus ? 'オン（表示）' : 'オフ（非表示）';
 
@@ -376,7 +377,9 @@ function AdminPanel() {
     }
 
     try {
-      const updateField = moduleKey === 'hitting' ? 'allow_hitting' : (moduleKey === 'pitching' ? 'allow_pitching' : 'allow_body_comp');
+      const updateField = moduleKey === 'hitting' ? 'allow_hitting' 
+        : (moduleKey === 'pitching' ? 'allow_pitching' 
+        : (moduleKey === 'bodyComp' ? 'allow_body_comp' : 'allow_game'));
       const targetId = user.id || user.email;
 
       if (serverApiActive && targetId) {
@@ -696,7 +699,8 @@ function AdminPanel() {
                       const perms = u.permissions || {
                         hitting: u.allow_hitting !== false,
                         pitching: u.allow_pitching !== false,
-                        bodyComp: u.allow_body_comp !== false
+                        bodyComp: u.allow_body_comp !== false,
+                        game: u.allow_game !== false
                       };
 
                       return (
@@ -752,6 +756,7 @@ function AdminPanel() {
                                 className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
                                   perms.hitting ? 'bg-blue-600/20 border-blue-500/40 text-blue-300' : 'bg-slate-800 border-slate-700 text-slate-500'
                                 }`}
+                                title="打撃分析ページの表示/非表示"
                               >
                                 <Target className="w-3 h-3" /> 打撃
                               </button>
@@ -760,6 +765,7 @@ function AdminPanel() {
                                 className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
                                   perms.pitching ? 'bg-purple-600/20 border-purple-500/40 text-purple-300' : 'bg-slate-800 border-slate-700 text-slate-500'
                                 }`}
+                                title="投手分析ページの表示/非表示"
                               >
                                 投手
                               </button>
@@ -768,8 +774,18 @@ function AdminPanel() {
                                 className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
                                   perms.bodyComp ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-500'
                                 }`}
+                                title="体組成分析ページの表示/非表示"
                               >
                                 <Dumbbell className="w-3 h-3" /> 体組成
+                              </button>
+                              <button
+                                onClick={() => toggleModulePermission(u, 'game')}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                                  perms.game ? 'bg-amber-600/20 border-amber-500/40 text-amber-300' : 'bg-slate-800 border-slate-700 text-slate-500'
+                                }`}
+                                title="試合スタッツページの表示/非表示"
+                              >
+                                <Trophy className="w-3 h-3" /> 試合
                               </button>
                             </div>
                           </td>

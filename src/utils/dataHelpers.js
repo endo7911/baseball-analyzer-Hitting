@@ -159,7 +159,10 @@ export const AA_KEYS = [
   'attack_angle', 'Attack Angle', 'AttackAngle', 'Attack Angle (deg)', 'アタックアングル(°)', 'アタックアングル（°）', 'AA'
 ];
 
-export const PITCH_VELO_KEYS = ['release_speed', 'Pitch Speed', 'PitchSpeed', 'PitchBallVelo', 'pitch_velocity', '球速', '球速（投球）', '投球速度', 'Velo', 'Speed'];
+export const PITCH_VELO_KEYS = [
+  'release_speed', 'Pitch Speed', 'PitchSpeed', 'PitchBallVelo', 'pitch_velocity', 'pitch_speed',
+  '球速', '球速（投球）', '投球速度', '投球球速', 'ピッチスピード'
+];
 export const HS_KEYS = ['peak_hand_speed', 'PeakHandSpeed', '手の最大速度', '手の最大スピード', 'Hand Speed'];
 export const ON_PLANE_SCORE_KEYS = ['on_plane_score', 'OnPlaneScore', 'オンプレーンスコア', 'オンプレーンのスコア'];
 export const GRADE_KEYS = ['grade', 'Grade', '学年', '年次', '学年・年次'];
@@ -320,12 +323,29 @@ export const getDataValue = (row, keyOrKeys) => {
 
   // 2. Case-insensitive / fuzzy match for header variations, excluding system metadata keys
   const rowKeys = rawRowKeys.filter(ak => !SYSTEM_KEYS.includes(ak.replace(/^\ufeff/, '').trim()));
+  const isPitchVeloQuery = targetKeys.includes('release_speed') || targetKeys.includes('Pitch Speed') || targetKeys.includes('球速');
+  const isBattingVeloQuery = targetKeys.includes('ExitVelocity') || targetKeys.includes('打球速度') || targetKeys.includes('launch_speed');
+
   for (const k of targetKeys) {
     const lowerK = k.toLowerCase().trim();
     
     // Prevent short acronyms (<=2 chars like "EV", "LA", "AA") from falsely matching words like "events"
     const foundKey = rowKeys.find(ak => {
       const lowerAk = ak.replace(/^\ufeff/, '').toLowerCase().trim();
+
+      // Safeguard: When searching for pitch velocity, NEVER match batting speed columns
+      if (isPitchVeloQuery) {
+        if (lowerAk.includes('launch') || lowerAk.includes('exit') || lowerAk.includes('bat') || lowerAk.includes('hand') || lowerAk.includes('打球') || lowerAk.includes('スイング')) {
+          return false;
+        }
+      }
+      // Safeguard: When searching for batting speed, NEVER match pitch velocity columns
+      if (isBattingVeloQuery) {
+        if ((lowerAk.includes('pitch') || lowerAk.includes('release_speed') || lowerAk.includes('投球')) && !lowerAk.includes('打球')) {
+          return false;
+        }
+      }
+
       if (lowerK.length <= 2) {
         return lowerAk === lowerK;
       }
