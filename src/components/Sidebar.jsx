@@ -32,8 +32,8 @@ function Sidebar({
 
   const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
   const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
-  const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
-  const allowCalendar = (profile?.role === 'admin') || (profile?.allow_calendar === true || profile?.permissions?.calendar === true);
+  // Pre-release lock: Calendar is strictly Admin-only until public release!
+  const allowCalendar = isAdmin;
   const allowGame = profile?.allow_game !== false && profile?.permissions?.game !== false;
 
   const allMenuItems = [

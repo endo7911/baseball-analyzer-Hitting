@@ -145,7 +145,8 @@ function App() {
             const allowHitting = pData.allow_hitting !== false && pData.permissions?.hitting !== false;
             const allowPitching = pData.allow_pitching !== false && pData.permissions?.pitching !== false;
             const allowBodyComp = pData.allow_body_comp !== false && pData.permissions?.bodyComp !== false;
-            const allowCalendar = isAdmin || (pData.allow_calendar === true || pData.permissions?.calendar === true);
+            // Pre-release lock: Calendar is strictly Admin-only until public release!
+            const allowCalendar = isAdmin;
             const allowGame = pData.allow_game !== false && pData.permissions?.game !== false;
 
             const finalProfile = {
@@ -277,7 +278,8 @@ function App() {
         const allowHitting = pData.allow_hitting !== false && pData.permissions?.hitting !== false;
         const allowPitching = pData.allow_pitching !== false && pData.permissions?.pitching !== false;
         const allowBodyComp = pData.allow_body_comp !== false && pData.permissions?.bodyComp !== false;
-        const allowCalendar = isAdmin || (pData.allow_calendar === true || pData.permissions?.calendar === true);
+        // Pre-release lock: Calendar is strictly Admin-only until public release!
+        const allowCalendar = isAdmin;
         const allowGame = pData.allow_game !== false && pData.permissions?.game !== false;
 
         setProfile({
@@ -581,7 +583,8 @@ function App() {
           const allowHitting = updated.allow_hitting !== false && updated.permissions?.hitting !== false;
           const allowPitching = updated.allow_pitching !== false && updated.permissions?.pitching !== false;
           const allowBodyComp = updated.allow_body_comp !== false && updated.permissions?.bodyComp !== false;
-          const allowCalendar = isAdmin || (updated.allow_calendar === true || updated.permissions?.calendar === true);
+          // Pre-release lock: Calendar is strictly Admin-only until public release!
+          const allowCalendar = isAdmin;
           const allowGame = updated.allow_game !== false && updated.permissions?.game !== false;
 
           if (activeView === 'team' && !allowHitting) setActiveView('upload');
