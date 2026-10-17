@@ -500,12 +500,17 @@ export default function GrowthReport({
       : valid.slice(0, Number(chartDisplayLimit));
 
     return sliced
-      .map(p => ({
-        name: p.playerName,
-        Before: p.beforeStats?.[selectedMetricKey] != null ? Number(p.beforeStats[selectedMetricKey].toFixed(decimals)) : 0,
-        After: p.afterStats?.[selectedMetricKey] != null ? Number(p.afterStats[selectedMetricKey].toFixed(decimals)) : 0,
-        delta: p.deltas[selectedMetricKey] != null ? Number(p.deltas[selectedMetricKey].toFixed(decimals)) : 0
-      }));
+      .map(p => {
+        const b = p.beforeStats?.[selectedMetricKey];
+        const a = p.afterStats?.[selectedMetricKey];
+        const d = p.deltas?.[selectedMetricKey];
+        return {
+          name: p.playerName,
+          Before: (b != null && !isNaN(b)) ? Number(Number(b).toFixed(decimals)) : 0,
+          After: (a != null && !isNaN(a)) ? Number(Number(a).toFixed(decimals)) : 0,
+          delta: (d != null && !isNaN(d)) ? Number(Number(d).toFixed(decimals)) : 0
+        };
+      });
   }, [playerGrowthList, selectedMetricKey, currentMetricMeta, chartDisplayLimit]);
 
   // チャートの高さを選手数に応じて自動計算（1人あたり38pxを確保し、全選手名が100%確実に表示されるよう調整）
@@ -518,12 +523,13 @@ export default function GrowthReport({
   }, [playerGrowthList, selectedPlayer]);
 
   const renderDeltaBadge = (delta, metric) => {
-    if (delta == null || Number.isNaN(delta)) {
+    if (delta == null || Number.isNaN(Number(delta))) {
       return <span className="text-slate-500 text-xs font-mono">-</span>;
     }
+    const numDelta = Number(delta);
     const decimals = metric?.decimals ?? 1;
-    const formatted = `${delta > 0 ? '+' : ''}${delta.toFixed(decimals)}${metric?.unit ? ` ${metric.unit}` : ''}`;
-    const isZero = Math.abs(delta) < 0.05;
+    const formatted = `${numDelta > 0 ? '+' : ''}${numDelta.toFixed(decimals)}${metric?.unit ? ` ${metric.unit}` : ''}`;
+    const isZero = Math.abs(numDelta) < 0.05;
     if (isZero) {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700">
@@ -841,8 +847,8 @@ export default function GrowthReport({
                   </div>
                 </div>
 
-                <div style={{ height: `${chartHeight}px` }} className="w-full">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div style={{ height: `${chartHeight}px` }} className="w-full min-w-0">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <BarChart
                       layout="vertical"
                       data={chartData}
@@ -955,10 +961,10 @@ export default function GrowthReport({
                               {p.beforeDate} → {p.afterDate}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono text-slate-300 whitespace-nowrap">
-                              {bVal != null ? `${bVal.toFixed(dec)}` : '-'}
+                              {bVal != null && !isNaN(bVal) ? `${Number(bVal).toFixed(dec)}` : '-'}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-bold text-white whitespace-nowrap">
-                              {aVal != null ? `${aVal.toFixed(dec)}` : '-'}
+                              {aVal != null && !isNaN(aVal) ? `${Number(aVal).toFixed(dec)}` : '-'}
                             </td>
                             <td className="py-2.5 px-3 text-right whitespace-nowrap">
                               {renderDeltaBadge(delta, currentMetricMeta)}
@@ -1037,11 +1043,11 @@ export default function GrowthReport({
                             </div>
                             <div className="text-xs text-slate-400 font-mono mt-1 flex items-center gap-2 flex-wrap">
                               <span>
-                                Before: <strong className="text-slate-200">{bVal != null ? `${bVal.toFixed(dec)}` : '-'}</strong>
+                                Before: <strong className="text-slate-200">{bVal != null && !isNaN(bVal) ? `${Number(bVal).toFixed(dec)}` : '-'}</strong>
                               </span>
                               <ArrowRight size={12} className="text-slate-500 shrink-0" />
                               <span>
-                                After: <strong className="text-white text-sm">{aVal != null ? `${aVal.toFixed(dec)}` : '-'}</strong>
+                                After: <strong className="text-white text-sm">{aVal != null && !isNaN(aVal) ? `${Number(aVal).toFixed(dec)}` : '-'}</strong>
                                 <span className="text-[10px] text-slate-400 ml-0.5">{m.unit}</span>
                               </span>
                             </div>
@@ -1064,14 +1070,14 @@ export default function GrowthReport({
                         const metrics = CATEGORY_METRICS[category] || [];
                         const improved = metrics.filter(m => {
                           const d = activePlayerObj.deltas?.[m.key];
-                          if (d == null || Math.abs(d) < 0.05) return false;
-                          return m.higherIsBetter === false ? d < 0 : d > 0;
+                          if (d == null || Number.isNaN(Number(d)) || Math.abs(Number(d)) < 0.05) return false;
+                          return m.higherIsBetter === false ? Number(d) < 0 : Number(d) > 0;
                         });
                         if (improved.length === 0) {
                           return `${activePlayerObj.playerName} 選手の計測データを継続記録中です。次回測定データを追加すると、ここに成長ハイライトが自動生成されます。`;
                         }
                         const topTexts = improved.slice(0, 3).map(m => {
-                          const d = activePlayerObj.deltas[m.key];
+                          const d = Number(activePlayerObj.deltas[m.key]);
                           return `${m.label}（${d > 0 ? '+' : ''}${d.toFixed(m.decimals ?? 1)}${m.unit}）`;
                         });
                         return `${activePlayerObj.beforeDate} から ${activePlayerObj.afterDate} にかけて、${topTexts.join('、')} が向上しています。`;

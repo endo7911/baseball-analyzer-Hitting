@@ -548,7 +548,8 @@ function App() {
     const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
     const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
     const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
-    const allowCalendar = (profile?.role === 'admin') || (profile?.allow_calendar === true || profile?.permissions?.calendar === true);
+    // Pre-release lock: Calendar is strictly Admin-only until public release!
+    const allowCalendar = profile?.role === 'admin';
     const allowGame = profile?.allow_game !== false && profile?.permissions?.game !== false;
 
     switch (activeView) {
@@ -557,6 +558,8 @@ function App() {
       case 'pitcher':  return (SHOW_PITCHER_MODULE && allowPitching) ? <PitcherAnalysis savantData={savantPitchingData} blastData={null} combinedData={null} initialPitcher={analysisState.pitcher} initialTeam={analysisState.team} initialSource={analysisState.source} onViewPlayer={handleViewPlayer} /> : <UploadPage {...uploadProps} />;
       case 'bodyComp': return (SHOW_BODY_COMP_MODULE && allowBodyComp) ? <BodyCompAnalysis bodyCompData={bodyCompData} blastData={blastData} combinedData={combinedData} setActiveView={setActiveView} onViewPlayer={(player, team, source) => handleViewPlayer(player, team, source || 'body_comp')} /> : <UploadPage {...uploadProps} />;
       case 'player':   return <PlayerAnalysis savantData={savantData} savantPitchingData={savantPitchingData} blastData={blastData} combinedData={combinedData} bodyCompData={bodyCompData} initialPlayer={analysisState.player} initialTeam={analysisState.team} initialSource={analysisState.source} profile={profile} />;
+      case 'growth':   return <GrowthReport savantData={savantData} blastData={blastData} combinedData={combinedData} savantPitchingData={savantPitchingData} bodyCompData={bodyCompData} profile={profile} onViewPlayer={handleViewPlayer} />;
+      case 'game':     return allowGame ? <GameStats savantData={savantData} blastData={blastData} combinedData={combinedData} /> : <UploadPage {...uploadProps} />;
       case 'schedule': return allowCalendar ? (
         <SchedulePage
           {...uploadProps}
@@ -687,11 +690,13 @@ function App() {
     };
   }, [user, activeView]);
 
-  const handleViewChange = async (view) => {
-    const isOk = await checkAccountStatus();
-    if (!isOk) return;
+  const handleViewChange = (view) => {
     setActiveView(view);
     setIsMenuOpen(false);
+    // Background non-blocking verification
+    checkAccountStatus().catch((err) => {
+      console.warn('Background account status check failed:', err);
+    });
   };
 
   if (authLoading) {
@@ -713,6 +718,7 @@ function App() {
     player: '個人分析',
     growth: '成長レポート',
     game: '試合スタッツ',
+    schedule: 'チームカレンダー',
     custom: 'カスタムグラフ',
     guide: '使い方ガイド',
     admin: '管理者パネル'
