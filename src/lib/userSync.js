@@ -235,7 +235,6 @@ export async function saveGlobalUsers(usersList) {
 
   // 2. Persist to Supabase Cloud (AES-GCM encrypted payload)
   try {
-    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('baseball_data')
       .select('id, file_name')
@@ -248,8 +247,7 @@ export async function saveGlobalUsers(usersList) {
       const { data: updatedRows, error: updateErr } = await supabase
         .from('baseball_data')
         .update({
-          upload_id: encryptedPayload,
-          updated_at: nowIso
+          upload_id: encryptedPayload
         })
         .eq('id', data[0].id)
         .eq('file_name', SYSTEM_USER_FILE_NAME)

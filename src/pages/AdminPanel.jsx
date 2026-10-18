@@ -417,39 +417,43 @@ function AdminPanel() {
 
     const nowIso = new Date().toISOString();
     const targetId = user.id || user.email;
+    const optimisticUser = { ...user, is_disabled: newStatus, updated_at: nowIso };
 
-    // 1. Optimistic UI update
+    // 1. Optimistic UI update (0ms)
     setUsers(prev => prev.map(u => {
       const matchId = user.id && u.id === user.id;
       const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
       return (matchId || matchEmail) ? { ...u, is_disabled: newStatus, updated_at: nowIso } : u;
     }));
+    window.dispatchEvent(new CustomEvent('accountStatusRefresh', { detail: { updatedUser: optimisticUser } }));
+    setMessage({ type: 'success', text: `「${user.display_name || user.email}」を${actionName}しました。` });
 
     setLoading(true);
     try {
-      try {
-        await callAdminApi('PUT', {
+      await Promise.allSettled([
+        (async () => {
+          const globalUsers = await getGlobalUsers();
+          let found = false;
+          const updatedUsers = globalUsers.map(u => {
+            const matchId = user.id && u.id === user.id;
+            const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
+            if (matchId || matchEmail) {
+              found = true;
+              return { ...u, is_disabled: newStatus, updated_at: nowIso };
+            }
+            return u;
+          });
+          if (!found && user.email) {
+            updatedUsers.push(optimisticUser);
+          }
+          await saveGlobalUsers(updatedUsers);
+        })(),
+        callAdminApi('PUT', {
           id: targetId,
           email: user.email,
           updates: { is_disabled: newStatus, email: user.email }
-        });
-      } catch (apiErr) {
-        console.warn("Server API toggleUserStatus fallback to direct storage:", apiErr);
-      }
-
-      const globalUsers = await getGlobalUsers();
-      const updatedUsers = globalUsers.map(u => {
-        const matchId = user.id && u.id === user.id;
-        const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
-        if (matchId || matchEmail) {
-          return { ...u, is_disabled: newStatus, updated_at: nowIso };
-        }
-        return u;
-      });
-      await saveGlobalUsers(updatedUsers);
-
-      window.dispatchEvent(new CustomEvent('accountStatusRefresh'));
-      setMessage({ type: 'success', text: `「${user.display_name || user.email}」を${actionName}しました。` });
+        })
+      ]);
     } catch (e) {
       console.error("Toggle user error:", e);
       alert(`アカウント状態の切り替えに失敗しました: ${e.message}`);
@@ -464,34 +468,38 @@ function AdminPanel() {
     const nowIso = new Date().toISOString();
     const targetId = userId || email;
 
+    let updatedRow = { id: userId, email, team_id: cleanTeam, team_name: cleanTeam, updated_at: nowIso };
     setUsers(prev => prev.map(u => {
       const matchId = userId && u.id === userId;
       const matchEmail = email && u.email?.toLowerCase() === email?.toLowerCase();
-      return (matchId || matchEmail) ? { ...u, team_id: cleanTeam, team_name: cleanTeam, updated_at: nowIso } : u;
+      if (matchId || matchEmail) {
+        updatedRow = { ...u, team_id: cleanTeam, team_name: cleanTeam, updated_at: nowIso };
+        return updatedRow;
+      }
+      return u;
     }));
+    window.dispatchEvent(new CustomEvent('accountStatusRefresh', { detail: { updatedUser: updatedRow } }));
 
     try {
-      try {
-        await callAdminApi('PUT', {
+      await Promise.allSettled([
+        (async () => {
+          const globalUsers = await getGlobalUsers();
+          const updatedUsers = globalUsers.map(u => {
+            const matchId = userId && u.id === userId;
+            const matchEmail = email && u.email?.toLowerCase() === email?.toLowerCase();
+            if (matchId || matchEmail) {
+              return { ...u, team_id: cleanTeam, team_name: cleanTeam, updated_at: nowIso };
+            }
+            return u;
+          });
+          await saveGlobalUsers(updatedUsers);
+        })(),
+        callAdminApi('PUT', {
           id: targetId,
           email,
           updates: { team_id: cleanTeam, team_name: cleanTeam, email }
-        });
-      } catch (apiErr) {
-        console.warn("Server API updateTeam fallback to direct storage:", apiErr);
-      }
-
-      const globalUsers = await getGlobalUsers();
-      const updatedUsers = globalUsers.map(u => {
-        const matchId = userId && u.id === userId;
-        const matchEmail = email && u.email?.toLowerCase() === email?.toLowerCase();
-        if (matchId || matchEmail) {
-          return { ...u, team_id: cleanTeam, team_name: cleanTeam, updated_at: nowIso };
-        }
-        return u;
-      });
-      await saveGlobalUsers(updatedUsers);
-      window.dispatchEvent(new CustomEvent('accountStatusRefresh'));
+        })
+      ]);
     } catch (e) {
       console.error("Update team error:", e);
     }
@@ -539,32 +547,53 @@ function AdminPanel() {
       };
 
       const applyPermissionUpdate = (u) => {
-        const eff = getEffectivePermissions(u);
-        const mergedPerms = { ...eff, [moduleKey]: newStatus };
         return {
           ...u,
           [updateField]: newStatus,
-          allow_hitting: mergedPerms.hitting,
-          allow_pitching: mergedPerms.pitching,
-          allow_body_comp: mergedPerms.bodyComp,
-          allow_calendar: mergedPerms.calendar,
-          allow_game: mergedPerms.game,
-          permissions: mergedPerms,
+          allow_hitting: newPerms.hitting,
+          allow_pitching: newPerms.pitching,
+          allow_body_comp: newPerms.bodyComp,
+          allow_calendar: newPerms.calendar,
+          allow_game: newPerms.game,
+          permissions: { ...newPerms },
           updated_at: nowIso,
           permissions_updated_at: nowIso
         };
       };
 
-      // 1. Optimistic UI update: instantly update table button so user sees change with ZERO delay
+      const optimisticUpdatedUser = applyPermissionUpdate(user);
+
+      // 1. Instant 0ms UI update: update AdminPanel button AND App/Sidebar profile immediately without reload
       setUsers(prevUsers => prevUsers.map(u => {
         const matchId = user.id && (u.id === user.id);
         const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
         return (matchId || matchEmail) ? applyPermissionUpdate(u) : u;
       }));
+      window.dispatchEvent(new CustomEvent('accountStatusRefresh', { detail: { updatedUser: optimisticUpdatedUser } }));
+      setMessage({ type: 'success', text: `「${user.display_name || user.email}」の【${label}】を${actionText}に設定しました。` });
+      setTimeout(() => setMessage(null), 3000);
 
-      // 2. Persist to server via Vercel Admin API (non-blocking if server API fails)
-      if (targetId) {
-        try {
+      // 2. Persist in parallel to localStorage + Supabase Cloud + Vercel Admin API
+      await Promise.allSettled([
+        (async () => {
+          const globalUsers = await getGlobalUsers();
+          let foundInGlobal = false;
+          const updatedUsers = globalUsers.map(u => {
+            const matchId = user.id && (u.id === user.id);
+            const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
+            if (matchId || matchEmail) {
+              foundInGlobal = true;
+              return applyPermissionUpdate(u);
+            }
+            return u;
+          });
+          if (!foundInGlobal && user.email) {
+            updatedUsers.push(optimisticUpdatedUser);
+          }
+          await saveGlobalUsers(updatedUsers);
+        })(),
+        (async () => {
+          if (!targetId) return;
           await callAdminApi('PUT', {
             id: targetId,
             email: user.email,
@@ -579,51 +608,22 @@ function AdminPanel() {
               email: user.email 
             }
           });
-        } catch (apiErr) {
-          console.warn("Server API toggleModulePermission fallback to direct cloud storage:", apiErr);
-        }
-      }
-
-      // 3. Direct profiles table update fallback if Supabase client available
-      try {
-        const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-        if (user.id && isUUID(user.id)) {
-          await supabase
-            .from('profiles')
-            .update({ [updateField]: newStatus, updated_at: nowIso })
-            .eq('id', user.id);
-        } else if (user.email) {
-          await supabase
-            .from('profiles')
-            .update({ [updateField]: newStatus, updated_at: nowIso })
-            .eq('email', user.email.toLowerCase().trim());
-        }
-      } catch (sbErr) {
-        console.warn("Direct profiles update non-fatal:", sbErr);
-      }
-
-      // 4. Update global storage in Supabase Cloud (ensure all 5 permissions remain intact)
-      const globalUsers = await getGlobalUsers();
-      let foundInGlobal = false;
-      const updatedUsers = globalUsers.map(u => {
-        const matchId = user.id && (u.id === user.id);
-        const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
-        if (matchId || matchEmail) {
-          foundInGlobal = true;
-          return applyPermissionUpdate(u);
-        }
-        return u;
-      });
-      if (!foundInGlobal && user.email) {
-        updatedUsers.push(applyPermissionUpdate(user));
-      }
-      await saveGlobalUsers(updatedUsers);
-
-      // Notify App to refresh account status in real-time
-      window.dispatchEvent(new CustomEvent('accountStatusRefresh'));
-
-      setMessage({ type: 'success', text: `「${user.display_name || user.email}」の【${label}】を${actionText}に設定しました。` });
-      setTimeout(() => setMessage(null), 3000);
+        })(),
+        (async () => {
+          const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+          if (user.id && isUUID(user.id)) {
+            await supabase
+              .from('profiles')
+              .update({ [updateField]: newStatus, updated_at: nowIso })
+              .eq('id', user.id);
+          } else if (user.email) {
+            await supabase
+              .from('profiles')
+              .update({ [updateField]: newStatus, updated_at: nowIso })
+              .eq('email', user.email.toLowerCase().trim());
+          }
+        })()
+      ]);
     } catch (e) {
       console.error("Toggle module permission error:", e);
       alert(`権限の変更に失敗しました: ${e.message}`);

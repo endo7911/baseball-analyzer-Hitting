@@ -124,7 +124,6 @@ async function getLegacyUsers(adminClient) {
 // Save legacy users to baseball_data using service_role client (bypasses RLS)
 async function saveLegacyUsers(adminClient, usersList) {
   try {
-    const nowIso = new Date().toISOString();
     const encrypted = await encryptPayload(usersList);
     const { data, error } = await adminClient
       .from('baseball_data')
@@ -138,8 +137,7 @@ async function saveLegacyUsers(adminClient, usersList) {
       const { data: updatedRows, error: updateErr } = await adminClient
         .from('baseball_data')
         .update({
-          upload_id: encrypted,
-          updated_at: nowIso
+          upload_id: encrypted
         })
         .eq('id', data[0].id)
         .eq('file_name', SYSTEM_USER_FILE_NAME)
@@ -320,7 +318,9 @@ export default async function handler(req, res) {
             game
           },
           temp_password: u.temp_password || null,
-          created_at: u.created_at || new Date().toISOString()
+          created_at: u.created_at || new Date().toISOString(),
+          updated_at: u.updated_at || null,
+          permissions_updated_at: u.permissions_updated_at || u.updated_at || null
         });
       });
 
@@ -359,10 +359,10 @@ export default async function handler(req, res) {
             email: p.email,
             username: p.username || (p.email.includes('@baseball-analyzer.internal') ? p.email.replace('@baseball-analyzer.internal', '') : p.email),
             display_name: p.display_name || p.username || p.email,
-            team_id: p.team_id || existing.team_id || 'Team A',
-            team_name: p.team_name || p.team_id || 'Team A',
+            team_id: existing.team_id || p.team_id || 'Team A',
+            team_name: existing.team_name || p.team_name || p.team_id || 'Team A',
             role: p.role || existing.role || 'user',
-            is_disabled: !!p.is_disabled,
+            is_disabled: existing.updated_at ? !!existing.is_disabled : !!p.is_disabled,
             is_migrated: hasAuth,
             allow_hitting: hitting,
             allow_pitching: pitching,
@@ -378,7 +378,8 @@ export default async function handler(req, res) {
             },
             temp_password: p.temp_password_info || existing.temp_password || null,
             created_at: p.created_at || existing.created_at,
-            updated_at: p.updated_at
+            updated_at: existing.updated_at || p.updated_at,
+            permissions_updated_at: existing.permissions_updated_at || null
           });
         });
       }

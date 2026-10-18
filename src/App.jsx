@@ -83,6 +83,89 @@ function App() {
   // Global saving state (default to cloud connected)
   const [syncState, setSyncState] = useState({ saving: false, lastError: null, lastSuccess: 'Cloud Active', cloudConnected: true });
 
+  // Helper: Find matching user in globalUsers across id, email, or internal/example admin alias
+  const findMatchingGlobalUser = (globalUsers, userObj, profileObj) => {
+    if (!Array.isArray(globalUsers)) return null;
+    const uid = userObj?.id || profileObj?.id;
+    const rawEmail = (userObj?.email || profileObj?.email || '').toLowerCase().trim();
+    const rawPrefix = rawEmail.includes('@') ? rawEmail.split('@')[0] : rawEmail;
+
+    return globalUsers.find(u => {
+      if (!u) return false;
+      if (uid && u.id && String(u.id) === String(uid)) return true;
+      const uEmail = (u.email || '').toLowerCase().trim();
+      if (rawEmail && uEmail === rawEmail) return true;
+      const uPrefix = uEmail.includes('@') ? uEmail.split('@')[0] : uEmail;
+      if (rawPrefix && uPrefix === rawPrefix && (
+        rawEmail.endsWith('@baseball-analyzer.internal') ||
+        uEmail.endsWith('@baseball-analyzer.internal') ||
+        (rawPrefix === 'admin' && (u.role === 'admin' || profileObj?.role === 'admin'))
+      )) {
+        return true;
+      }
+      return false;
+    }) || null;
+  };
+
+  // Helper: Normalize profile permissions without letting stale cached permissions override newer updates
+  const resolveNormalizedProfile = (baseObj, authoritativeUpdate = null) => {
+    const merged = { ...(baseObj || {}), ...(authoritativeUpdate || {}) };
+    const resolveOne = (colName, permKey) => {
+      if (authoritativeUpdate) {
+        if (authoritativeUpdate[colName] !== undefined && authoritativeUpdate[colName] !== null) {
+          return authoritativeUpdate[colName] !== false;
+        }
+        if (authoritativeUpdate.permissions && authoritativeUpdate.permissions[permKey] !== undefined) {
+          return authoritativeUpdate.permissions[permKey] !== false;
+        }
+      }
+      if (baseObj) {
+        if (baseObj[colName] !== undefined && baseObj[colName] !== null) {
+          return baseObj[colName] !== false;
+        }
+        if (baseObj.permissions && baseObj.permissions[permKey] !== undefined) {
+          return baseObj.permissions[permKey] !== false;
+        }
+      }
+      return true;
+    };
+
+    const allowHitting = resolveOne('allow_hitting', 'hitting');
+    const allowPitching = resolveOne('allow_pitching', 'pitching');
+    const allowBodyComp = resolveOne('allow_body_comp', 'bodyComp');
+    const allowCalendar = resolveOne('allow_calendar', 'calendar');
+    const allowGame = resolveOne('allow_game', 'game');
+
+    return {
+      ...merged,
+      allow_hitting: allowHitting,
+      allow_pitching: allowPitching,
+      allow_body_comp: allowBodyComp,
+      allow_calendar: allowCalendar,
+      allow_game: allowGame,
+      permissions: {
+        hitting: allowHitting,
+        pitching: allowPitching,
+        bodyComp: allowBodyComp,
+        calendar: allowCalendar,
+        game: allowGame
+      }
+    };
+  };
+
+  const persistProfileCache = (finalProfile, userObj = null) => {
+    try {
+      if (finalProfile) {
+        sessionStorage.setItem('mockProfile', JSON.stringify(finalProfile));
+        localStorage.setItem('mockProfile', JSON.stringify(finalProfile));
+      }
+      if (userObj && (userObj.id || userObj.email)) {
+        sessionStorage.setItem('mockUser', JSON.stringify({ id: userObj.id, email: userObj.email }));
+        localStorage.setItem('mockUser', JSON.stringify({ id: userObj.id, email: userObj.email }));
+      }
+    } catch {}
+  };
+
   // Check auth on mount: Prioritize Supabase Auth session, fallback to legacy session
   useEffect(() => {
     let isMounted = true;
@@ -111,25 +194,22 @@ function App() {
             return;
           }
 
-          // Fetch permissions from global users / cached profile to ensure ZERO flicker on reload
-          let globalInfo = null;
-          try {
-            const globalUsers = await getGlobalUsers();
-            const targetEmail = (authUser.email || '').toLowerCase();
-            globalInfo = globalUsers.find(
-              u => (u.id && u.id === authUser.id) || (u.email && u.email.toLowerCase() === targetEmail)
-            );
-          } catch {}
-
           const cachedProfileRaw = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile');
           let cachedProfile = null;
           try {
             if (cachedProfileRaw) cachedProfile = JSON.parse(cachedProfileRaw);
           } catch {}
 
+          // Fetch permissions from global users / cached profile to ensure ZERO flicker on reload
+          let globalInfo = null;
+          try {
+            const globalUsers = await getGlobalUsers();
+            globalInfo = findMatchingGlobalUser(globalUsers, authUser, profileData || cachedProfile);
+          } catch {}
+
           if (isMounted) {
             setUser(authUser);
-            const pData = {
+            const baseData = {
               id: authUser.id,
               email: authUser.email,
               role: authUser.user_metadata?.role || 'user',
@@ -137,41 +217,12 @@ function App() {
               team_name: authUser.user_metadata?.team_id || 'Team A',
               display_name: authUser.email,
               ...(cachedProfile || {}),
-              ...(profileData || {}),
-              ...(globalInfo || {})
+              ...(profileData || {})
             };
 
-            const allowHitting = pData.allow_hitting !== false && pData.permissions?.hitting !== false;
-            const allowPitching = pData.allow_pitching !== false && pData.permissions?.pitching !== false;
-            const allowBodyComp = pData.allow_body_comp !== false && pData.permissions?.bodyComp !== false;
-            const allowCalendar = pData.allow_calendar !== false && pData.permissions?.calendar !== false;
-            const allowGame = pData.allow_game !== false && pData.permissions?.game !== false;
-
-            const finalProfile = {
-              ...pData,
-              allow_hitting: allowHitting,
-              allow_pitching: allowPitching,
-              allow_body_comp: allowBodyComp,
-              allow_calendar: allowCalendar,
-              allow_game: allowGame,
-              permissions: {
-                hitting: allowHitting,
-                pitching: allowPitching,
-                bodyComp: allowBodyComp,
-                calendar: allowCalendar,
-                game: allowGame
-              }
-            };
-
+            const finalProfile = resolveNormalizedProfile(baseData, globalInfo || profileData || cachedProfile);
             setProfile(finalProfile);
-
-            try {
-              sessionStorage.setItem('mockProfile', JSON.stringify(finalProfile));
-              localStorage.setItem('mockProfile', JSON.stringify(finalProfile));
-              sessionStorage.setItem('mockUser', JSON.stringify({ id: authUser.id, email: authUser.email }));
-              localStorage.setItem('mockUser', JSON.stringify({ id: authUser.id, email: authUser.email }));
-            } catch {}
-
+            persistProfileCache(finalProfile, authUser);
             setAuthLoading(false);
           }
           return;
@@ -185,35 +236,9 @@ function App() {
           const u = JSON.parse(savedUser);
           const p = JSON.parse(savedProfile);
 
-          const normalizeLegacyProfile = (rawP) => {
-            const allowHitting = rawP?.allow_hitting !== false && rawP?.permissions?.hitting !== false;
-            const allowPitching = rawP?.allow_pitching !== false && rawP?.permissions?.pitching !== false;
-            const allowBodyComp = rawP?.allow_body_comp !== false && rawP?.permissions?.bodyComp !== false;
-            const allowCalendar = rawP?.allow_calendar !== false && rawP?.permissions?.calendar !== false;
-            const allowGame = rawP?.allow_game !== false && rawP?.permissions?.game !== false;
-            return {
-              ...rawP,
-              allow_hitting: allowHitting,
-              allow_pitching: allowPitching,
-              allow_body_comp: allowBodyComp,
-              allow_calendar: allowCalendar,
-              allow_game: allowGame,
-              permissions: {
-                hitting: allowHitting,
-                pitching: allowPitching,
-                bodyComp: allowBodyComp,
-                calendar: allowCalendar,
-                game: allowGame
-              }
-            };
-          };
-
           try {
             const globalUsers = await getGlobalUsers();
-            const targetEmail = (u.email || '').toLowerCase();
-            const latest = globalUsers.find(
-              m => (m.id && m.id === u.id) || (m.email && m.email.toLowerCase() === targetEmail)
-            );
+            const latest = findMatchingGlobalUser(globalUsers, u, p);
             if (latest?.is_disabled || p?.is_disabled) {
               sessionStorage.removeItem('mockUser');
               sessionStorage.removeItem('mockProfile');
@@ -227,15 +252,18 @@ function App() {
               }
               return;
             } else if (isMounted) {
+              const finalProfile = resolveNormalizedProfile(p, latest);
               setUser(u);
-              setProfile(normalizeLegacyProfile(latest ? { ...p, ...latest } : p));
+              setProfile(finalProfile);
+              persistProfileCache(finalProfile, u);
               setAuthLoading(false);
               return;
             }
           } catch {
             if (isMounted) {
+              const finalProfile = resolveNormalizedProfile(p);
               setUser(u);
-              setProfile(normalizeLegacyProfile(p));
+              setProfile(finalProfile);
               setAuthLoading(false);
               return;
             }
@@ -286,8 +314,14 @@ function App() {
           if (cachedProfileRaw) cachedProfile = JSON.parse(cachedProfileRaw);
         } catch {}
 
+        let globalInfo = null;
+        try {
+          const globalUsers = await getGlobalUsers();
+          globalInfo = findMatchingGlobalUser(globalUsers, session.user, profileData || cachedProfile);
+        } catch {}
+
         setUser(session.user);
-        const pData = {
+        const baseData = {
           id: session.user.id,
           email: session.user.email,
           role: session.user.user_metadata?.role || 'user',
@@ -298,27 +332,9 @@ function App() {
           ...(profileData || {})
         };
 
-        const allowHitting = pData.allow_hitting !== false && pData.permissions?.hitting !== false;
-        const allowPitching = pData.allow_pitching !== false && pData.permissions?.pitching !== false;
-        const allowBodyComp = pData.allow_body_comp !== false && pData.permissions?.bodyComp !== false;
-        const allowCalendar = pData.allow_calendar !== false && pData.permissions?.calendar !== false;
-        const allowGame = pData.allow_game !== false && pData.permissions?.game !== false;
-
-        setProfile({
-          ...pData,
-          allow_hitting: allowHitting,
-          allow_pitching: allowPitching,
-          allow_body_comp: allowBodyComp,
-          allow_calendar: allowCalendar,
-          allow_game: allowGame,
-          permissions: {
-            hitting: allowHitting,
-            pitching: allowPitching,
-            bodyComp: allowBodyComp,
-            calendar: allowCalendar,
-            game: allowGame
-          }
-        });
+        const finalProfile = resolveNormalizedProfile(baseData, globalInfo || profileData || cachedProfile);
+        setProfile(finalProfile);
+        persistProfileCache(finalProfile, session.user);
       }
     });
 
@@ -601,84 +617,73 @@ function App() {
     }
   };
 
-  const checkAccountStatus = async () => {
+  const applyProfileUpdateToState = (authoritativeUpdate) => {
+    if (!authoritativeUpdate) return;
+    if (authoritativeUpdate.is_disabled === true) {
+      localStorage.removeItem('mockUser');
+      localStorage.removeItem('mockProfile');
+      sessionStorage.removeItem('mockUser');
+      sessionStorage.removeItem('mockProfile');
+      try {
+        supabase.auth.signOut();
+      } catch {}
+      setUser(null);
+      setProfile(null);
+      alert('このアカウントは管理者により停止されました。');
+      return;
+    }
+
+    setProfile(prev => {
+      const finalProfile = resolveNormalizedProfile(prev, authoritativeUpdate);
+      if (activeView === 'team' && !finalProfile.allow_hitting) setActiveView('upload');
+      if (activeView === 'pitcher' && (!SHOW_PITCHER_MODULE || !finalProfile.allow_pitching)) setActiveView('upload');
+      if (activeView === 'bodyComp' && (!SHOW_BODY_COMP_MODULE || !finalProfile.allow_body_comp)) setActiveView('upload');
+      if (activeView === 'schedule' && !finalProfile.allow_calendar) setActiveView('upload');
+      if (activeView === 'game' && !finalProfile.allow_game) setActiveView('upload');
+
+      persistProfileCache(finalProfile);
+      return finalProfile;
+    });
+  };
+
+  const checkAccountStatus = async (eventOrArg) => {
     if (!user) return true;
+
+    // Instant 0ms path when AdminPanel dispatches the updated user object directly
+    const directUpdate = eventOrArg?.detail?.updatedUser;
+    if (directUpdate) {
+      const matched = findMatchingGlobalUser([directUpdate], user, profile);
+      if (matched) {
+        applyProfileUpdateToState(matched);
+      }
+      return true;
+    }
+
     try {
-      let latest = null;
+      let pData = null;
       let globalInfo = null;
       try {
         const globalUsers = await getGlobalUsers();
-        const targetEmail = (user.email || profile?.email || '').toLowerCase();
-        globalInfo = globalUsers.find(u => (u.id && u.id === user.id) || (u.email && u.email.toLowerCase() === targetEmail));
+        globalInfo = findMatchingGlobalUser(globalUsers, user, profile);
       } catch {}
 
       if (user.id) {
         try {
-          const { data: pData } = await supabase
+          const { data } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', user.id)
             .single();
-          if (pData) {
-            latest = {
-              ...(user.user_metadata || {}),
-              ...pData,
-              ...(globalInfo || {}),
-              id: pData.id || user.id
-            };
-          }
+          if (data) pData = data;
         } catch {}
       }
 
-      if (!latest && globalInfo) {
-        latest = { ...(user.user_metadata || {}), ...globalInfo };
-      }
+      const authoritative = globalInfo
+        ? { ...(pData || {}), ...globalInfo, id: pData?.id || user.id || globalInfo.id }
+        : pData;
 
-      if (latest) {
-        if (latest.is_disabled === true) {
-          localStorage.removeItem('mockUser');
-          localStorage.removeItem('mockProfile');
-          sessionStorage.removeItem('mockUser');
-          sessionStorage.removeItem('mockProfile');
-          try {
-            await supabase.auth.signOut();
-          } catch {}
-          setUser(null);
-          setProfile(null);
-          alert('このアカウントは管理者により停止されました。');
-          return false;
-        }
-
-        setProfile(prev => {
-          const updated = { ...(prev || {}), ...latest };
-          const allowHitting = updated.allow_hitting !== false && updated.permissions?.hitting !== false;
-          const allowPitching = updated.allow_pitching !== false && updated.permissions?.pitching !== false;
-          const allowBodyComp = updated.allow_body_comp !== false && updated.permissions?.bodyComp !== false;
-          const allowCalendar = updated.allow_calendar !== false && updated.permissions?.calendar !== false;
-          const allowGame = updated.allow_game !== false && updated.permissions?.game !== false;
-
-          if (activeView === 'team' && !allowHitting) setActiveView('upload');
-          if (activeView === 'pitcher' && (!SHOW_PITCHER_MODULE || !allowPitching)) setActiveView('upload');
-          if (activeView === 'bodyComp' && (!SHOW_BODY_COMP_MODULE || !allowBodyComp)) setActiveView('upload');
-          if (activeView === 'schedule' && !allowCalendar) setActiveView('upload');
-          if (activeView === 'game' && !allowGame) setActiveView('upload');
-
-          return {
-            ...updated,
-            allow_hitting: allowHitting,
-            allow_pitching: allowPitching,
-            allow_body_comp: allowBodyComp,
-            allow_calendar: allowCalendar,
-            allow_game: allowGame,
-            permissions: {
-              hitting: allowHitting,
-              pitching: allowPitching,
-              bodyComp: allowBodyComp,
-              calendar: allowCalendar,
-              game: allowGame
-            }
-          };
-        });
+      if (authoritative) {
+        applyProfileUpdateToState(authoritative);
       }
     } catch (e) {
       console.warn('Account status check skipped:', e);
@@ -708,7 +713,7 @@ function App() {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('accountStatusRefresh', checkAccountStatus);
     };
-  }, [user, activeView]);
+  }, [user, profile, activeView]);
 
   const handleViewChange = (view) => {
     setActiveView(view);
