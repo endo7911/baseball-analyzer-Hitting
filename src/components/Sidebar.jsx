@@ -4,23 +4,10 @@ import { SHOW_PITCHER_MODULE, SHOW_BODY_COMP_MODULE } from '../config';
 
 function Sidebar({ 
   activeView, setActiveView, 
-  savantData, savantPitchingData, blastData, combinedData, bodyCompData,
-  savantFiles = [], savantPitchingFiles = [], blastFiles = [], combinedFiles = [], bodyCompFiles = [],
   isOpen, setIsOpen, syncState, profile, onLogout, onOpenAccount,
   theme = 'dark', setTheme
 }) {
   const isAdmin = profile?.role === 'admin';
-  const hasData = 
-    (savantData?.data?.length > 0) || 
-    (savantPitchingData?.data?.length > 0) || 
-    (blastData?.data?.length > 0) || 
-    (combinedData?.data?.length > 0) ||
-    (bodyCompData?.data?.length > 0) ||
-    (savantFiles.length > 0) ||
-    (savantPitchingFiles.length > 0) ||
-    (blastFiles.length > 0) ||
-    (combinedFiles.length > 0) ||
-    (bodyCompFiles.length > 0);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
 
@@ -33,8 +20,7 @@ function Sidebar({
   const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
   const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
   const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
-  // Pre-release lock: Calendar is strictly Admin-only until public release!
-  const allowCalendar = isAdmin;
+  const allowCalendar = profile?.allow_calendar !== false && profile?.permissions?.calendar !== false;
   const allowGame = profile?.allow_game !== false && profile?.permissions?.game !== false;
 
   const allMenuItems = [

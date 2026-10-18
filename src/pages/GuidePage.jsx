@@ -3,11 +3,11 @@ import {
   BookOpen, UploadCloud, HardDrive, Users, User, Trophy, LineChart, 
   HelpCircle, ChevronDown, ChevronRight, CheckCircle2, ShieldCheck, 
   Sparkles, FileText, Activity, Sliders, Maximize2, MousePointer, Filter, ArrowUpDown, Layers, Dumbbell,
-  MessageSquare
+  MessageSquare, Calendar, TrendingUp
 } from 'lucide-react';
 import InquiryPage from './InquiryPage';
 
-function GuidePage({ setActiveView, user, profile, currentUser }) {
+function GuidePage({ setActiveView: _setActiveView, user, profile, currentUser }) {
   const activeUser = user || currentUser || profile;
   const activeProfile = profile || user || currentUser;
   const [activeTab, setActiveTab] = useState('analysis');
@@ -19,8 +19,12 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
 
   const faqItems = [
     {
-      q: "アップロードしたデータは他のチームに見られますか？",
-      a: "いいえ。アップロードしたデータはログイン中のアカウントに紐づけて保存され、他のチーム・アカウントの分析画面やクラウド管理画面には表示されません。"
+      q: "アップロードしたデータやカレンダーの予定は他のチームに見られますか？",
+      a: "いいえ。アップロードした測定データおよび「チームカレンダー」に登録した予定は、ログイン中のチーム・アカウントに完全隔離して保存されるため、他のチームや他アカウントの画面に表示されることは一切ありません。"
+    },
+    {
+      q: "すでに読み込んであるファイルはカレンダーに自動で反映されますか？",
+      a: "はい。すでに読み込まれているファイル（打撃・投球・Blast・体組成）の測定日と参加選手リストは、自動的に「チームカレンダー」上にバッジとして反映されます。選手名をタップするとその選手の個人分析へすぐ移動できます。"
     },
     {
       q: "タブを閉じたら、もう一度ログインが必要ですか？",
@@ -31,8 +35,8 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
       a: "アカウントの発行・パスワード変更は管理者が行っています。チームの担当者または管理者にご連絡ください。「このアカウントは現在停止されています」と表示される場合も、管理者へお問い合わせください。"
     },
     {
-      q: "メニューに「投手分析」や「体組成分析」が表示されないのはなぜですか？",
-      a: "ご契約・ご利用内容に応じて、アカウントごとに表示される分析ページが設定されています。利用したい機能が表示されない場合は管理者にご相談ください。"
+      q: "メニューに一部の分析ページが表示されないのはなぜですか？",
+      a: "ご契約・ご利用内容に応じて、アカウントごとに表示される分析ページ（打撃・投手・体組成・カレンダー・試合スタッツ）が設定されています。利用したい機能が表示されない場合は管理者にご相談ください。"
     },
     {
       q: "選手比較テーブルで打球速度が高い順に並び替えるには？",
@@ -41,10 +45,6 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
     {
       q: "クラウド同期が完了したら読み込み欄はどうなりますか？",
       a: "クラウド同期が正常に完了すると、データはクラウドに安全に保存され、「データ読み込み」の表示枠は自動的にクリアされます。保存されたデータは「クラウド管理」画面でいつでも確認・管理が可能です。"
-    },
-    {
-      q: "グラフの表示範囲を変更して拡大表示するには？",
-      a: "「チーム打撃分析」や「カスタムグラフ」画面にある軸範囲入力欄（例: X軸 Min/Max, Y軸 Min/Maxなど）に希望の数値を入力することで、注目したいデータ領域をピンポイントで拡大・表示できます。"
     },
     {
       q: "CSVファイルが文字化けしたり読み込めない場合は？",
@@ -59,13 +59,13 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
         <div className="relative z-10 max-w-3xl space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-bold">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Baseball Analyzer 公式ガイド (ver 2.0.0)</span>
+            <span>Baseball Analyzer 公式ガイド (ver 2.1.0)</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
             アプリの使い方 & 機能ガイド
           </h1>
           <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-            CSV読み込み・クラウド管理から、投手分析、体組成分析、打撃分析、グラフのズーム機能、選手比較テーブルのソートまで分かりやすく解説します。
+            新登場の「チームカレンダー」「成長レポート」から、投手分析・体組成分析・打撃分析、CSV読み込み・クラウド管理まで分かりやすく解説します。
           </p>
         </div>
         <div className="absolute right-0 top-0 -bottom-10 w-96 bg-blue-600/10 blur-3xl rounded-full pointer-events-none" />
@@ -74,11 +74,11 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
       {/* Navigation Tabs */}
       <div className="flex overflow-x-auto gap-2 p-1.5 bg-slate-900 border border-slate-800 rounded-2xl no-scrollbar">
         {[
-          { id: 'analysis', label: '1. 分析機能の活用（打撃・投手・体組成）', icon: Activity },
+          { id: 'analysis', label: '1. 分析機能の活用（カレンダー・投打・体組成）', icon: Activity },
           { id: 'csv', label: '2. CSV読み込み手順', icon: UploadCloud },
           { id: 'cloud', label: '3. クラウド管理・プライバシー', icon: HardDrive },
           { id: 'faq', label: '4. よくある質問 (FAQ)', icon: HelpCircle },
-          { id: 'changelog', label: '5. 更新履歴 (ver 2.0.0)', icon: Layers },
+          { id: 'changelog', label: '5. 更新履歴 (ver 2.1.0)', icon: Layers },
           { id: 'inquiry', label: '6. お問い合わせ・ご要望', icon: MessageSquare },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -145,7 +145,7 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
                   <span>3. データ種別の選択 & スマート表示</span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  「統合データ」「Rapsodo 打撃」「Rapsodo 投球」「Blast」から分析したいデータを切り替え可能。選択したフォーマットに合わせて表示が最適化されます。
+                  「統合データ」「Rapsodo 打撃」「Rapsodo 投球」「Blast」「体組成」から分析したいデータを切り替え可能。選択したフォーマットに合わせて表示が最適化されます。
                 </p>
               </div>
             </div>
@@ -153,6 +153,49 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
 
           {/* Section: Overview of Pages */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Team Calendar (NEW in 2.1.0) */}
+            <div className="bg-slate-900 border border-indigo-500/40 p-6 rounded-2xl space-y-4 shadow-xl">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-400">
+                  <Calendar className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                    チームカレンダー
+                    <span className="text-[10px] px-2 py-0.5 bg-indigo-500/20 text-indigo-300 rounded-full font-mono border border-indigo-500/30">NEW ver 2.1.0</span>
+                  </h4>
+                  <p className="text-xs text-slate-400">練習・試合・遠征予定の管理 ＆ 測定履歴の自動反映</p>
+                </div>
+              </div>
+              <ul className="text-xs text-slate-300 space-y-2 list-disc list-inside leading-relaxed">
+                <li>練習・試合・測定・休養・遠征・ミーティングの予定を登録・管理</li>
+                <li>曜日と期間を指定できる「毎週の繰り返し一括登録」機能を搭載</li>
+                <li>読み込んだCSVデータから測定実施日と参加選手タグをカレンダーに自動反映</li>
+                <li>測定参加選手のタグをタップして直接「個人分析」へワンタップ遷移</li>
+              </ul>
+            </div>
+
+            {/* Growth Report */}
+            <div className="bg-slate-900 border border-emerald-500/30 p-6 rounded-2xl space-y-4 shadow-xl">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-emerald-600/20 border border-emerald-500/30 rounded-xl text-emerald-400">
+                  <TrendingUp className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                    成長レポート
+                    <span className="text-[10px] px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-full font-mono border border-emerald-500/30">ver 2.1.0</span>
+                  </h4>
+                  <p className="text-xs text-slate-400">初回測定と最新測定のビフォーアフター比較・成長率ランキング</p>
+                </div>
+              </div>
+              <ul className="text-xs text-slate-300 space-y-2 list-disc list-inside leading-relaxed">
+                <li>打撃・投手・体組成の各カテゴリで選手の成長幅（差分・伸び率）を自動算出</li>
+                <li>最も成長した選手を「急成長トップ選手（Most Improved）」として表彰</li>
+                <li>任意の2つの測定日（前回 vs 今回など）を指定したピンポイント比較にも対応</li>
+              </ul>
+            </div>
+
             {/* Pitcher Analysis */}
             <div className="bg-slate-900 border border-amber-500/30 p-6 rounded-2xl space-y-4 shadow-xl">
               <div className="flex items-center gap-3">
@@ -162,7 +205,7 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
                 <div>
                   <h4 className="text-lg font-bold text-white flex items-center gap-2">
                     投手分析
-                    <span className="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded-full font-mono border border-amber-500/30">ver 2.0.0</span>
+                    <span className="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded-full font-mono border border-amber-500/30">ver 2.0+</span>
                   </h4>
                   <p className="text-xs text-slate-400">投球データの球速・変化量・リリースポイント分析</p>
                 </div>
@@ -184,7 +227,7 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
                 <div>
                   <h4 className="text-lg font-bold text-white flex items-center gap-2">
                     体組成分析
-                    <span className="text-[10px] px-2 py-0.5 bg-cyan-500/20 text-cyan-300 rounded-full font-mono border border-cyan-500/30">ver 2.0.0</span>
+                    <span className="text-[10px] px-2 py-0.5 bg-cyan-500/20 text-cyan-300 rounded-full font-mono border border-cyan-500/30">ver 2.0+</span>
                   </h4>
                   <p className="text-xs text-slate-400">体重・筋肉量・体脂肪率・FFMI分析</p>
                 </div>
@@ -223,32 +266,16 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
                   <User className="w-6 h-6" />
                 </div>
                 <div>
-                  <h4 className="text-lg font-bold text-white">個人成績</h4>
-                  <p className="text-xs text-slate-400">選手個人の詳細コンディションレポート</p>
+                  <h4 className="text-lg font-bold text-white">個人分析</h4>
+                  <p className="text-xs text-slate-400">選手個人の詳細コンディションレポート（打撃・投手・体組成）</p>
                 </div>
               </div>
               <ul className="text-xs text-slate-300 space-y-2 list-disc list-inside leading-relaxed">
-                <li>「Rapsodo打撃」「Blast」「統合データ」の切り替え</li>
+                <li>「打撃（統合・Rapsodo・Blast）」「投手」「体組成」のワンタップ切り替え</li>
                 <li>打球速度・打球角度・打球方向マップ（スプレーチャート）</li>
                 <li>バットスピード・アタックアングル・オンプレーン率等のスイング指標</li>
-                <li>期間指定による打撃コンディション推移グラフ</li>
+                <li>期間指定によるコンディション推移グラフ・PDFレポート出力</li>
               </ul>
-            </div>
-
-            {/* Custom Charts */}
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-emerald-600/20 border border-emerald-500/30 rounded-xl text-emerald-400">
-                  <LineChart className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="text-lg font-bold text-white">カスタムグラフ</h4>
-                  <p className="text-xs text-slate-400">好きな2指標を組み合わせたオリジナルグラフ</p>
-                </div>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                任意の2指標を掛け合わせたオリジナルの比較散布図を作成できます。（例: 打球角度 vs 飛距離、バットスピード vs アタックアングルなど）
-              </p>
             </div>
           </div>
         </div>
@@ -325,10 +352,10 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
               <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-3">
                 <div className="flex items-center gap-2 text-blue-400 font-bold text-sm">
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>アカウントごとのデータ完全隔離</span>
+                  <span>アカウント・チームごとのデータ完全隔離</span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  アップロードされたデータはメールアドレスごとに厳格に区別されます。他チームや他アカウントのデータが混ざる心配はありません。
+                  アップロードされた測定データやカレンダーの予定は、チーム・アカウントごとに厳格に隔離されます。他チームや他アカウントに予定やデータが漏れる心配はありません。
                 </p>
               </div>
             </div>
@@ -377,74 +404,109 @@ function GuidePage({ setActiveView, user, profile, currentUser }) {
         </div>
       )}
 
-      {/* Tab 5: Version Changelog / Release Notes (Latest Version Only) */}
+      {/* Tab 5: Version Changelog / Release Notes */}
       {activeTab === 'changelog' && (
         <div className="space-y-6">
-          {/* ver 2.0.0 Release Notes (Latest) */}
-          <div className="bg-slate-900 border border-amber-500/30 p-8 rounded-3xl space-y-6 shadow-2xl">
+          {/* ver 2.1.0 Release Notes (Latest) */}
+          <div className="bg-slate-900 border border-indigo-500/40 p-8 rounded-3xl space-y-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-3 bg-amber-600/20 border border-amber-500/30 rounded-2xl text-amber-400">
-                  <Sparkles className="w-6 h-6" />
+                <div className="p-3 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl text-indigo-400">
+                  <Calendar className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-extrabold text-white">主な更新内容（ver 2.0.0）</h3>
-                  <p className="text-xs text-slate-400">投手分析・体組成分析ダブルリリース・カラーテーマ切替・安全ログアウト</p>
+                  <h3 className="text-xl font-extrabold text-white">主な更新内容（ver 2.1.0）</h3>
+                  <p className="text-xs text-slate-400">チームカレンダー正式公開・毎週の繰り返し一括登録・成長レポート＆スマホ表示強化</p>
                 </div>
               </div>
-              <span className="px-3 py-1 bg-amber-600/20 border border-amber-500/40 text-amber-300 text-xs font-black rounded-full">
-                ver 2.0.0 (最新)
+              <span className="px-3 py-1 bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 text-xs font-black rounded-full">
+                ver 2.1.0 (最新)
               </span>
             </div>
 
             <div className="space-y-4">
               {/* Feature 1 */}
               <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
-                <h4 className="text-sm font-extrabold text-amber-300 flex items-center gap-2">
-                  <span>⚾ 1. 「投手分析」モジュールの正式リリース (Rapsodo Pitching)</span>
+                <h4 className="text-sm font-extrabold text-indigo-300 flex items-center gap-2">
+                  <span>📅 1. 「チームカレンダー（スケジュール＆測定履歴）」の正式リリース</span>
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Rapsodo等の投球CSVから、**球速 (km/h)・回転数 (rpm)・変化量（縦VB / 横HB）**の散布図や、**リリースポイントの安定度（高さ・横位置）**、**打者対戦成績・球種割合・カウント別投球傾向**を可視化・分析できるようになりました。
+                  練習・試合・測定・休養・遠征・ミーティングなどのチーム予定を一元管理できる**「チームカレンダー」**を追加しました。すでに読み込まれている測定ファイル（打撃・投球・Blast・体組成）の実施日もカレンダー上に自動でバッジ表示され、参加選手名をタップするとそのまま「個人分析」へ移動できます。
                 </p>
               </div>
 
               {/* Feature 2 */}
               <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
-                <h4 className="text-sm font-extrabold text-cyan-300 flex items-center gap-2">
-                  <span>💪 2. 「体組成分析」モジュールの正式リリース (Body Composition)</span>
+                <h4 className="text-sm font-extrabold text-emerald-300 flex items-center gap-2">
+                  <span>🔄 2. 予定の「毎週繰り返し一括登録」機能</span>
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  体重・筋肉量・体脂肪率のトラッキングに加え、**FFMI（除脂肪重量指数）**を自動計算してアスリート評価判定。**体幹・左右腕・左右脚**の部位別筋肉量バランス分析およびTANITA・InBodyなどの2行ヘッダー構成CSVの全自動認識に対応しました。
+                  予定追加画面の最下部にある「**毎週の繰り返し登録（曜日・期間一括）**」から、複数の曜日（例：火・木・土など）と終了期間（今月末まで / 4週間 / 2ヶ月間など）を指定して、定例練習や定例予定をワンタップで一括作成できるようになりました。登録後に特定の日だけを個別編集・削除することも可能です。
                 </p>
               </div>
 
               {/* Feature 3 */}
               <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
-                <h4 className="text-sm font-extrabold text-purple-300 flex items-center gap-2">
-                  <span>🎨 3. 画面左上のカラーテーマ切替機能（昼 ☀️ / 夜 🌙 モード）</span>
+                <h4 className="text-sm font-extrabold text-amber-300 flex items-center gap-2">
+                  <span>📈 3. 「成長レポート（ビフォーアフター比較）」＆「試合スタッツ」の強化</span>
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  画面左上のロゴ横にあるトグルボタンで、屋外の太陽光の下で見やすい「ライトモード（昼 ☀️）」と落ち着いた視認性の「ダークモード（夜 🌙）」をワンタッチで切り替えられるようになりました。
+                  打撃・投手・体組成のすべてで初回測定と最新測定（または任意の2日程）を比較し、成長幅ランキングや急成長選手（Most Improved）を自動算出する**「成長レポート」**を搭載。スマートフォン画面でも見やすいカードレイアウトに最適化しました。
                 </p>
               </div>
 
               {/* Feature 4 */}
               <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
-                <h4 className="text-sm font-extrabold text-emerald-300 flex items-center gap-2">
-                  <span>📁 4. データ読み込み画面のカード配置の最適化</span>
+                <h4 className="text-sm font-extrabold text-cyan-300 flex items-center gap-2">
+                  <span>🔒 4. チーム別の完全データ隔離 ＆ クラウド同期の高速・安定化</span>
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  頻繁に使用する「1ファイル統合データ」を画面最上部に移動し、「Rapsodo 打撃データ」「Blast Data」を下部に再配置。現場でのファイル読み込み手順をよりわかりやすくスムーズに改善しました。
+                  カレンダーの予定データおよび測定データはチーム・アカウント単位で厳格に隔離され、他チームへ漏洩しない安全設計を徹底しました。また、クラウド同期に自動タイムアウト制御を導入し、通信環境が不安定な場所でも停止せずスムーズに動作します。
                 </p>
               </div>
+            </div>
+          </div>
 
-              {/* Feature 5 */}
-              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
-                <h4 className="text-sm font-extrabold text-blue-300 flex items-center gap-2">
-                  <span>🔒 5. 端末再起動・ブラウザ終了時の自動ログアウト安全策</span>
-                </h4>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  PCやスマートフォンの電源再起動、またはブラウザ終了時に自動的にログイン情報を初期化し、次回アクセス時にログイン画面へ戻るセッション安全構造を導入しました。（グラウンドでの共用端末でも安全運用が可能です）
+          {/* ver 2.0.0 Release Notes (Archive) */}
+          <div className="bg-slate-900/70 border border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-amber-600/10 border border-amber-500/20 rounded-2xl text-amber-400">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-200">過去の更新内容（ver 2.0.0）</h3>
+                  <p className="text-xs text-slate-400">投手分析・体組成分析ダブルリリース・カラーテーマ切替・安全ログアウト</p>
+                </div>
+              </div>
+              <span className="px-3 py-1 bg-slate-800 border border-slate-700 text-slate-400 text-xs font-bold rounded-full">
+                ver 2.0.0
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-1.5">
+                <h4 className="text-xs font-extrabold text-amber-300">⚾ 1. 「投手分析」モジュール (Rapsodo Pitching)</h4>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  球速・回転数・変化量（縦VB / 横HB）散布図、リリースポイント安定度、球種割合の可視化に対応。
+                </p>
+              </div>
+              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-1.5">
+                <h4 className="text-xs font-extrabold text-cyan-300">💪 2. 「体組成分析」モジュール (Body Composition)</h4>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  体重・筋肉量・体脂肪率・FFMI算出および部位別筋肉バランス、InBody/TANITAのCSV自動認識に対応。
+                </p>
+              </div>
+              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-1.5">
+                <h4 className="text-xs font-extrabold text-purple-300">🎨 3. カラーテーマ切替（昼 ☀️ / 夜 🌙）</h4>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  屋外で見やすいライトモードとダークモードのワンタッチ切り替え機能を追加。
+                </p>
+              </div>
+              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-1.5">
+                <h4 className="text-xs font-extrabold text-blue-300">🔒 4. 端末再起動・終了時の安全ログアウト</h4>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  ブラウザ終了・端末再起動時にセッションを自動クリアする共用端末向けセキュリティを導入。
                 </p>
               </div>
             </div>

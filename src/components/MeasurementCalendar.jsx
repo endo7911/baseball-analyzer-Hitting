@@ -2,15 +2,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar as CalendarIcon, Clock, Plus, Trash2, Tag, Users,
   ChevronLeft, ChevronRight, Activity, Target, Dumbbell, Sparkles,
-  X, FileText, ChevronDown, Edit3, MapPin, Trophy, Moon, HelpCircle
+  X, FileText, ChevronDown, Edit3, MapPin, Trophy, Moon, HelpCircle,
+  Repeat
 } from 'lucide-react';
 import { parseAnyDate, getRawDataValue, DEFAULT_DATE_KEYS, NAME_KEYS, PITCHER_NAME_KEYS } from '../utils/dataHelpers';
 import { getBodyName } from '../utils/bodyComp';
 
-const STORAGE_KEY = 'baseball_measurement_schedules_v1';
-
 // Supported Team Event Categories
-export const EVENT_TYPES = [
+const EVENT_TYPES = [
   { id: 'practice', label: '練習', icon: Activity, color: 'emerald', emoji: '⚾️', presets: ['通常練習', '朝練', '午後練習', '夜間練習', '打撃特化練習', '守備・走塁特化', '紅白戦'] },
   { id: 'game', label: '試合', icon: Trophy, color: 'amber', emoji: '🏆', presets: ['公式戦', '練習試合(OP戦)', '地区予選', 'トーナメント', 'リーグ戦'] },
   { id: 'measurement', label: '測定・計測', icon: Target, color: 'cyan', emoji: '📊', presets: ['定期ラプソード測定', '投打・体組成 合同測定', '体組成(InBody)測定', 'Blast Motion計測', '体力測定'] },
@@ -19,6 +18,38 @@ export const EVENT_TYPES = [
   { id: 'meeting', label: 'ミーティング', icon: Users, color: 'teal', emoji: '🗣️', presets: ['全体作戦ミーティング', '投手陣ミーティング', '野手陣ミーティング', '栄養・フィジカル指導', '個別面談'] },
   { id: 'other', label: 'その他', icon: Sparkles, color: 'slate', emoji: '📌', presets: ['グラウンド整備', '学校行事', '奉仕活動', 'メディカルチェック'] }
 ];
+
+const WEEKDAYS = [
+  { day: 1, label: '月' },
+  { day: 2, label: '火' },
+  { day: 3, label: '水' },
+  { day: 4, label: '木' },
+  { day: 5, label: '金' },
+  { day: 6, label: '土' },
+  { day: 0, label: '日' }
+];
+
+const calculateRecurringDates = (startDateStr, endDateStr, selectedDays) => {
+  if (!startDateStr || !endDateStr || !selectedDays || selectedDays.length === 0) return [];
+  const start = new Date(startDateStr + 'T00:00:00');
+  const end = new Date(endDateStr + 'T00:00:00');
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return [];
+
+  const dates = [];
+  const curr = new Date(start);
+  let count = 0;
+  while (curr <= end && count < 120) {
+    if (selectedDays.includes(curr.getDay())) {
+      const y = curr.getFullYear();
+      const m = String(curr.getMonth() + 1).padStart(2, '0');
+      const d = String(curr.getDate()).padStart(2, '0');
+      dates.push(`${y}-${m}-${d}`);
+    }
+    curr.setDate(curr.getDate() + 1);
+    count++;
+  }
+  return dates;
+};
 
 export default function MeasurementCalendar({
   savantFiles = [],
@@ -31,9 +62,19 @@ export default function MeasurementCalendar({
   profile,
   user
 }) {
-  // Calendar current view month
+  const getTodayStr = () => {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  };
+
+  // Calendar current view month & selected day (Always defaults to Today)
   const [currentDate, setCurrentDate] = useState(() => new Date());
-  const [selectedDay, setSelectedDay] = useState(null); // 'YYYY-MM-DD'
+  const [selectedDay, setSelectedDay] = useState(() => {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  });
   const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'timeline'
   const [filterType, setFilterType] = useState('all');
 
@@ -63,6 +104,42 @@ export default function MeasurementCalendar({
   const [formLocation, setFormLocation] = useState('');
   const [formPlayers, setFormPlayers] = useState('全員');
   const [formNotes, setFormNotes] = useState('');
+
+  // Repeat schedule state (Exclusive for 練習 / Practice)
+  const [isRepeating, setIsRepeating] = useState(false);
+  const [repeatDays, setRepeatDays] = useState([1]); // default [1] (Mon)
+  const [repeatUntil, setRepeatUntil] = useState('');
+
+  const toggleRepeatDay = (dayNum) => {
+    setRepeatDays(prev => {
+      if (prev.includes(dayNum)) {
+        if (prev.length === 1) return prev; // Keep at least one selected
+        return prev.filter(d => d !== dayNum);
+      }
+      return [...prev, dayNum].sort((a, b) => a - b);
+    });
+  };
+
+  const setPeriodMonthEnd = () => {
+    const base = formDate || new Date().toISOString().slice(0, 10);
+    const d = new Date(base + 'T00:00:00');
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const endStr = `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+    setRepeatUntil(endStr);
+  };
+
+  const setPeriodWeeks = (weeks) => {
+    const base = formDate || new Date().toISOString().slice(0, 10);
+    const d = new Date(base + 'T00:00:00');
+    d.setDate(d.getDate() + (weeks * 7));
+    const endStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    setRepeatUntil(endStr);
+  };
+
+  const previewRecurringDates = useMemo(() => {
+    if (!isRepeating || !formDate || !repeatUntil) return [];
+    return calculateRecurringDates(formDate, repeatUntil, repeatDays);
+  }, [isRepeating, formDate, repeatUntil, repeatDays]);
 
   // Sanitize helper: completely removes any initial developer mock/sample schedules (e.g. sched_default_*)
   const sanitizeSchedules = (list) => {
@@ -161,6 +238,16 @@ export default function MeasurementCalendar({
     setFormLocation('本校グラウンド');
     setFormPlayers('全員');
     setFormNotes('');
+
+    // Reset repeat setting (Exclusive for 練習 / Practice)
+    setIsRepeating(false);
+    const d = new Date(targetDate + 'T00:00:00');
+    const dayOfWeek = isNaN(d.getDay()) ? 1 : d.getDay();
+    setRepeatDays([dayOfWeek]);
+    const nextMonth = new Date(d);
+    nextMonth.setDate(nextMonth.getDate() + 28);
+    setRepeatUntil(nextMonth.toISOString().slice(0, 10));
+
     setShowModal(true);
   };
 
@@ -174,6 +261,7 @@ export default function MeasurementCalendar({
     setFormLocation(schedule.location || '');
     setFormPlayers(schedule.targetPlayers || '');
     setFormNotes(schedule.notes || '');
+    setIsRepeating(false);
     setShowModal(true);
   };
 
@@ -205,20 +293,43 @@ export default function MeasurementCalendar({
       });
       saveManualSchedules(updatedList);
     } else {
-      // Create new
-      const newEvent = {
-        id: `sched_${Date.now()}`,
-        date: formDate,
-        type: formType,
-        title: formTitle.trim(),
-        time: formTime.trim(),
-        location: formLocation.trim(),
-        targetPlayers: formPlayers.trim(),
-        notes: formNotes.trim(),
-        status: 'scheduled',
-        createdAt: new Date().toISOString()
-      };
-      saveManualSchedules([...manualSchedules, newEvent]);
+      // Create new (Support recurring batch creation for any event type)
+      if (isRepeating) {
+        const dates = previewRecurringDates;
+        if (dates.length === 0) {
+          alert('指定した期間内に該当する曜日がありません。曜日や終了日をご確認ください。');
+          return;
+        }
+        const groupId = `repeat_${Date.now()}`;
+        const newEvents = dates.map((dStr, idx) => ({
+          id: `sched_${Date.now()}_${idx}`,
+          groupId,
+          date: dStr,
+          type: formType,
+          title: formTitle.trim(),
+          time: formTime.trim(),
+          location: formLocation.trim(),
+          targetPlayers: formPlayers.trim(),
+          notes: formNotes.trim(),
+          status: 'scheduled',
+          createdAt: new Date().toISOString()
+        }));
+        saveManualSchedules([...manualSchedules, ...newEvents]);
+      } else {
+        const newEvent = {
+          id: `sched_${Date.now()}`,
+          date: formDate,
+          type: formType,
+          title: formTitle.trim(),
+          time: formTime.trim(),
+          location: formLocation.trim(),
+          targetPlayers: formPlayers.trim(),
+          notes: formNotes.trim(),
+          status: 'scheduled',
+          createdAt: new Date().toISOString()
+        };
+        saveManualSchedules([...manualSchedules, newEvent]);
+      }
     }
 
     setShowModal(false);
@@ -370,20 +481,6 @@ export default function MeasurementCalendar({
     return list.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   }, [recordedEvents, manualSchedules]);
 
-  // Default selected day to latest event or today
-  useEffect(() => {
-    if (!selectedDay && allEvents.length > 0) {
-      const latest = allEvents[allEvents.length - 1];
-      if (latest?.date) {
-        setSelectedDay(latest.date);
-        const [y, m] = latest.date.split('-').map(Number);
-        if (y && m) {
-          setCurrentDate(new Date(y, m - 1, 1));
-        }
-      }
-    }
-  }, [allEvents, selectedDay]);
-
   // Month navigation
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth(); // 0-indexed
@@ -393,8 +490,7 @@ export default function MeasurementCalendar({
   const goToToday = () => {
     const now = new Date();
     setCurrentDate(new Date(now.getFullYear(), now.getMonth(), 1));
-    const pad = n => String(n).padStart(2, '0');
-    setSelectedDay(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
+    setSelectedDay(getTodayStr());
   };
 
   // Calendar grid calculations
@@ -879,7 +975,8 @@ export default function MeasurementCalendar({
                                   key={pIdx}
                                   onClick={() => {
                                     if (onViewPlayer) {
-                                      onViewPlayer(pName, 'Aチーム', ev.type === 'body_comp' ? 'body_comp' : 'combined');
+                                      const targetSource = ev.type === 'body_comp' ? 'body_comp' : (ev.type === 'pitching' ? 'rapsodo_pitching' : 'hitting');
+                                      onViewPlayer(pName, '', targetSource);
                                     } else if (setActiveView) {
                                       setActiveView('player');
                                     }
@@ -969,7 +1066,8 @@ export default function MeasurementCalendar({
                               key={pIdx}
                               onClick={() => {
                                 if (onViewPlayer) {
-                                  onViewPlayer(pName, 'Aチーム', ev.type === 'body_comp' ? 'body_comp' : 'combined');
+                                  const targetSource = ev.type === 'body_comp' ? 'body_comp' : (ev.type === 'pitching' ? 'rapsodo_pitching' : 'hitting');
+                                  onViewPlayer(pName, '', targetSource);
                                 } else if (setActiveView) {
                                   setActiveView('player');
                                 }
@@ -1202,6 +1300,116 @@ export default function MeasurementCalendar({
                 />
               </div>
 
+              {/* 8. Recurring Schedule Settings (Available for ALL event types) */}
+              {!editingSchedule && (
+                <div className="bg-gradient-to-r from-indigo-950/40 via-slate-800/90 to-slate-900 border border-indigo-500/30 rounded-2xl p-3 sm:p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={isRepeating}
+                        onChange={e => setIsRepeating(e.target.checked)}
+                        className="w-4 h-4 rounded text-indigo-500 focus:ring-indigo-500 bg-slate-900 border-slate-700 cursor-pointer"
+                      />
+                      <span className="text-xs font-extrabold text-white flex items-center gap-1.5">
+                        <Repeat className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>8. 毎週の繰り返し登録（曜日・期間一括）</span>
+                      </span>
+                    </label>
+                    <span className="text-[10px] font-bold text-indigo-300 bg-indigo-950/80 px-2 py-0.5 rounded-full border border-indigo-500/40">
+                      オプション
+                    </span>
+                  </div>
+
+                  {isRepeating && (
+                    <div className="space-y-3 pt-2.5 border-t border-slate-700/60 text-xs animate-in fade-in duration-150">
+                      {/* Weekday Selection */}
+                      <div>
+                        <span className="block text-[11px] font-bold text-slate-300 mb-1.5">
+                          繰り返す曜日（複数選択可）:
+                        </span>
+                        <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+                          {WEEKDAYS.map(w => {
+                            const isSelected = repeatDays.includes(w.day);
+                            const isWeekend = w.day === 0 || w.day === 6;
+                            return (
+                              <button
+                                key={w.day}
+                                type="button"
+                                onClick={() => toggleRepeatDay(w.day)}
+                                className={`py-2 rounded-xl font-extrabold text-xs transition cursor-pointer border ${
+                                  isSelected
+                                    ? 'bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-900/50 scale-[1.02]'
+                                    : isWeekend
+                                    ? 'bg-slate-900/90 text-rose-300/80 border-slate-700/60 hover:bg-slate-800'
+                                    : 'bg-slate-900/90 text-slate-300 border-slate-700/60 hover:bg-slate-800 hover:text-white'
+                                }`}
+                              >
+                                {w.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* End Date & Quick Period Chips */}
+                      <div>
+                        <span className="block text-[11px] font-bold text-slate-300 mb-1">
+                          いつまで繰り返すか（終了日）:
+                        </span>
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                          <input
+                            type="date"
+                            value={repeatUntil}
+                            onChange={e => setRepeatUntil(e.target.value)}
+                            min={formDate}
+                            className="bg-slate-900 border border-slate-700 focus:border-indigo-500 rounded-xl px-3 py-1.5 text-white text-xs outline-none font-mono"
+                          />
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={setPeriodMonthEnd}
+                              className="text-[11px] font-bold bg-slate-900 hover:bg-slate-700 text-slate-300 hover:text-indigo-300 px-2.5 py-1 rounded-lg border border-slate-700 transition cursor-pointer"
+                            >
+                              今月末まで
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPeriodWeeks(4)}
+                              className="text-[11px] font-bold bg-slate-900 hover:bg-slate-700 text-slate-300 hover:text-indigo-300 px-2.5 py-1 rounded-lg border border-slate-700 transition cursor-pointer"
+                            >
+                              4週間 (約1ヶ月)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPeriodWeeks(8)}
+                              className="text-[11px] font-bold bg-slate-900 hover:bg-slate-700 text-slate-300 hover:text-indigo-300 px-2.5 py-1 rounded-lg border border-slate-700 transition cursor-pointer"
+                            >
+                              2ヶ月間
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Summary preview badge */}
+                      <div className="bg-slate-900/90 rounded-xl px-3 py-2 text-[11px] text-indigo-200 border border-indigo-500/30 flex items-center justify-between">
+                        <span>
+                          📅 登録予定: <strong className="text-white font-extrabold">{previewRecurringDates.length}</strong> 日分
+                          {previewRecurringDates.length > 0 && (
+                            <span className="text-slate-400 ml-1">
+                              ({previewRecurringDates[0]} 〜 {previewRecurringDates[previewRecurringDates.length - 1]})
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-[10px] text-indigo-400 font-bold">
+                          ※個別の変更・削除も可能
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Footer Buttons */}
               <div className="pt-2 flex items-center justify-between border-t border-slate-800">
                 {editingSchedule ? (
@@ -1228,7 +1436,11 @@ export default function MeasurementCalendar({
                     type="submit"
                     className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-xs font-extrabold shadow-lg transition cursor-pointer flex items-center gap-1.5"
                   >
-                    {editingSchedule ? '変更を保存する' : 'カレンダーに追加'}
+                    {editingSchedule
+                      ? '変更を保存する'
+                      : (isRepeating && previewRecurringDates.length > 1
+                          ? `予定を一括登録 (${previewRecurringDates.length}日分)`
+                          : 'カレンダーに追加')}
                   </button>
                 </div>
               </div>

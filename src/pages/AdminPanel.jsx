@@ -361,12 +361,11 @@ function AdminPanel() {
   };
 
   const getEffectivePermissions = (u) => {
-    const isAdmin = u?.role === 'admin';
     return {
       hitting: u?.allow_hitting !== false && u?.permissions?.hitting !== false,
       pitching: u?.allow_pitching !== false && u?.permissions?.pitching !== false,
       bodyComp: u?.allow_body_comp !== false && u?.permissions?.bodyComp !== false,
-      calendar: isAdmin || (u?.allow_calendar === true || u?.permissions?.calendar === true),
+      calendar: u?.allow_calendar !== false && u?.permissions?.calendar !== false,
       game: u?.allow_game !== false && u?.permissions?.game !== false
     };
   };
@@ -412,7 +411,7 @@ function AdminPanel() {
             allow_hitting: moduleKey === 'hitting' ? newStatus : (u.allow_hitting !== false && u.permissions?.hitting !== false),
             allow_pitching: moduleKey === 'pitching' ? newStatus : (u.allow_pitching !== false && u.permissions?.pitching !== false),
             allow_body_comp: moduleKey === 'bodyComp' ? newStatus : (u.allow_body_comp !== false && u.permissions?.bodyComp !== false),
-            allow_calendar: moduleKey === 'calendar' ? newStatus : ((u.role === 'admin') || u.allow_calendar === true || u.permissions?.calendar === true),
+            allow_calendar: moduleKey === 'calendar' ? newStatus : (u.allow_calendar !== false && u.permissions?.calendar !== false),
             allow_game: moduleKey === 'game' ? newStatus : (u.allow_game !== false && u.permissions?.game !== false),
             permissions: {
               ...getEffectivePermissions(u),
@@ -467,7 +466,7 @@ function AdminPanel() {
               allow_hitting: moduleKey === 'hitting' ? newStatus : (u.allow_hitting !== false && u.permissions?.hitting !== false),
               allow_pitching: moduleKey === 'pitching' ? newStatus : (u.allow_pitching !== false && u.permissions?.pitching !== false),
               allow_body_comp: moduleKey === 'bodyComp' ? newStatus : (u.allow_body_comp !== false && u.permissions?.bodyComp !== false),
-              allow_calendar: moduleKey === 'calendar' ? newStatus : ((u.role === 'admin') || u.allow_calendar === true || u.permissions?.calendar === true),
+              allow_calendar: moduleKey === 'calendar' ? newStatus : (u.allow_calendar !== false && u.permissions?.calendar !== false),
               allow_game: moduleKey === 'game' ? newStatus : (u.allow_game !== false && u.permissions?.game !== false),
               permissions: {
                 ...getEffectivePermissions(u),
@@ -521,7 +520,7 @@ function AdminPanel() {
   const filteredLogs = logs.filter(log => {
     if (logTypeFilter === 'all') return true;
     if (logTypeFilter === 'danger') return log.status === 'danger' || log.event_type === 'login_failed';
-    if (logTypeFilter === 'login') return log.event_type.startsWith('login_');
+    if (logTypeFilter === 'login') return (log.event_type || '').startsWith('login_');
     return log.event_type === logTypeFilter;
   });
 

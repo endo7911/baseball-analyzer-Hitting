@@ -141,12 +141,10 @@ function App() {
               ...(globalInfo || {})
             };
 
-            const isAdmin = pData.role === 'admin';
             const allowHitting = pData.allow_hitting !== false && pData.permissions?.hitting !== false;
             const allowPitching = pData.allow_pitching !== false && pData.permissions?.pitching !== false;
             const allowBodyComp = pData.allow_body_comp !== false && pData.permissions?.bodyComp !== false;
-            // Pre-release lock: Calendar is strictly Admin-only until public release!
-            const allowCalendar = isAdmin;
+            const allowCalendar = pData.allow_calendar !== false && pData.permissions?.calendar !== false;
             const allowGame = pData.allow_game !== false && pData.permissions?.game !== false;
 
             const finalProfile = {
@@ -187,9 +185,35 @@ function App() {
           const u = JSON.parse(savedUser);
           const p = JSON.parse(savedProfile);
 
+          const normalizeLegacyProfile = (rawP) => {
+            const allowHitting = rawP?.allow_hitting !== false && rawP?.permissions?.hitting !== false;
+            const allowPitching = rawP?.allow_pitching !== false && rawP?.permissions?.pitching !== false;
+            const allowBodyComp = rawP?.allow_body_comp !== false && rawP?.permissions?.bodyComp !== false;
+            const allowCalendar = rawP?.allow_calendar !== false && rawP?.permissions?.calendar !== false;
+            const allowGame = rawP?.allow_game !== false && rawP?.permissions?.game !== false;
+            return {
+              ...rawP,
+              allow_hitting: allowHitting,
+              allow_pitching: allowPitching,
+              allow_body_comp: allowBodyComp,
+              allow_calendar: allowCalendar,
+              allow_game: allowGame,
+              permissions: {
+                hitting: allowHitting,
+                pitching: allowPitching,
+                bodyComp: allowBodyComp,
+                calendar: allowCalendar,
+                game: allowGame
+              }
+            };
+          };
+
           try {
             const globalUsers = await getGlobalUsers();
-            const latest = globalUsers.find(m => m.id === u.id || m.email.toLowerCase() === (u.email || '').toLowerCase());
+            const targetEmail = (u.email || '').toLowerCase();
+            const latest = globalUsers.find(
+              m => (m.id && m.id === u.id) || (m.email && m.email.toLowerCase() === targetEmail)
+            );
             if (latest?.is_disabled || p?.is_disabled) {
               sessionStorage.removeItem('mockUser');
               sessionStorage.removeItem('mockProfile');
@@ -204,14 +228,14 @@ function App() {
               return;
             } else if (isMounted) {
               setUser(u);
-              setProfile(latest ? { ...p, ...latest } : p);
+              setProfile(normalizeLegacyProfile(latest ? { ...p, ...latest } : p));
               setAuthLoading(false);
               return;
             }
           } catch {
             if (isMounted) {
               setUser(u);
-              setProfile(p);
+              setProfile(normalizeLegacyProfile(p));
               setAuthLoading(false);
               return;
             }
@@ -274,12 +298,10 @@ function App() {
           ...(profileData || {})
         };
 
-        const isAdmin = pData.role === 'admin';
         const allowHitting = pData.allow_hitting !== false && pData.permissions?.hitting !== false;
         const allowPitching = pData.allow_pitching !== false && pData.permissions?.pitching !== false;
         const allowBodyComp = pData.allow_body_comp !== false && pData.permissions?.bodyComp !== false;
-        // Pre-release lock: Calendar is strictly Admin-only until public release!
-        const allowCalendar = isAdmin;
+        const allowCalendar = pData.allow_calendar !== false && pData.permissions?.calendar !== false;
         const allowGame = pData.allow_game !== false && pData.permissions?.game !== false;
 
         setProfile({
@@ -548,8 +570,7 @@ function App() {
     const allowHitting = profile?.allow_hitting !== false && profile?.permissions?.hitting !== false;
     const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
     const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
-    // Pre-release lock: Calendar is strictly Admin-only until public release!
-    const allowCalendar = profile?.role === 'admin';
+    const allowCalendar = profile?.allow_calendar !== false && profile?.permissions?.calendar !== false;
     const allowGame = profile?.allow_game !== false && profile?.permissions?.game !== false;
 
     switch (activeView) {
@@ -629,12 +650,10 @@ function App() {
 
         setProfile(prev => {
           const updated = { ...(prev || {}), ...latest };
-          const isAdmin = updated.role === 'admin';
           const allowHitting = updated.allow_hitting !== false && updated.permissions?.hitting !== false;
           const allowPitching = updated.allow_pitching !== false && updated.permissions?.pitching !== false;
           const allowBodyComp = updated.allow_body_comp !== false && updated.permissions?.bodyComp !== false;
-          // Pre-release lock: Calendar is strictly Admin-only until public release!
-          const allowCalendar = isAdmin;
+          const allowCalendar = updated.allow_calendar !== false && updated.permissions?.calendar !== false;
           const allowGame = updated.allow_game !== false && updated.permissions?.game !== false;
 
           if (activeView === 'team' && !allowHitting) setActiveView('upload');

@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  extractTeams, 
-  extractPlayersByTeam, 
-  getPlayerStats, 
   groupEventsByTeamAndPlayer, 
   EV_KEYS, 
   BS_KEYS, 
@@ -39,6 +36,13 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
 
   const defaultSource = useMemo(() => {
     if (initialSource === 'body_comp' || initialSource === 'bodyComp') return 'body_comp';
+    if (initialSource === 'pitching' || initialSource === 'rapsodo_pitching' || initialSource === 'savant_pitching') return 'rapsodo_pitching';
+    if (initialSource === 'hitting') {
+      if (combinedData?.data?.length > 0) return 'combined';
+      if (savantData?.data?.length > 0) return 'rapsodo_batting';
+      if (blastData?.data?.length > 0) return 'blast';
+      return 'combined';
+    }
     if (initialSource === 'savant') {
       if (savantData?.data?.length > 0) return 'rapsodo_batting';
       if (savantPitchingData?.data?.length > 0) return 'rapsodo_pitching';
@@ -108,8 +112,22 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
     if (initialSource === 'body_comp' || initialSource === 'bodyComp') {
       setSourceType('body_comp');
       setAnalysisMode('body_comp');
+    } else if (initialSource === 'pitching' || initialSource === 'rapsodo_pitching' || initialSource === 'savant_pitching') {
+      setSourceType('rapsodo_pitching');
+      setAnalysisMode('pitching');
+    } else if (initialSource === 'hitting' || initialSource === 'combined' || initialSource === 'rapsodo_batting' || initialSource === 'blast') {
+      setAnalysisMode('hitting');
+      if (initialSource !== 'hitting') {
+        setSourceType(initialSource);
+      } else if (combinedData?.data?.length > 0) {
+        setSourceType('combined');
+      } else if (savantData?.data?.length > 0) {
+        setSourceType('rapsodo_batting');
+      } else if (blastData?.data?.length > 0) {
+        setSourceType('blast');
+      }
     }
-  }, [initialSource]);
+  }, [initialSource, combinedData, savantData, blastData]);
 
   const headers = useMemo(() => {
     const set = new Set(activeData?.headers || []);
@@ -159,22 +177,29 @@ function PlayerAnalysis({ savantData, savantPitchingData, blastData, combinedDat
       if (availableTeams.length > 0) {
         if (initialTeam && grouped[initialTeam]) {
           setSelectedTeam(initialTeam);
+        } else if (initialPlayer) {
+          const teamWithPlayer = availableTeams.find(t => grouped[t] && grouped[t][initialPlayer]);
+          if (teamWithPlayer) {
+            setSelectedTeam(teamWithPlayer);
+          } else if (!selectedTeam || !grouped[selectedTeam]) {
+            setSelectedTeam(availableTeams[0]);
+          }
         } else if (!selectedTeam || !grouped[selectedTeam]) {
           setSelectedTeam(availableTeams[0]);
         }
       }
     }
-  }, [activeData, nameKey, initialTeam, headers]);
+  }, [activeData, nameKey, initialTeam, initialPlayer, headers]);
 
   useEffect(() => {
     if (selectedTeam && groupedData[selectedTeam]) {
       const teamPlayers = Object.keys(groupedData[selectedTeam]).sort();
       setPlayers(teamPlayers);
       
-      if (selectedPlayer && teamPlayers.includes(selectedPlayer)) {
-        // retain
-      } else if (initialPlayer && teamPlayers.includes(initialPlayer)) {
+      if (initialPlayer && teamPlayers.includes(initialPlayer)) {
         setSelectedPlayer(initialPlayer);
+      } else if (selectedPlayer && teamPlayers.includes(selectedPlayer)) {
+        // retain
       } else if (teamPlayers.length > 0) {
         setSelectedPlayer(teamPlayers[0]);
       } else {

@@ -229,8 +229,18 @@ export default function GrowthReport({
   const allowPitching = profile?.allow_pitching !== false && profile?.permissions?.pitching !== false;
   const allowBodyComp = profile?.allow_body_comp !== false && profile?.permissions?.bodyComp !== false;
 
-  const defaultCategory = allowHitting ? 'hitting' : (allowPitching ? 'pitching' : 'bodyComp');
-  const [category, setCategory] = useState(defaultCategory);
+  const hasHittingData = (combinedData?.data?.length > 0) || (savantData?.data?.length > 0) || (blastData?.data?.length > 0);
+  const hasPitchingData = savantPitchingData?.data?.length > 0;
+  const hasBodyCompData = bodyCompData?.data?.length > 0;
+
+  const getInitialCategory = () => {
+    if (allowHitting && hasHittingData) return 'hitting';
+    if (allowPitching && hasPitchingData) return 'pitching';
+    if (allowBodyComp && hasBodyCompData) return 'bodyComp';
+    return allowHitting ? 'hitting' : (allowPitching ? 'pitching' : 'bodyComp');
+  };
+
+  const [category, setCategory] = useState(getInitialCategory);
   const [compareMode, setCompareMode] = useState('auto'); // 'auto' (各選手の最初期 vs 最新) | 'date' (指定日付比較)
   const [selectedTeam, setSelectedTeam] = useState('ALL');
   const [beforeDate, setBeforeDate] = useState('');
@@ -240,6 +250,30 @@ export default function GrowthReport({
   const [onlyMultipleDates, setOnlyMultipleDates] = useState(false);
   const [chartDisplayLimit, setChartDisplayLimit] = useState('all'); // 'all' (全選手) | '15' | '10'
   const [sortMode, setSortMode] = useState('delta'); // 'delta' (伸び幅・変化量順) | 'after' (最新記録・実力順)
+
+  // データ読込完了時や権限変更時に、現在選択中のカテゴリが空で他カテゴリにデータがある場合は自動切替
+  useEffect(() => {
+    const currentHasData =
+      (category === 'hitting' && allowHitting && hasHittingData) ||
+      (category === 'pitching' && allowPitching && hasPitchingData) ||
+      (category === 'bodyComp' && allowBodyComp && hasBodyCompData);
+
+    if (!currentHasData) {
+      if (allowHitting && hasHittingData && category !== 'hitting') {
+        setCategory('hitting');
+      } else if (allowPitching && hasPitchingData && category !== 'pitching') {
+        setCategory('pitching');
+      } else if (allowBodyComp && hasBodyCompData && category !== 'bodyComp') {
+        setCategory('bodyComp');
+      } else if (category === 'hitting' && !allowHitting) {
+        setCategory(allowPitching ? 'pitching' : 'bodyComp');
+      } else if (category === 'pitching' && !allowPitching) {
+        setCategory(allowHitting ? 'hitting' : 'bodyComp');
+      } else if (category === 'bodyComp' && !allowBodyComp) {
+        setCategory(allowHitting ? 'hitting' : 'pitching');
+      }
+    }
+  }, [hasHittingData, hasPitchingData, hasBodyCompData, allowHitting, allowPitching, allowBodyComp]);
 
   // カテゴリ切替時にデフォルト指標を更新
   useEffect(() => {
@@ -1001,7 +1035,11 @@ export default function GrowthReport({
 
                       {onViewPlayer && (
                         <button
-                          onClick={() => onViewPlayer(activePlayerObj.playerName, activePlayerObj.team, category === 'bodyComp' ? 'body_comp' : category)}
+                          onClick={() => onViewPlayer(
+                            activePlayerObj.playerName,
+                            activePlayerObj.team,
+                            category === 'bodyComp' ? 'body_comp' : (category === 'pitching' ? 'rapsodo_pitching' : 'hitting')
+                          )}
                           className="flex items-center gap-1 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold whitespace-nowrap transition cursor-pointer shrink-0 shadow-md shadow-blue-600/20"
                         >
                           個人分析へ <ChevronRight size={14} />

@@ -26,7 +26,7 @@ export const extractPlayersByTeam = (savantData, team, nameKey = 'player_name') 
 };
 
 // Helper to normalize player names (ignoring whitespace differences)
-const normalizePlayerName = (name) => String(name || '').replace(/[\s　]+/g, '').trim().toLowerCase();
+const normalizePlayerName = (name) => String(name || '').replace(/[\s\u3000]+/g, '').trim().toLowerCase();
 
 // Helper to get stats for a specific player
 export const getPlayerStats = (savantData, blastData, playerName, nameKey = 'player_name') => {
@@ -448,7 +448,7 @@ export const parseAnyDate = (dateStr) => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
 
   // 2. YYYY/M/D or YYYY.M.D or YYYY-M-D or YYYY:M:D (4-digit year start)
-  const ymdMatch = str.match(/(20\d{2})[\/\.\-:](\d{1,2})[\/\.\-:](\d{1,2})/);
+  const ymdMatch = str.match(/(20\d{2})[/.\-:](\d{1,2})[/.\-:](\d{1,2})/);
   if (ymdMatch) {
     const year = ymdMatch[1];
     const month = ymdMatch[2].padStart(2, '0');
@@ -466,7 +466,7 @@ export const parseAnyDate = (dateStr) => {
   }
 
   // 4. Japanese YYYY年M月 (Day omitted) or YYYY/M or YYYY-M
-  const ymMatch = str.match(/(20\d{2})[年\/\.\-:](\d{1,2})月?/);
+  const ymMatch = str.match(/(20\d{2})[年/.\-:](\d{1,2})月?/);
   if (ymMatch) {
     const year = ymMatch[1];
     const month = ymMatch[2].padStart(2, '0');
@@ -474,7 +474,7 @@ export const parseAnyDate = (dateStr) => {
   }
 
   // 5. M/D/YYYY (4-digit year end)
-  const mdyMatch = str.match(/(\d{1,2})[\/\.\-:](\d{1,2})[\/\.\-:](20\d{2})/);
+  const mdyMatch = str.match(/(\d{1,2})[/.\-:](\d{1,2})[/.\-:](20\d{2})/);
   if (mdyMatch) {
     const month = mdyMatch[1].padStart(2, '0');
     const day = mdyMatch[2].padStart(2, '0');
@@ -489,7 +489,7 @@ export const parseAnyDate = (dateStr) => {
   }
 
   // 7. 2-digit year: YY/M/D or YY.M.D or YY-M-D (e.g. 24/5/4 or 24/05/04)
-  const yyMatch = str.match(/\b(2[0-9])[\/\.\-:](\d{1,2})[\/\.\-:](\d{1,2})\b/);
+  const yyMatch = str.match(/\b(2[0-9])[/.\-:](\d{1,2})[/.\-:](\d{1,2})\b/);
   if (yyMatch) {
     const year = '20' + yyMatch[1];
     const month = yyMatch[2].padStart(2, '0');
@@ -520,7 +520,7 @@ export const parseAnyDate = (dateStr) => {
   }
 
   // 10. M/D or M-D or M:D without year (e.g. 5/4, 05/04, 5:4)
-  const mdMatch = str.match(/\b(0?[1-9]|1[0-2])[\/\.\-:](0?[1-9]|[12]\d|3[01])\b/);
+  const mdMatch = str.match(/\b(0?[1-9]|1[0-2])[/.\-:](0?[1-9]|[12]\d|3[01])\b/);
   if (mdMatch) {
     const month = mdMatch[1].padStart(2, '0');
     const day = mdMatch[2].padStart(2, '0');
