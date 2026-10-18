@@ -37,6 +37,31 @@ async function getAuthHeaders() {
   return headers;
 }
 
+// 同一 inquiry_id の複数スナップショットから最新状態のみを抽出（削除済みは除外）
+function deduplicateInquiries(rawItems) {
+  const map = new Map();
+  for (const item of rawItems) {
+    if (!item) continue;
+    const inquiryId = String(item.inquiry_id || item._db_row_id || item.rowId || '');
+    if (!inquiryId) continue;
+
+    const existing = map.get(inquiryId);
+    if (!existing) {
+      map.set(inquiryId, { ...item, inquiry_id: inquiryId, rowId: inquiryId });
+    } else {
+      const timeExisting = new Date(existing.updated_at || existing._db_created_at || existing.created_at || 0).getTime();
+      const timeCandidate = new Date(item.updated_at || item._db_created_at || item.created_at || 0).getTime();
+      if (timeCandidate >= timeExisting) {
+        map.set(inquiryId, { ...item, inquiry_id: inquiryId, rowId: inquiryId });
+      }
+    }
+  }
+
+  return Array.from(map.values())
+    .filter(item => item.deleted !== true)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
 // 全件取得（新しい順）
 export async function fetchInquiries() {
   // 1. Try serverless API
@@ -46,7 +71,7 @@ export async function fetchInquiries() {
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.inquiries)) {
-        return data.inquiries;
+        return deduplicateInquiries(data.inquiries);
       }
     }
   } catch (err) {
@@ -58,24 +83,36 @@ export async function fetchInquiries() {
     .from('baseball_data')
     .select('id, upload_id, created_at')
     .eq('file_name', INQUIRY_FILE_NAME)
+    .order('created_at', { ascending: false })
     .limit(2000);
   if (error) throw error;
 
   const list = await Promise.all((data || []).map(async (row) => {
     const body = await decryptPayload(row.upload_id);
     if (!body) return null;
-    return { ...body, rowId: row.id, created_at: body.created_at || row.created_at };
+    const inquiryId = body.inquiry_id || row.id;
+    return {
+      ...body,
+      inquiry_id: inquiryId,
+      rowId: inquiryId,
+      _db_row_id: row.id,
+      _db_created_at: row.created_at,
+      created_at: body.created_at || row.created_at,
+    };
   }));
 
-  return list
-    .filter(Boolean)
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return deduplicateInquiries(list);
 }
 
 // 新規送信
 // source: 'app'（ログイン後） | 'login'（ログイン画面・未ログイン）
 export async function submitInquiry({ source, loginId, displayName, contact, category, subject, message }) {
+  const inquiryId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `inq_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
   const payload = {
+    inquiryId,
     source: source || 'app',
     loginId: String(loginId || '').trim().toLowerCase(),
     displayName: String(displayName || '').trim(),
@@ -101,7 +138,9 @@ export async function submitInquiry({ source, loginId, displayName, contact, cat
   }
 
   // 2. Direct Supabase fallback
+  const nowIso = new Date().toISOString();
   const body = {
+    inquiry_id: inquiryId,
     source: payload.source,
     login_id: payload.loginId,
     display_name: payload.displayName,
@@ -113,7 +152,8 @@ export async function submitInquiry({ source, loginId, displayName, contact, cat
     reply: null,
     replied_at: null,
     read_by_user: true,
-    created_at: new Date().toISOString(),
+    created_at: nowIso,
+    updated_at: nowIso,
   };
   const enc = await encryptPayload(body);
   const { error } = await supabase.from('baseball_data').insert([{
@@ -126,35 +166,84 @@ export async function submitInquiry({ source, loginId, displayName, contact, cat
   return true;
 }
 
-// 1件更新（返信・ステータス変更・既読）
+// 1件更新（返信・ステータス変更・既読・削除）
 export async function updateInquiry(inquiry, changes) {
+  const inquiryId = inquiry.inquiry_id || inquiry.rowId;
+  const dbRowId = inquiry._db_row_id || inquiry.rowId;
+
   // 1. Try serverless API
   try {
     const headers = await getAuthHeaders();
     const res = await fetch('/api/inquiries', {
       method: 'PATCH',
       headers,
-      body: JSON.stringify({ rowId: inquiry.rowId, changes })
+      body: JSON.stringify({ rowId: inquiryId, dbRowId, inquiry, changes })
     });
     if (res.ok) {
       const data = await res.json();
-      if (data.success && data.inquiry) return data.inquiry;
+      if (data.success && data.inquiry) {
+        return {
+          ...data.inquiry,
+          inquiry_id: inquiryId,
+          rowId: inquiryId,
+        };
+      }
     }
   } catch (err) {
     console.warn('API updateInquiry error, falling back to direct client:', err);
   }
 
-  // 2. Direct Supabase fallback
-  const { rowId, ...rest } = inquiry;
-  const next = { ...rest, ...changes, updated_at: new Date().toISOString() };
+  // 2. Direct Supabase fallback (try UPDATE first; if RLS blocks UPDATE with 0 rows, append snapshot via INSERT)
+  const { rowId: _r, _db_row_id: _d, _db_created_at: _c, ...rest } = inquiry;
+  const next = {
+    ...rest,
+    ...changes,
+    inquiry_id: inquiryId,
+    updated_at: new Date().toISOString(),
+  };
   const enc = await encryptPayload(next);
-  const { error } = await supabase
-    .from('baseball_data')
-    .update({ upload_id: enc, updated_at: next.updated_at })
-    .eq('id', rowId)
-    .eq('file_name', INQUIRY_FILE_NAME);
-  if (error) throw error;
-  return { ...next, rowId };
+
+  let updatedInPlace = false;
+  if (dbRowId) {
+    const { data: updatedRows, error: updateErr } = await supabase
+      .from('baseball_data')
+      .update({ upload_id: enc, updated_at: next.updated_at })
+      .eq('id', dbRowId)
+      .eq('file_name', INQUIRY_FILE_NAME)
+      .select('id');
+    if (!updateErr && Array.isArray(updatedRows) && updatedRows.length > 0) {
+      updatedInPlace = true;
+    }
+  }
+
+  let latestDbRowId = dbRowId;
+  if (!updatedInPlace) {
+    const { data: insertedRows, error: insertErr } = await supabase
+      .from('baseball_data')
+      .insert([{
+        file_name: INQUIRY_FILE_NAME,
+        player_name: '__inquiry__',
+        team_name: '__system__',
+        upload_id: enc,
+      }])
+      .select('id');
+    if (insertErr) throw insertErr;
+    if (insertedRows?.[0]?.id) {
+      latestDbRowId = insertedRows[0].id;
+    }
+  }
+
+  return {
+    ...next,
+    inquiry_id: inquiryId,
+    rowId: inquiryId,
+    _db_row_id: latestDbRowId,
+  };
+}
+
+// 1件削除（論理削除スナップショットを記録）
+export async function deleteInquiry(inquiry) {
+  return updateInquiry(inquiry, { deleted: true });
 }
 
 // ログイン中の利用者の問い合わせだけ
@@ -168,7 +257,7 @@ export async function fetchMyInquiries(loginId) {
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.inquiries)) {
-        return data.inquiries;
+        return deduplicateInquiries(data.inquiries).filter(i => (i.login_id || '').toLowerCase() === key);
       }
     }
   } catch (err) {
@@ -179,3 +268,4 @@ export async function fetchMyInquiries(loginId) {
   const all = await fetchInquiries();
   return all.filter(i => (i.login_id || '').toLowerCase() === key);
 }
+

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { MessageSquare, RefreshCw, Send, CheckCircle2, LogIn, AlertTriangle } from 'lucide-react';
-import { categoryLabel, fetchInquiries, updateInquiry } from '../lib/inquirySync';
+import { MessageSquare, RefreshCw, Send, CheckCircle2, LogIn, AlertTriangle, Trash2 } from 'lucide-react';
+import { categoryLabel, fetchInquiries, updateInquiry, deleteInquiry } from '../lib/inquirySync';
 
 const fmt = (iso) => iso ? new Date(iso).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
@@ -49,6 +49,21 @@ function AdminInquiries() {
     if (!confirm('この内容で回答しますか？（利用者の問い合わせページに表示されます）')) return;
     const ok = await save(inq, { reply: text, replied_at: new Date().toISOString(), status: 'answered', read_by_user: false });
     if (ok) setDrafts(d => ({ ...d, [inq.rowId]: undefined }));
+  };
+
+  const removeInquiry = async (inq) => {
+    if (!confirm('この問い合わせを完全に削除しますか？')) return;
+    setSaving(inq.rowId);
+    try {
+      await deleteInquiry(inq);
+      setList(prev => prev.filter(i => i.rowId !== inq.rowId));
+      if (openId === inq.rowId) setOpenId(null);
+    } catch (e) {
+      console.error(e);
+      alert('削除に失敗しました。');
+    } finally {
+      setSaving(null);
+    }
   };
 
   const counts = {
@@ -165,6 +180,13 @@ function AdminInquiries() {
                         未完了に戻す
                       </button>
                     )}
+                    <button
+                      onClick={() => removeInquiry(inq)}
+                      disabled={saving === inq.rowId}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold cursor-pointer ml-auto"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> 削除
+                    </button>
                   </div>
                 </div>
               )}

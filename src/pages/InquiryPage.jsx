@@ -11,7 +11,7 @@ const STATUS = {
 const fmt = (iso) => iso ? new Date(iso).toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
 function InquiryPage({ user, profile }) {
-  const loginId = user?.email || '';
+  const loginId = user?.email || profile?.email || '';
   const [form, setForm] = useState({ category: 'usage', subject: '', message: '' });
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState(null);

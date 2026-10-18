@@ -2,15 +2,14 @@ import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ukyppwxsvcgxuxedwfom.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_FALLBACK_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_PCKtT5zEB4r6UMZ5H1q81w_Wpp1b3te';
 
 const ENCRYPTION_SALT = 'baseball-analyzer-secure-payload-salt-v2';
 const INQUIRY_FILE_NAME = '__inquiry__';
 
 function getAdminClient() {
-  if (!SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured in environment variables.');
-  }
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const key = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_FALLBACK_KEY;
+  return createClient(SUPABASE_URL, key, {
     auth: { autoRefreshToken: false, persistSession: false }
   });
 }
@@ -70,6 +69,30 @@ async function decryptPayload(payloadStr) {
     try { return JSON.parse(payloadStr); } catch { return null; }
   }
   return null;
+}
+
+function deduplicateInquiries(rawItems) {
+  const map = new Map();
+  for (const item of rawItems) {
+    if (!item) continue;
+    const inquiryId = String(item.inquiry_id || item._db_row_id || item.rowId || '');
+    if (!inquiryId) continue;
+
+    const existing = map.get(inquiryId);
+    if (!existing) {
+      map.set(inquiryId, { ...item, inquiry_id: inquiryId, rowId: inquiryId });
+    } else {
+      const timeExisting = new Date(existing.updated_at || existing._db_created_at || existing.created_at || 0).getTime();
+      const timeCandidate = new Date(item.updated_at || item._db_created_at || item.created_at || 0).getTime();
+      if (timeCandidate >= timeExisting) {
+        map.set(inquiryId, { ...item, inquiry_id: inquiryId, rowId: inquiryId });
+      }
+    }
+  }
+
+  return Array.from(map.values())
+    .filter(item => item.deleted !== true)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
 async function getLegacyUsers(adminClient) {
@@ -140,10 +163,6 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  if (!SUPABASE_SERVICE_ROLE_KEY) {
-    return res.status(500).json({ error: 'SUPABASE_SERVICE_ROLE_KEY missing on server.' });
-  }
-
   try {
     const adminClient = getAdminClient();
 
@@ -162,7 +181,7 @@ export default async function handler(req, res) {
         .from('baseball_data')
         .select('id, upload_id, created_at')
         .eq('file_name', INQUIRY_FILE_NAME)
-        .order('id', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(2000);
 
       if (error) {
@@ -172,27 +191,37 @@ export default async function handler(req, res) {
       const list = await Promise.all((data || []).map(async (row) => {
         const body = await decryptPayload(row.upload_id);
         if (!body) return null;
-        return { ...body, rowId: row.id, created_at: body.created_at || row.created_at };
+        const inquiryId = body.inquiry_id || row.id;
+        return {
+          ...body,
+          inquiry_id: inquiryId,
+          rowId: inquiryId,
+          _db_row_id: row.id,
+          _db_created_at: row.created_at,
+          created_at: body.created_at || row.created_at
+        };
       }));
 
-      let filtered = list.filter(Boolean);
+      let filtered = deduplicateInquiries(list);
       if (user_email) {
         const key = String(user_email).toLowerCase().trim();
         filtered = filtered.filter(i => (i.login_id || '').toLowerCase() === key);
       }
 
-      filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       return res.status(200).json({ success: true, inquiries: filtered });
     }
 
     // POST /api/inquiries (Submit new inquiry)
     if (req.method === 'POST') {
-      const { source, loginId, displayName, contact, category, subject, message } = req.body || {};
+      const { inquiryId, source, loginId, displayName, contact, category, subject, message } = req.body || {};
       if (!subject || !message) {
         return res.status(400).json({ error: '件名とメッセージを入力してください。' });
       }
 
+      const nowIso = new Date().toISOString();
+      const resolvedId = inquiryId || `inq_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       const body = {
+        inquiry_id: resolvedId,
         source: source || 'app',
         login_id: String(loginId || '').trim().toLowerCase(),
         display_name: String(displayName || '').trim(),
@@ -204,7 +233,8 @@ export default async function handler(req, res) {
         reply: null,
         replied_at: null,
         read_by_user: true,
-        created_at: new Date().toISOString(),
+        created_at: nowIso,
+        updated_at: nowIso,
       };
 
       const enc = await encryptPayload(body);
@@ -222,9 +252,9 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
 
-    // PATCH /api/inquiries (Reply or update status)
+    // PATCH /api/inquiries (Reply, update status, mark read, or delete)
     if (req.method === 'PATCH') {
-      const { rowId, changes } = req.body || {};
+      const { rowId, dbRowId, inquiry: clientInquiry, changes } = req.body || {};
       if (!rowId || !changes) {
         return res.status(400).json({ error: 'rowId and changes are required.' });
       }
@@ -238,42 +268,95 @@ export default async function handler(req, res) {
         }
       }
 
-      const { data, error: fetchErr } = await adminClient
-        .from('baseball_data')
-        .select('upload_id')
-        .eq('id', rowId)
-        .eq('file_name', INQUIRY_FILE_NAME);
+      let current = null;
+      let targetDbId = dbRowId || rowId;
 
-      if (fetchErr || !data || data.length === 0) {
+      if (clientInquiry && typeof clientInquiry === 'object') {
+        const { rowId: _r, _db_row_id: _d, _db_created_at: _c, ...rest } = clientInquiry;
+        current = rest;
+      } else {
+        const { data } = await adminClient
+          .from('baseball_data')
+          .select('id, upload_id, created_at')
+          .eq('file_name', INQUIRY_FILE_NAME)
+          .order('created_at', { ascending: false })
+          .limit(2000);
+
+        const list = await Promise.all((data || []).map(async (row) => {
+          const body = await decryptPayload(row.upload_id);
+          if (!body) return null;
+          const inquiryId = body.inquiry_id || row.id;
+          return {
+            ...body,
+            inquiry_id: inquiryId,
+            rowId: inquiryId,
+            _db_row_id: row.id,
+            _db_created_at: row.created_at,
+            created_at: body.created_at || row.created_at
+          };
+        }));
+        const deduped = deduplicateInquiries(list);
+        const found = deduped.find(i => i.inquiry_id === rowId || i._db_row_id === rowId);
+        if (found) {
+          targetDbId = found._db_row_id;
+          const { rowId: _r, _db_row_id: _d, _db_created_at: _c, ...rest } = found;
+          current = rest;
+        }
+      }
+
+      if (!current) {
         return res.status(404).json({ error: 'Inquiry not found.' });
       }
 
-      const current = await decryptPayload(data[0].upload_id);
-      if (!current) {
-        return res.status(500).json({ error: 'Failed to decrypt inquiry data.' });
-      }
-
+      const inquiryId = current.inquiry_id || rowId;
       const updated = {
         ...current,
         ...changes,
+        inquiry_id: inquiryId,
         updated_at: new Date().toISOString()
       };
 
       const enc = await encryptPayload(updated);
-      const { error: updateErr } = await adminClient
-        .from('baseball_data')
-        .update({
-          upload_id: enc,
-          updated_at: updated.updated_at
-        })
-        .eq('id', rowId)
-        .eq('file_name', INQUIRY_FILE_NAME);
 
-      if (updateErr) {
-        return res.status(500).json({ error: updateErr.message });
+      let updatedInPlace = false;
+      if (targetDbId) {
+        const { data: updatedRows, error: updateErr } = await adminClient
+          .from('baseball_data')
+          .update({
+            upload_id: enc,
+            updated_at: updated.updated_at
+          })
+          .eq('id', targetDbId)
+          .eq('file_name', INQUIRY_FILE_NAME)
+          .select('id');
+        if (!updateErr && Array.isArray(updatedRows) && updatedRows.length > 0) {
+          updatedInPlace = true;
+        }
       }
 
-      return res.status(200).json({ success: true, inquiry: { ...updated, rowId } });
+      let latestDbRowId = targetDbId;
+      if (!updatedInPlace) {
+        const { data: insertedRows, error: insertErr } = await adminClient
+          .from('baseball_data')
+          .insert([{
+            file_name: INQUIRY_FILE_NAME,
+            player_name: '__inquiry__',
+            team_name: '__system__',
+            upload_id: enc,
+          }])
+          .select('id');
+        if (insertErr) {
+          return res.status(500).json({ error: insertErr.message });
+        }
+        if (insertedRows?.[0]?.id) {
+          latestDbRowId = insertedRows[0].id;
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        inquiry: { ...updated, inquiry_id: inquiryId, rowId: inquiryId, _db_row_id: latestDbRowId }
+      });
     }
 
     return res.status(405).json({ error: 'Method Not Allowed' });
@@ -282,3 +365,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 }
+

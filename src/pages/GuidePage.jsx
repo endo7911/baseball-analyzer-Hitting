@@ -466,51 +466,6 @@ function GuidePage({ setActiveView: _setActiveView, user, profile, currentUser }
               </div>
             </div>
           </div>
-
-          {/* ver 2.0.0 Release Notes (Archive) */}
-          <div className="bg-slate-900/70 border border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-amber-600/10 border border-amber-500/20 rounded-2xl text-amber-400">
-                  <Sparkles className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-extrabold text-slate-200">過去の更新内容（ver 2.0.0）</h3>
-                  <p className="text-xs text-slate-400">投手分析・体組成分析ダブルリリース・カラーテーマ切替・安全ログアウト</p>
-                </div>
-              </div>
-              <span className="px-3 py-1 bg-slate-800 border border-slate-700 text-slate-400 text-xs font-bold rounded-full">
-                ver 2.0.0
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-1.5">
-                <h4 className="text-xs font-extrabold text-amber-300">⚾ 1. 「投手分析」モジュール (Rapsodo Pitching)</h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  球速・回転数・変化量（縦VB / 横HB）散布図、リリースポイント安定度、球種割合の可視化に対応。
-                </p>
-              </div>
-              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-1.5">
-                <h4 className="text-xs font-extrabold text-cyan-300">💪 2. 「体組成分析」モジュール (Body Composition)</h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  体重・筋肉量・体脂肪率・FFMI算出および部位別筋肉バランス、InBody/TANITAのCSV自動認識に対応。
-                </p>
-              </div>
-              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-1.5">
-                <h4 className="text-xs font-extrabold text-purple-300">🎨 3. カラーテーマ切替（昼 ☀️ / 夜 🌙）</h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  屋外で見やすいライトモードとダークモードのワンタッチ切り替え機能を追加。
-                </p>
-              </div>
-              <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-1.5">
-                <h4 className="text-xs font-extrabold text-blue-300">🔒 4. 端末再起動・終了時の安全ログアウト</h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  ブラウザ終了・端末再起動時にセッションを自動クリアする共用端末向けセキュリティを導入。
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
