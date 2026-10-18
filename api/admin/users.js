@@ -106,8 +106,10 @@ async function getLegacyUsers(adminClient) {
   try {
     const { data, error } = await adminClient
       .from('baseball_data')
-      .select('upload_id')
-      .eq('file_name', SYSTEM_USER_FILE_NAME);
+      .select('id, upload_id, created_at')
+      .eq('file_name', SYSTEM_USER_FILE_NAME)
+      .order('created_at', { ascending: false })
+      .limit(1);
 
     if (!error && data && data.length > 0 && data[0].upload_id) {
       const parsed = await decryptPayload(data[0].upload_id);
@@ -122,22 +124,33 @@ async function getLegacyUsers(adminClient) {
 // Save legacy users to baseball_data using service_role client (bypasses RLS)
 async function saveLegacyUsers(adminClient, usersList) {
   try {
+    const nowIso = new Date().toISOString();
     const encrypted = await encryptPayload(usersList);
     const { data, error } = await adminClient
       .from('baseball_data')
-      .select('file_name')
+      .select('id, file_name')
       .eq('file_name', SYSTEM_USER_FILE_NAME)
+      .order('created_at', { ascending: false })
       .limit(1);
 
-    if (!error && data && data.length > 0) {
-      await adminClient
+    let updatedInPlace = false;
+    if (!error && data && data.length > 0 && data[0].id) {
+      const { data: updatedRows, error: updateErr } = await adminClient
         .from('baseball_data')
         .update({
           upload_id: encrypted,
-          updated_at: new Date().toISOString()
+          updated_at: nowIso
         })
-        .eq('file_name', SYSTEM_USER_FILE_NAME);
-    } else {
+        .eq('id', data[0].id)
+        .eq('file_name', SYSTEM_USER_FILE_NAME)
+        .select('id');
+
+      if (!updateErr && Array.isArray(updatedRows) && updatedRows.length > 0) {
+        updatedInPlace = true;
+      }
+    }
+
+    if (!updatedInPlace) {
       await adminClient
         .from('baseball_data')
         .insert([{
@@ -321,11 +334,24 @@ export default async function handler(req, res) {
           const hasAuth = !!authUser;
           const authMeta = authUser?.user_metadata || {};
 
-          const hitting = (p.allow_hitting !== undefined ? p.allow_hitting !== false : (authMeta.allow_hitting !== undefined ? authMeta.allow_hitting !== false : existing.allow_hitting !== false)) && p.permissions?.hitting !== false && authMeta.permissions?.hitting !== false && existing.permissions?.hitting !== false;
-          const pitching = (p.allow_pitching !== undefined ? p.allow_pitching !== false : (authMeta.allow_pitching !== undefined ? authMeta.allow_pitching !== false : existing.allow_pitching !== false)) && p.permissions?.pitching !== false && authMeta.permissions?.pitching !== false && existing.permissions?.pitching !== false;
-          const bodyComp = (p.allow_body_comp !== undefined ? p.allow_body_comp !== false : (authMeta.allow_body_comp !== undefined ? authMeta.allow_body_comp !== false : existing.allow_body_comp !== false)) && p.permissions?.bodyComp !== false && authMeta.permissions?.bodyComp !== false && existing.permissions?.bodyComp !== false;
-          const calendar = (p.allow_calendar !== undefined ? p.allow_calendar !== false : (authMeta.allow_calendar !== undefined ? authMeta.allow_calendar !== false : existing.allow_calendar !== false)) && p.permissions?.calendar !== false && authMeta.permissions?.calendar !== false && existing.permissions?.calendar !== false;
-          const game = (p.allow_game !== undefined ? p.allow_game !== false : (authMeta.allow_game !== undefined ? authMeta.allow_game !== false : existing.allow_game !== false)) && p.permissions?.game !== false && authMeta.permissions?.game !== false && existing.permissions?.game !== false;
+          const resolvePerm = (colName, permKey) => {
+            if (existing.permissions_updated_at) {
+              if (existing[colName] !== undefined) return existing[colName] !== false;
+              if (existing.permissions?.[permKey] !== undefined) return existing.permissions[permKey] !== false;
+            }
+            if (p[colName] !== undefined && p[colName] !== null) return p[colName] !== false;
+            if (authMeta[colName] !== undefined) return authMeta[colName] !== false;
+            if (authMeta.permissions?.[permKey] !== undefined) return authMeta.permissions[permKey] !== false;
+            if (existing[colName] !== undefined) return existing[colName] !== false;
+            if (existing.permissions?.[permKey] !== undefined) return existing.permissions[permKey] !== false;
+            return true;
+          };
+
+          const hitting = resolvePerm('allow_hitting', 'hitting');
+          const pitching = resolvePerm('allow_pitching', 'pitching');
+          const bodyComp = resolvePerm('allow_body_comp', 'bodyComp');
+          const calendar = resolvePerm('allow_calendar', 'calendar');
+          const game = resolvePerm('allow_game', 'game');
 
           userMap.set(key, {
             ...existing,
@@ -769,13 +795,16 @@ export default async function handler(req, res) {
           console.warn("Auth user_metadata update non-fatal error:", authErr);
         }
 
-        // Also reflect updates in legacy storage (ensure all 4 permissions are present and in sync)
+        // Also reflect updates in legacy storage (ensure all 5 permissions are present and in sync)
         try {
+          const nowIso = new Date().toISOString();
           const legacyUsers = await getLegacyUsers(adminClient);
+          let foundInLegacy = false;
           const updatedLegacy = legacyUsers.map(u => {
             const matchId = (id && u.id === id);
             const matchEmail = (targetEmail && u.email && u.email.toLowerCase() === targetEmail);
             if (matchId || matchEmail) {
+              foundInLegacy = true;
               const basePerms = {
                 hitting: u.allow_hitting !== false && u.permissions?.hitting !== false,
                 pitching: u.allow_pitching !== false && u.permissions?.pitching !== false,
@@ -802,11 +831,38 @@ export default async function handler(req, res) {
                 allow_body_comp: basePerms.bodyComp,
                 allow_calendar: basePerms.calendar,
                 allow_game: basePerms.game,
-                permissions: basePerms
+                permissions: basePerms,
+                updated_at: nowIso,
+                permissions_updated_at: nowIso
               };
             }
             return u;
           });
+
+          if (!foundInLegacy && targetEmail) {
+            const basePerms = {
+              hitting: safeUpdates.allow_hitting !== false,
+              pitching: safeUpdates.allow_pitching !== false,
+              bodyComp: safeUpdates.allow_body_comp !== false,
+              calendar: safeUpdates.allow_calendar !== false,
+              game: safeUpdates.allow_game !== false,
+              ...(safeUpdates.permissions || {})
+            };
+            updatedLegacy.push({
+              id: id || targetEmail,
+              email: targetEmail,
+              ...safeUpdates,
+              allow_hitting: basePerms.hitting,
+              allow_pitching: basePerms.pitching,
+              allow_body_comp: basePerms.bodyComp,
+              allow_calendar: basePerms.calendar,
+              allow_game: basePerms.game,
+              permissions: basePerms,
+              updated_at: nowIso,
+              permissions_updated_at: nowIso
+            });
+          }
+
           await saveLegacyUsers(adminClient, updatedLegacy);
         } catch (legErr) {
           console.warn("legacyUsers update non-fatal:", legErr);

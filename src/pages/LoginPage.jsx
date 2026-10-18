@@ -151,6 +151,12 @@ function LoginPage({ onLogin }) {
           email: authUser.email
         };
 
+        const allowHitting = profileData?.allow_hitting !== false && authUser.user_metadata?.allow_hitting !== false;
+        const allowPitching = profileData?.allow_pitching !== false && authUser.user_metadata?.allow_pitching !== false;
+        const allowBodyComp = profileData?.allow_body_comp !== false && authUser.user_metadata?.allow_body_comp !== false;
+        const allowCalendar = profileData?.allow_calendar !== false && authUser.user_metadata?.allow_calendar !== false && authUser.user_metadata?.permissions?.calendar !== false;
+        const allowGame = profileData?.allow_game !== false && authUser.user_metadata?.allow_game !== false && authUser.user_metadata?.permissions?.game !== false;
+
         const profileObj = {
           id: authUser.id,
           email: authUser.email,
@@ -160,15 +166,17 @@ function LoginPage({ onLogin }) {
           team_id: profileData?.team_id || authUser.user_metadata?.team_id || 'Team A',
           team_name: profileData?.team_name || profileData?.team_id || 'Team A',
           is_disabled: false,
-          allow_hitting: profileData?.allow_hitting !== false,
-          allow_pitching: profileData?.allow_pitching !== false,
-          allow_body_comp: profileData?.allow_body_comp !== false,
-          allow_game: profileData?.allow_game !== false,
+          allow_hitting: allowHitting,
+          allow_pitching: allowPitching,
+          allow_body_comp: allowBodyComp,
+          allow_calendar: allowCalendar,
+          allow_game: allowGame,
           permissions: {
-            hitting: profileData?.allow_hitting !== false,
-            pitching: profileData?.allow_pitching !== false,
-            bodyComp: profileData?.allow_body_comp !== false,
-            game: profileData?.allow_game !== false
+            hitting: allowHitting,
+            pitching: allowPitching,
+            bodyComp: allowBodyComp,
+            calendar: allowCalendar,
+            game: allowGame
           }
         };
 
@@ -228,22 +236,32 @@ function LoginPage({ onLogin }) {
 
           const result = await verifyPassword(cleanPassword, foundGlobalUser.password, foundGlobalUser.temp_password);
           if (result) {
+            const allowHitting = foundGlobalUser.allow_hitting !== false && foundGlobalUser.permissions?.hitting !== false;
+            const allowPitching = foundGlobalUser.allow_pitching !== false && foundGlobalUser.permissions?.pitching !== false;
+            const allowBodyComp = foundGlobalUser.allow_body_comp !== false && foundGlobalUser.permissions?.bodyComp !== false;
+            const allowCalendar = foundGlobalUser.allow_calendar !== false && foundGlobalUser.permissions?.calendar !== false;
+            const allowGame = foundGlobalUser.allow_game !== false && foundGlobalUser.permissions?.game !== false;
+
             const userObj = { id: foundGlobalUser.id, email: foundGlobalUser.email };
             const profileObj = {
               id: foundGlobalUser.id,
+              email: foundGlobalUser.email,
               role: foundGlobalUser.role || 'user',
               team_id: foundGlobalUser.team_id || 'Team A',
+              team_name: foundGlobalUser.team_name || foundGlobalUser.team_id || 'Team A',
               display_name: foundGlobalUser.display_name || foundGlobalUser.email,
               is_disabled: false,
-              allow_hitting: foundGlobalUser.allow_hitting !== false,
-              allow_pitching: foundGlobalUser.allow_pitching !== false,
-              allow_body_comp: foundGlobalUser.allow_body_comp !== false,
-              allow_game: foundGlobalUser.allow_game !== false,
+              allow_hitting: allowHitting,
+              allow_pitching: allowPitching,
+              allow_body_comp: allowBodyComp,
+              allow_calendar: allowCalendar,
+              allow_game: allowGame,
               permissions: {
-                hitting: foundGlobalUser.allow_hitting !== false,
-                pitching: foundGlobalUser.allow_pitching !== false,
-                bodyComp: foundGlobalUser.allow_body_comp !== false,
-                game: foundGlobalUser.allow_game !== false
+                hitting: allowHitting,
+                pitching: allowPitching,
+                bodyComp: allowBodyComp,
+                calendar: allowCalendar,
+                game: allowGame
               }
             };
 

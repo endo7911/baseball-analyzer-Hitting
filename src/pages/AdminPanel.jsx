@@ -63,13 +63,14 @@ function AdminPanel() {
     // Attach admin verification headers for legacy admin session
     try {
       const rawProfile = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile') || localStorage.getItem('baseball_current_user');
-      if (rawProfile) {
-        const p = typeof rawProfile === 'string' && (rawProfile.startsWith('{') || rawProfile.startsWith('[')) ? JSON.parse(rawProfile) : rawProfile;
-        if (p?.email) {
-          headers['X-Legacy-Admin-Email'] = p.email;
-          headers['X-Legacy-Admin-Role'] = p.role || 'admin';
-          headers['X-Legacy-Admin-Id'] = p.id || '';
-        }
+      const rawUser = sessionStorage.getItem('mockUser') || localStorage.getItem('mockUser');
+      const p = rawProfile && typeof rawProfile === 'string' && (rawProfile.startsWith('{') || rawProfile.startsWith('[')) ? JSON.parse(rawProfile) : rawProfile;
+      const u = rawUser && typeof rawUser === 'string' && (rawUser.startsWith('{') || rawUser.startsWith('[')) ? JSON.parse(rawUser) : rawUser;
+      const adminEmail = p?.email || u?.email;
+      if (adminEmail) {
+        headers['X-Legacy-Admin-Email'] = adminEmail;
+        headers['X-Legacy-Admin-Role'] = p?.role || 'admin';
+        headers['X-Legacy-Admin-Id'] = p?.id || u?.id || '';
       }
     } catch {}
 
@@ -87,35 +88,76 @@ function AdminPanel() {
 
   const fetchUsers = async () => {
     setLoading(true);
+    let apiUsers = null;
     try {
       const data = await callAdminApi('GET');
       if (Array.isArray(data.users)) {
-        setUsers(data.users);
+        apiUsers = data.users;
         setServerApiActive(true);
-        const initialInputs = {};
-        data.users.forEach(u => {
-          initialInputs[u.id || u.email] = u.team_id || '';
-        });
-        setTeamInputs(initialInputs);
-        setLoading(false);
-        return;
       }
     } catch (e) {
       console.warn("Vercel Admin API fallback:", e);
       setServerApiActive(false);
     }
 
-    // Fallback to legacy globalUsers
     try {
       const globalUsers = await getGlobalUsers();
-      setUsers(globalUsers);
+      let finalUsers = globalUsers;
+
+      if (Array.isArray(apiUsers)) {
+        const globalMap = new Map();
+        globalUsers.forEach(u => {
+          if (u && u.email) globalMap.set(u.email.toLowerCase(), u);
+        });
+
+        finalUsers = apiUsers.map(au => {
+          const key = (au.email || '').toLowerCase();
+          const gu = globalMap.get(key);
+          if (!gu) return au;
+          globalMap.delete(key);
+
+          const guTime = new Date(gu.permissions_updated_at || gu.updated_at || 0).getTime();
+          const auTime = new Date(au.permissions_updated_at || au.updated_at || 0).getTime();
+          if (guTime >= auTime && (gu.permissions_updated_at || gu.updated_at)) {
+            return {
+              ...au,
+              team_id: gu.team_id || au.team_id,
+              team_name: gu.team_name || gu.team_id || au.team_name,
+              is_disabled: gu.is_disabled !== undefined ? !!gu.is_disabled : !!au.is_disabled,
+              allow_hitting: gu.allow_hitting !== false && gu.permissions?.hitting !== false,
+              allow_pitching: gu.allow_pitching !== false && gu.permissions?.pitching !== false,
+              allow_body_comp: gu.allow_body_comp !== false && gu.permissions?.bodyComp !== false,
+              allow_calendar: gu.allow_calendar !== false && gu.permissions?.calendar !== false,
+              allow_game: gu.allow_game !== false && gu.permissions?.game !== false,
+              permissions: {
+                hitting: gu.allow_hitting !== false && gu.permissions?.hitting !== false,
+                pitching: gu.allow_pitching !== false && gu.permissions?.pitching !== false,
+                bodyComp: gu.allow_body_comp !== false && gu.permissions?.bodyComp !== false,
+                calendar: gu.allow_calendar !== false && gu.permissions?.calendar !== false,
+                game: gu.allow_game !== false && gu.permissions?.game !== false
+              },
+              updated_at: gu.updated_at || au.updated_at,
+              permissions_updated_at: gu.permissions_updated_at
+            };
+          }
+          return au;
+        });
+
+        // Include any accounts added to globalUsers that aren't in apiUsers yet
+        globalMap.forEach(gu => finalUsers.push(gu));
+      }
+
+      setUsers(finalUsers);
       const initialInputs = {};
-      globalUsers.forEach(u => {
+      finalUsers.forEach(u => {
         initialInputs[u.id || u.email] = u.team_id || '';
       });
       setTeamInputs(initialInputs);
     } catch (e) {
-      console.error("Fetch users fallback error:", e);
+      console.error("Fetch users error:", e);
+      if (Array.isArray(apiUsers)) {
+        setUsers(apiUsers);
+      }
     } finally {
       setLoading(false);
     }
@@ -226,25 +268,68 @@ function AdminPanel() {
     e.preventDefault();
     if (!newUser.email || !newUser.password) return;
     setLoading(true);
-    
-    try {
-      if (serverApiActive) {
-        await callAdminApi('POST', {
-          email: newUser.email.trim(),
-          password: newUser.password.trim(),
-          team_id: newUser.team_id.trim() || 'Team A',
-          role: newUser.role,
-          display_name: newUser.display_name.trim() || newUser.email.trim()
-        });
 
-        setMessage({ type: 'success', text: `アカウント「${newUser.email}」を登録しました。` });
-        setShowAdd(false);
-        setNewUser({ email: '', password: '', team_id: '', role: 'user', display_name: '' });
-        await fetchUsers();
-        setLoading(false);
-        setTimeout(() => setMessage(null), 4000);
-        return;
+    const rawId = newUser.email.trim();
+    const cleanEmail = rawId.includes('@') ? rawId.toLowerCase() : `${rawId.toLowerCase()}@baseball-analyzer.internal`;
+    const cleanTeam = newUser.team_id.trim() || 'Team A';
+    const cleanName = newUser.display_name.trim() || rawId;
+    const cleanRole = newUser.role || 'user';
+    const cleanPassword = newUser.password.trim();
+
+    try {
+      try {
+        await callAdminApi('POST', {
+          email: rawId,
+          password: cleanPassword,
+          team_id: cleanTeam,
+          role: cleanRole,
+          display_name: cleanName
+        });
+      } catch (apiErr) {
+        console.warn("Server API addUser fallback to direct cloud storage:", apiErr);
       }
+
+      // Always sync to globalUsers cloud store as well so login and permissions work across all paths
+      const nowIso = new Date().toISOString();
+      const hashedPassword = await hashPassword(cleanPassword);
+      const globalUsers = await getGlobalUsers();
+      const exists = globalUsers.some(u => (u.email || '').toLowerCase() === cleanEmail);
+      const newEntry = {
+        id: cleanEmail,
+        email: cleanEmail,
+        username: rawId.includes('@') ? rawId.split('@')[0] : rawId,
+        password: hashedPassword,
+        display_name: cleanName,
+        team_id: cleanTeam,
+        team_name: cleanTeam,
+        role: cleanRole,
+        is_disabled: false,
+        allow_hitting: true,
+        allow_pitching: true,
+        allow_body_comp: true,
+        allow_calendar: true,
+        allow_game: true,
+        permissions: {
+          hitting: true,
+          pitching: true,
+          bodyComp: true,
+          calendar: true,
+          game: true
+        },
+        created_at: nowIso,
+        updated_at: nowIso,
+        permissions_updated_at: nowIso
+      };
+      const updatedUsers = exists
+        ? globalUsers.map(u => (u.email || '').toLowerCase() === cleanEmail ? { ...u, ...newEntry } : u)
+        : [...globalUsers, newEntry];
+
+      await saveGlobalUsers(updatedUsers);
+
+      setMessage({ type: 'success', text: `アカウント「${rawId}」を登録しました。` });
+      setShowAdd(false);
+      setNewUser({ email: '', password: '', team_id: '', role: 'user', display_name: '' });
+      await fetchUsers();
     } catch (err) {
       console.error("Add user error:", err);
       setMessage({ type: 'error', text: `追加失敗: ${err.message}` });
@@ -283,6 +368,7 @@ function AdminPanel() {
       }
 
       // Legacy direct fallback (guarantees temporary password generation never fails!)
+      const nowIso = new Date().toISOString();
       const currentUsers = await getGlobalUsers();
       const tempPass = 'tp' + Math.floor(100000 + Math.random() * 900000);
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
@@ -292,6 +378,7 @@ function AdminPanel() {
         if (u.id === user.id || u.email?.toLowerCase() === user.email?.toLowerCase()) {
           return {
             ...u,
+            updated_at: nowIso,
             temp_password: {
               hashed: hashedTemp,
               pass_plain: tempPass,
@@ -328,18 +415,44 @@ function AdminPanel() {
 
     if (!confirm(`「${user.display_name || user.email}」を${actionName}しますか？`)) return;
 
+    const nowIso = new Date().toISOString();
+    const targetId = user.id || user.email;
+
+    // 1. Optimistic UI update
+    setUsers(prev => prev.map(u => {
+      const matchId = user.id && u.id === user.id;
+      const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
+      return (matchId || matchEmail) ? { ...u, is_disabled: newStatus, updated_at: nowIso } : u;
+    }));
+
     setLoading(true);
     try {
-      if (serverApiActive && user.id) {
+      try {
         await callAdminApi('PUT', {
-          id: user.id,
-          updates: { is_disabled: newStatus }
+          id: targetId,
+          email: user.email,
+          updates: { is_disabled: newStatus, email: user.email }
         });
-        setMessage({ type: 'success', text: `「${user.display_name || user.email}」を${actionName}しました。` });
-        await fetchUsers();
+      } catch (apiErr) {
+        console.warn("Server API toggleUserStatus fallback to direct storage:", apiErr);
       }
+
+      const globalUsers = await getGlobalUsers();
+      const updatedUsers = globalUsers.map(u => {
+        const matchId = user.id && u.id === user.id;
+        const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
+        if (matchId || matchEmail) {
+          return { ...u, is_disabled: newStatus, updated_at: nowIso };
+        }
+        return u;
+      });
+      await saveGlobalUsers(updatedUsers);
+
+      window.dispatchEvent(new CustomEvent('accountStatusRefresh'));
+      setMessage({ type: 'success', text: `「${user.display_name || user.email}」を${actionName}しました。` });
     } catch (e) {
       console.error("Toggle user error:", e);
+      alert(`アカウント状態の切り替えに失敗しました: ${e.message}`);
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(null), 4000);
@@ -347,14 +460,38 @@ function AdminPanel() {
   };
 
   const updateTeam = async (userId, email, team_id) => {
+    const cleanTeam = (team_id || '').trim() || 'Team A';
+    const nowIso = new Date().toISOString();
+    const targetId = userId || email;
+
+    setUsers(prev => prev.map(u => {
+      const matchId = userId && u.id === userId;
+      const matchEmail = email && u.email?.toLowerCase() === email?.toLowerCase();
+      return (matchId || matchEmail) ? { ...u, team_id: cleanTeam, team_name: cleanTeam, updated_at: nowIso } : u;
+    }));
+
     try {
-      if (serverApiActive && userId) {
+      try {
         await callAdminApi('PUT', {
-          id: userId,
-          updates: { team_id, team_name: team_id }
+          id: targetId,
+          email,
+          updates: { team_id: cleanTeam, team_name: cleanTeam, email }
         });
-        await fetchUsers();
+      } catch (apiErr) {
+        console.warn("Server API updateTeam fallback to direct storage:", apiErr);
       }
+
+      const globalUsers = await getGlobalUsers();
+      const updatedUsers = globalUsers.map(u => {
+        const matchId = userId && u.id === userId;
+        const matchEmail = email && u.email?.toLowerCase() === email?.toLowerCase();
+        if (matchId || matchEmail) {
+          return { ...u, team_id: cleanTeam, team_name: cleanTeam, updated_at: nowIso };
+        }
+        return u;
+      });
+      await saveGlobalUsers(updatedUsers);
+      window.dispatchEvent(new CustomEvent('accountStatusRefresh'));
     } catch (e) {
       console.error("Update team error:", e);
     }
@@ -389,6 +526,7 @@ function AdminPanel() {
     }
 
     try {
+      const nowIso = new Date().toISOString();
       const updateField = moduleKey === 'hitting' ? 'allow_hitting' 
         : (moduleKey === 'pitching' ? 'allow_pitching' 
         : (moduleKey === 'bodyComp' ? 'allow_body_comp' 
@@ -400,92 +538,91 @@ function AdminPanel() {
         [moduleKey]: newStatus
       };
 
+      const applyPermissionUpdate = (u) => {
+        const eff = getEffectivePermissions(u);
+        const mergedPerms = { ...eff, [moduleKey]: newStatus };
+        return {
+          ...u,
+          [updateField]: newStatus,
+          allow_hitting: mergedPerms.hitting,
+          allow_pitching: mergedPerms.pitching,
+          allow_body_comp: mergedPerms.bodyComp,
+          allow_calendar: mergedPerms.calendar,
+          allow_game: mergedPerms.game,
+          permissions: mergedPerms,
+          updated_at: nowIso,
+          permissions_updated_at: nowIso
+        };
+      };
+
       // 1. Optimistic UI update: instantly update table button so user sees change with ZERO delay
       setUsers(prevUsers => prevUsers.map(u => {
         const matchId = user.id && (u.id === user.id);
         const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
-        if (matchId || matchEmail) {
-          return {
-            ...u,
-            [updateField]: newStatus,
-            allow_hitting: moduleKey === 'hitting' ? newStatus : (u.allow_hitting !== false && u.permissions?.hitting !== false),
-            allow_pitching: moduleKey === 'pitching' ? newStatus : (u.allow_pitching !== false && u.permissions?.pitching !== false),
-            allow_body_comp: moduleKey === 'bodyComp' ? newStatus : (u.allow_body_comp !== false && u.permissions?.bodyComp !== false),
-            allow_calendar: moduleKey === 'calendar' ? newStatus : (u.allow_calendar !== false && u.permissions?.calendar !== false),
-            allow_game: moduleKey === 'game' ? newStatus : (u.allow_game !== false && u.permissions?.game !== false),
-            permissions: {
-              ...getEffectivePermissions(u),
-              [moduleKey]: newStatus
-            }
-          };
-        }
-        return u;
+        return (matchId || matchEmail) ? applyPermissionUpdate(u) : u;
       }));
 
-      // 2. Persist to server via Vercel Admin API
-      if (serverApiActive && targetId) {
-        await callAdminApi('PUT', {
-          id: targetId,
-          email: user.email,
-          updates: { 
-            [updateField]: newStatus,
-            permissions: newPerms,
-            email: user.email 
-          }
-        });
+      // 2. Persist to server via Vercel Admin API (non-blocking if server API fails)
+      if (targetId) {
+        try {
+          await callAdminApi('PUT', {
+            id: targetId,
+            email: user.email,
+            updates: { 
+              [updateField]: newStatus,
+              allow_hitting: newPerms.hitting,
+              allow_pitching: newPerms.pitching,
+              allow_body_comp: newPerms.bodyComp,
+              allow_calendar: newPerms.calendar,
+              allow_game: newPerms.game,
+              permissions: newPerms,
+              email: user.email 
+            }
+          });
+        } catch (apiErr) {
+          console.warn("Server API toggleModulePermission fallback to direct cloud storage:", apiErr);
+        }
       }
 
-      // Direct profiles table update fallback if Supabase client available
+      // 3. Direct profiles table update fallback if Supabase client available
       try {
         const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
         if (user.id && isUUID(user.id)) {
           await supabase
             .from('profiles')
-            .update({ [updateField]: newStatus, updated_at: new Date().toISOString() })
+            .update({ [updateField]: newStatus, updated_at: nowIso })
             .eq('id', user.id);
         } else if (user.email) {
           await supabase
             .from('profiles')
-            .update({ [updateField]: newStatus, updated_at: new Date().toISOString() })
+            .update({ [updateField]: newStatus, updated_at: nowIso })
             .eq('email', user.email.toLowerCase().trim());
         }
       } catch (sbErr) {
         console.warn("Direct profiles update non-fatal:", sbErr);
       }
 
-      // Also update local/global storage fallback (ensure all 5 permissions remain intact)
-      try {
-        const globalUsers = await getGlobalUsers();
-        const updatedUsers = globalUsers.map(u => {
-          const matchId = user.id && (u.id === user.id);
-          const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
-          if (matchId || matchEmail) {
-            return {
-              ...u,
-              [updateField]: newStatus,
-              allow_hitting: moduleKey === 'hitting' ? newStatus : (u.allow_hitting !== false && u.permissions?.hitting !== false),
-              allow_pitching: moduleKey === 'pitching' ? newStatus : (u.allow_pitching !== false && u.permissions?.pitching !== false),
-              allow_body_comp: moduleKey === 'bodyComp' ? newStatus : (u.allow_body_comp !== false && u.permissions?.bodyComp !== false),
-              allow_calendar: moduleKey === 'calendar' ? newStatus : (u.allow_calendar !== false && u.permissions?.calendar !== false),
-              allow_game: moduleKey === 'game' ? newStatus : (u.allow_game !== false && u.permissions?.game !== false),
-              permissions: {
-                ...getEffectivePermissions(u),
-                [moduleKey]: newStatus
-              }
-            };
-          }
-          return u;
-        });
-        await saveGlobalUsers(updatedUsers);
-      } catch (err) {
-        console.warn("Local user sync non-fatal:", err);
+      // 4. Update global storage in Supabase Cloud (ensure all 5 permissions remain intact)
+      const globalUsers = await getGlobalUsers();
+      let foundInGlobal = false;
+      const updatedUsers = globalUsers.map(u => {
+        const matchId = user.id && (u.id === user.id);
+        const matchEmail = user.email && u.email?.toLowerCase() === user.email?.toLowerCase();
+        if (matchId || matchEmail) {
+          foundInGlobal = true;
+          return applyPermissionUpdate(u);
+        }
+        return u;
+      });
+      if (!foundInGlobal && user.email) {
+        updatedUsers.push(applyPermissionUpdate(user));
       }
+      await saveGlobalUsers(updatedUsers);
 
       // Notify App to refresh account status in real-time
       window.dispatchEvent(new CustomEvent('accountStatusRefresh'));
 
       setMessage({ type: 'success', text: `「${user.display_name || user.email}」の【${label}】を${actionText}に設定しました。` });
-      await fetchUsers();
       setTimeout(() => setMessage(null), 3000);
     } catch (e) {
       console.error("Toggle module permission error:", e);
@@ -497,13 +634,30 @@ function AdminPanel() {
     if (!confirm(`「${email}」のアカウントを削除しますか？`)) return;
     setLoading(true);
     try {
-      if (serverApiActive && userId) {
-        await callAdminApi('DELETE', { id: userId });
-        setMessage({ type: 'success', text: `「${email}」を削除しました。` });
-        await fetchUsers();
+      const targetId = userId || email;
+      try {
+        await callAdminApi('DELETE', { id: targetId, email });
+      } catch (apiErr) {
+        console.warn("Server API deleteUser fallback to direct storage:", apiErr);
       }
+
+      const globalUsers = await getGlobalUsers();
+      const filtered = globalUsers.filter(u => {
+        const matchId = userId && u.id === userId;
+        const matchEmail = email && u.email?.toLowerCase() === email?.toLowerCase();
+        return !(matchId || matchEmail);
+      });
+      await saveGlobalUsers(filtered);
+      setUsers(prev => prev.filter(u => {
+        const matchId = userId && u.id === userId;
+        const matchEmail = email && u.email?.toLowerCase() === email?.toLowerCase();
+        return !(matchId || matchEmail);
+      }));
+
+      setMessage({ type: 'success', text: `「${email}」を削除しました。` });
     } catch (err) {
       console.error("Delete user error:", err);
+      alert(`アカウントの削除に失敗しました: ${err.message}`);
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(null), 4000);

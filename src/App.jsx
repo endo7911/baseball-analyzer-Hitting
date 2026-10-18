@@ -621,9 +621,10 @@ function App() {
             .single();
           if (pData) {
             latest = {
-              ...(globalInfo || {}),
               ...(user.user_metadata || {}),
-              ...pData
+              ...pData,
+              ...(globalInfo || {}),
+              id: pData.id || user.id
             };
           }
         } catch {}

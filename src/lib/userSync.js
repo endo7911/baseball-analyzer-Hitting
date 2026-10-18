@@ -137,16 +137,22 @@ async function hashUsersForCloud(users) {
 // Fetch all registered users from Supabase Cloud
 export async function getGlobalUsers() {
   let cloudUsers = null;
+  let wasUnencrypted = false;
 
   try {
     const { data, error } = await supabase
       .from('baseball_data')
-      .select('upload_id')
-      .eq('file_name', SYSTEM_USER_FILE_NAME);
+      .select('id, upload_id, created_at')
+      .eq('file_name', SYSTEM_USER_FILE_NAME)
+      .order('created_at', { ascending: false })
+      .limit(1);
 
     if (!error && data && data.length > 0) {
       const raw = data[0].upload_id;
       if (raw) {
+        if (typeof raw === 'string' && !raw.startsWith('enc:v2:')) {
+          wasUnencrypted = true;
+        }
         cloudUsers = await decryptPayload(raw);
       }
     }
@@ -162,7 +168,7 @@ export async function getGlobalUsers() {
     }
   } catch {}
 
-  // Merge: defaults → local → cloud
+  // Merge: defaults → local → cloud (respecting newer updated_at timestamps)
   const userMap = new Map();
 
   DEFAULT_MOCK_USERS.forEach(u => userMap.set(u.email.toLowerCase(), { ...u }));
@@ -176,22 +182,30 @@ export async function getGlobalUsers() {
     });
   }
 
-  // Cloud is authoritative for all fields including hashed password
   if (Array.isArray(cloudUsers)) {
     cloudUsers.forEach(u => {
       if (u && u.email) {
         const key = u.email.toLowerCase();
-        const existing = userMap.get(key) || {};
-        userMap.set(key, { ...existing, ...u });
+        const existing = userMap.get(key);
+        if (!existing) {
+          userMap.set(key, { ...u });
+        } else {
+          const localTime = new Date(existing.updated_at || existing.permissions_updated_at || 0).getTime();
+          const cloudTime = new Date(u.updated_at || u.permissions_updated_at || 0).getTime();
+          if (localTime > cloudTime) {
+            userMap.set(key, { ...u, ...existing });
+          } else {
+            userMap.set(key, { ...existing, ...u });
+          }
+        }
       }
     });
   }
 
   const merged = Array.from(userMap.values());
 
-  // Auto-encrypt and save if cloudUsers was in legacy unencrypted format
-  if (Array.isArray(cloudUsers)) {
-    // If the raw data in cloud wasn't encrypted yet, upgrade it to encrypted
+  // Only upgrade if the raw data in cloud was in legacy unencrypted format
+  if (wasUnencrypted && Array.isArray(cloudUsers)) {
     saveGlobalUsers(merged).catch(() => {});
   }
 
@@ -221,22 +235,34 @@ export async function saveGlobalUsers(usersList) {
 
   // 2. Persist to Supabase Cloud (AES-GCM encrypted payload)
   try {
+    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('baseball_data')
-      .select('file_name')
+      .select('id, file_name')
       .eq('file_name', SYSTEM_USER_FILE_NAME)
+      .order('created_at', { ascending: false })
       .limit(1);
 
-    if (!error && data && data.length > 0) {
-      await supabase
+    let updatedInPlace = false;
+    if (!error && data && data.length > 0 && data[0].id) {
+      const { data: updatedRows, error: updateErr } = await supabase
         .from('baseball_data')
         .update({
           upload_id: encryptedPayload,
-          updated_at: new Date().toISOString()
+          updated_at: nowIso
         })
-        .eq('file_name', SYSTEM_USER_FILE_NAME);
-    } else {
-      await supabase
+        .eq('id', data[0].id)
+        .eq('file_name', SYSTEM_USER_FILE_NAME)
+        .select('id');
+
+      if (!updateErr && Array.isArray(updatedRows) && updatedRows.length > 0) {
+        updatedInPlace = true;
+      }
+    }
+
+    // If RLS blocked UPDATE (0 rows updated) or no row existed yet, insert new authoritative snapshot row
+    if (!updatedInPlace) {
+      const { error: insertErr } = await supabase
         .from('baseball_data')
         .insert([
           {
@@ -246,6 +272,7 @@ export async function saveGlobalUsers(usersList) {
             upload_id: encryptedPayload
           }
         ]);
+      if (insertErr) throw insertErr;
     }
     return true;
   } catch (e) {
@@ -253,4 +280,5 @@ export async function saveGlobalUsers(usersList) {
     return false;
   }
 }
+
 

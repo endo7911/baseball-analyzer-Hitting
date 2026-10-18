@@ -26,12 +26,13 @@ async function getAuthHeaders() {
   } catch {}
   try {
     const rawProfile = sessionStorage.getItem('mockProfile') || localStorage.getItem('mockProfile') || localStorage.getItem('baseball_current_user');
-    if (rawProfile) {
-      const p = typeof rawProfile === 'string' && (rawProfile.startsWith('{') || rawProfile.startsWith('[')) ? JSON.parse(rawProfile) : rawProfile;
-      if (p?.email) {
-        headers['X-Legacy-Admin-Email'] = p.email;
-        headers['X-User-Email'] = p.email;
-      }
+    const rawUser = sessionStorage.getItem('mockUser') || localStorage.getItem('mockUser');
+    const p = rawProfile && typeof rawProfile === 'string' && (rawProfile.startsWith('{') || rawProfile.startsWith('[')) ? JSON.parse(rawProfile) : rawProfile;
+    const u = rawUser && typeof rawUser === 'string' && (rawUser.startsWith('{') || rawUser.startsWith('[')) ? JSON.parse(rawUser) : rawUser;
+    const email = p?.email || u?.email;
+    if (email) {
+      headers['X-Legacy-Admin-Email'] = email;
+      headers['X-User-Email'] = email;
     }
   } catch {}
   return headers;
