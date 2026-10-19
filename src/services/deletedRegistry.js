@@ -36,16 +36,21 @@ export function saveLocalDeletedEntries(entries) {
   }
 }
 
+function normNFC(str) {
+  return String(str || '').normalize('NFC').trim();
+}
+
 /**
  * エントリを DeletedFilesMap にマージする内部ヘルパー
  */
 function mergeEntryIntoMap(map, item) {
   if (!item) return;
   if (typeof item === 'string') {
-    map.set(item, { filename: item, deletedAt: Date.now() });
+    const k = normNFC(item);
+    if (k) map.set(k, { filename: k, deletedAt: Date.now() });
     return;
   }
-  const fname = item.filename || item.file_name;
+  const fname = normNFC(item.filename || item.file_name);
   if (!fname) return;
   const deletedAt = typeof item.deletedAt === 'number'
     ? item.deletedAt
@@ -128,7 +133,8 @@ export async function fetchDeletedFilesMap(client, legacyBaseballRows = []) {
  */
 export async function recordDeletedFile(client, { filename, type = 'any', teamName = 'ALL', deletedBy = null }) {
   if (!filename) return;
-  const cleanName = filename.replace(/^__bodycomp__::/, '');
+  const cleanName = normNFC(filename.replace(/^__bodycomp__::/, ''));
+  const nfcFilename = normNFC(filename);
   const nowMs = Date.now();
   const entry = {
     filename: cleanName,
@@ -139,8 +145,8 @@ export async function recordDeletedFile(client, { filename, type = 'any', teamNa
 
   // 1. ローカルストレージへ即時保存
   const list = getLocalDeletedEntries().filter(item => {
-    const f = typeof item === 'string' ? item : item?.filename;
-    return f !== cleanName && f !== filename;
+    const f = normNFC(typeof item === 'string' ? item : item?.filename);
+    return f !== cleanName && f !== nfcFilename;
   });
   list.push(entry);
   saveLocalDeletedEntries(list);
@@ -176,12 +182,15 @@ export async function recordDeletedFile(client, { filename, type = 'any', teamNa
 export async function removeDeletedFileRecord(client, filename) {
   if (!filename) return;
   const cleanName = filename.replace(/^__bodycomp__::/, '');
+  const nfcFile = normNFC(filename);
+  const nfcClean = normNFC(cleanName);
+  const nfcBody = normNFC(`__bodycomp__::${cleanName}`);
 
   // 1. ローカルストレージから除去
   const list = getLocalDeletedEntries();
   const filtered = list.filter(item => {
-    const f = typeof item === 'string' ? item : item?.filename;
-    return f !== filename && f !== cleanName && f !== `__bodycomp__::${cleanName}`;
+    const f = normNFC(typeof item === 'string' ? item : item?.filename);
+    return f !== nfcFile && f !== nfcClean && f !== nfcBody;
   });
   if (filtered.length !== list.length) {
     saveLocalDeletedEntries(filtered);
@@ -193,7 +202,7 @@ export async function removeDeletedFileRecord(client, filename) {
       await client
         .from(DELETED_REGISTRY_TABLE)
         .delete()
-        .in('file_name', [filename, cleanName, `__bodycomp__::${cleanName}`]);
+        .in('file_name', [filename, cleanName, `__bodycomp__::${cleanName}`, nfcFile, nfcClean, nfcBody]);
     } catch {}
   }
 
@@ -209,8 +218,8 @@ export async function removeDeletedFileRecord(client, filename) {
         for (const row of legacyRows) {
           try {
             const parsed = typeof row.upload_id === 'string' ? JSON.parse(row.upload_id) : row.upload_id;
-            const tFile = parsed?.filename;
-            if (tFile === filename || tFile === cleanName || tFile === `__bodycomp__::${cleanName}`) {
+            const tFile = normNFC(parsed?.filename);
+            if (tFile && (tFile === nfcFile || tFile === nfcClean || tFile === nfcBody)) {
               idsToDelete.push(row.id);
             }
           } catch {}
@@ -228,11 +237,14 @@ export async function removeDeletedFileRecord(client, filename) {
  */
 export function isRowDeletedByRegistry(row, deletedFilesMap, extractRawFilenameFn) {
   if (!row || !deletedFilesMap || deletedFilesMap.size === 0) return false;
-  const rawFname = extractRawFilenameFn
-    ? extractRawFilenameFn(row)
-    : (row.file_name || row._sourceFile || '').replace(/^__bodycomp__::/, '');
-  const cleanFname = rawFname.replace(/^__bodycomp__::/, '');
-  const delEntry = deletedFilesMap.get(cleanFname) || deletedFilesMap.get(rawFname) || deletedFilesMap.get(row.file_name);
+  const rawFname = normNFC(
+    extractRawFilenameFn
+      ? extractRawFilenameFn(row)
+      : (row.file_name || row._sourceFile || '').replace(/^__bodycomp__::/, '')
+  );
+  const cleanFname = normNFC(rawFname.replace(/^__bodycomp__::/, ''));
+  const rowFileNfc = normNFC(row.file_name);
+  const delEntry = deletedFilesMap.get(cleanFname) || deletedFilesMap.get(rawFname) || deletedFilesMap.get(rowFileNfc);
   if (!delEntry) return false;
 
   const rowTeam = row.team_name || 'ALL';

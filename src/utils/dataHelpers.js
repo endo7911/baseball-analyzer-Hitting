@@ -211,11 +211,15 @@ export const getRawDataValue = (row, keyOrKeys) => {
     }
   }
 
+  const isDateQuery = targetKeys.includes('game_date') || targetKeys.includes('日付');
   const rowKeys = Object.keys(row).filter(ak => !SYSTEM_KEYS.includes(ak));
   for (const k of targetKeys) {
     const lowerK = k.toLowerCase();
     const foundKey = rowKeys.find(ak => {
       const lowerAk = ak.toLowerCase();
+      if (isDateQuery && (lowerAk.includes('contact') || lowerAk.includes('インパクト') || lowerAk.includes('hang'))) {
+        return false;
+      }
       if (lowerK.length <= 3) return lowerAk === lowerK;
       return lowerAk === lowerK || lowerAk.startsWith(lowerK) || lowerAk.includes(lowerK);
     });
@@ -431,7 +435,7 @@ export const DEFAULT_DATE_KEYS = [
   'game_date', 'date', '日付', 'Date', 'gameDate', 'Date/Time', 'Pitch Date',
   '日時', '年月日', '測定日', '計測日', '実施日', '試合日', '練習日', '日程',
   '月日', '月/日', '記録日時', '打撃日時', '投球日時', 'スイング日時', '計測日時',
-  'Timestamp', 'Time Stamp', 'Time', 'Created Date', 'Created At', 'date_time',
+  'Timestamp', 'Time Stamp', 'Created Date', 'Created At', 'date_time',
   'PitchDate', 'DATE', 'DATETIME'
 ];
 
@@ -507,8 +511,16 @@ export const parseAnyDate = (dateStr) => {
     return `${currentYear}-${month}-${day}`;
   }
 
+  // 8b. Japanese standalone M月 (Year & Day omitted, e.g. "Blast 9月.csv" -> default to currentYear-MM-01)
+  const jpOnlyMonthMatch = str.match(/(?:^|[^\d])(1[0-2]|0?[1-9])月(?!\s*\d)/);
+  if (jpOnlyMonthMatch) {
+    const month = jpOnlyMonthMatch[1].padStart(2, '0');
+    return `${currentYear}-${month}-01`;
+  }
+
   // 9. English Month (e.g. Sep 14 2026 or May 4 2024)
-  const enMonthMap = {'jan':'01','feb':'02','mar':'03','apr':'04','may':'05','jun':'06','jul':'07','aug':'08','sep':'09','oct':'10','nov':'11','dec':'12'};
+  const enMonthMap = {'jan':'01','feb':'02','mar':'03','apr':'04','may':'05','jun':'06','jul':'07','aug':'07','sep':'09','oct':'10','nov':'11','dec':'12'};
+  enMonthMap.aug = '08';
   const yearMatch = str.match(/\b(20\d{2})\b/);
   const monMatch = str.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i);
   if (yearMatch && monMatch) {
@@ -541,7 +553,8 @@ export const parseAnyDate = (dateStr) => {
     }
   } catch (e) {}
 
-  return str.split('T')[0].split(' ')[0];
+  const head = str.split('T')[0].split(' ')[0];
+  return /^\d{4}-\d{2}-\d{2}$/.test(head) ? head : '';
 };
 
 export const parseDateToTimestamp = (dateStr) => {

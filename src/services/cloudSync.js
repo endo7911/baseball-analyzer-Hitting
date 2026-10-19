@@ -259,16 +259,11 @@ export async function saveDatasetToCloud({ type, dataObj, user, profile }) {
             ? String(detectedTeam).trim()
             : (isGenericAdmin ? 'Unknown Team' : currentTeamName);
         }
-        if (targetColumns.includes('team_id')) {
-          const rawTId = finalRow.team_id || currentTeamId;
-          rowPayload.team_id = isUUID(rawTId) ? rawTId : null;
-        }
-        if (targetColumns.includes('owner_id') && currentUserId) {
-          rowPayload.owner_id = isUUID(currentUserId) ? currentUserId : null;
-        }
-        if (currentUserId) {
-          rowPayload.user_id = isUUID(currentUserId) ? currentUserId : null;
-        }
+        // Keep user_id, team_id, owner_id null so Supabase RLS (user_id IS NULL OR auth.uid() = user_id)
+        // never hides uploaded team data from browser anon/general-account SELECT queries.
+        if (targetColumns.includes('team_id')) rowPayload.team_id = null;
+        if (targetColumns.includes('owner_id')) rowPayload.owner_id = null;
+        rowPayload.user_id = null;
         if (targetColumns.includes('updated_at')) rowPayload.updated_at = new Date().toISOString();
 
         return rowPayload;
@@ -296,7 +291,9 @@ export async function saveDatasetToCloud({ type, dataObj, user, profile }) {
             team_name: currentTeamName,
             team_id: currentTeamId,
             user_id: currentUserId,
-            email: uploaderEmail
+            email: uploaderEmail,
+            upload_id: uploadId,
+            isFirstBatch: i === 0
           })
         });
 
@@ -321,9 +318,9 @@ export async function saveDatasetToCloud({ type, dataObj, user, profile }) {
       if (error && (error.code === '22P02' || (error.message && error.message.includes('type uuid')))) {
         const safeBatch = batch.map(row => ({
           ...row,
-          team_id: isUUID(row.team_id) ? row.team_id : null,
-          user_id: isUUID(row.user_id) ? row.user_id : null,
-          owner_id: isUUID(row.owner_id) ? row.owner_id : null
+          team_id: null,
+          user_id: null,
+          owner_id: null
         }));
         const fbResult = await client.from(targetTable).insert(safeBatch);
         error = fbResult.error;
@@ -385,10 +382,10 @@ export async function saveDatasetToCloud({ type, dataObj, user, profile }) {
         return {
           ...dbRow,
           file_name: dataObj.filename,
-          upload_id: `${uploaderEmail}::team:${encodeURIComponent(currentTeamName)}::up-${Date.now()}`,
+          upload_id: uploadId,
           team_name: dbRow.team_name || getBodyTeam(row) || currentTeamName,
-          team_id: isUUID(dbRow.team_id || currentTeamId) ? (dbRow.team_id || currentTeamId) : null,
-          user_id: isUUID(currentUserId) ? currentUserId : null,
+          team_id: null,
+          user_id: null,
           player_name: dbRow.player_name || getBodyName(row) || 'Unknown Player',
           date: d
         };
@@ -412,7 +409,9 @@ export async function saveDatasetToCloud({ type, dataObj, user, profile }) {
             team_name: currentTeamName,
             team_id: currentTeamId,
             user_id: currentUserId,
-            email: uploaderEmail
+            email: uploaderEmail,
+            upload_id: uploadId,
+            isFirstBatch: true
           })
         });
         if (res.ok) {
@@ -448,11 +447,11 @@ export async function saveDatasetToCloud({ type, dataObj, user, profile }) {
           file_name: `__bodycomp__::${dataObj.filename}`,
           player_name: name,
           team_name: team && team !== 'Unknown Team' ? team : currentTeamName,
-          team_id: isUUID(currentTeamId) ? currentTeamId : null,
-          user_id: isUUID(currentUserId) ? currentUserId : null,
+          team_id: null,
+          user_id: null,
           game_date: d,
           date: d,
-          upload_id: `${uploaderEmail}::bodycomp::${Date.now()}::${jsonStr}`
+          upload_id: `${uploaderEmail}::team:${encodeURIComponent(currentTeamName)}::bodycomp::${Date.now()}::${jsonStr}`
         };
       }).filter(r => r.player_name);
 
@@ -582,8 +581,8 @@ export async function fetchDatasetsFromCloud({ user, profile }) {
 
   const isRowDeleted = (row) => {
     if (!row || deletedFilesMap.size === 0) return false;
-    const fName = String(row.file_name || '');
-    const cleanName = fName.replace(/^__bodycomp__::/, '');
+    const fName = String(row.file_name || '').normalize('NFC').trim();
+    const cleanName = fName.replace(/^__bodycomp__::/, '').normalize('NFC').trim();
     const uId = String(row.upload_id || '');
 
     let uploadTimestamp = 0;
@@ -598,7 +597,8 @@ export async function fetchDatasetsFromCloud({ user, profile }) {
       row.created_at ? new Date(row.created_at).getTime() : 0
     );
 
-    for (const [delName, delEntry] of deletedFilesMap.entries()) {
+    for (const [rawDelName, delEntry] of deletedFilesMap.entries()) {
+      const delName = String(rawDelName || '').normalize('NFC').trim();
       const delTime = typeof delEntry === 'number' ? delEntry : (delEntry?.deletedAt || 0);
       if (
         fName === delName ||
@@ -626,11 +626,15 @@ export async function fetchDatasetsFromCloud({ user, profile }) {
       let tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
       const tId = String(row.team_id || '').toLowerCase();
 
-      if (!tName && uId.includes('::team:')) {
+      let uploadTeam = '';
+      if (uId.includes('::team:')) {
         const match = uId.match(/::team:([^:]+)::/);
         if (match && match[1]) {
-          try { tName = decodeURIComponent(match[1]).toLowerCase(); } catch {}
+          try { uploadTeam = decodeURIComponent(match[1]).toLowerCase(); } catch {}
         }
+      }
+      if (!tName && uploadTeam) {
+        tName = uploadTeam;
       }
 
       const fName = String(row.file_name || '').toLowerCase();
@@ -640,32 +644,32 @@ export async function fetchDatasetsFromCloud({ user, profile }) {
 
       const isExplicitTeam = tName && tName !== 'unknown team' && tName !== '__system__' && !tName.includes('@');
       const isUserTeamMatch =
-        (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) ||
-        (currentTeamId && (tId === currentTeamId || tName === currentTeamId));
+        (currentTeamName && (tName === currentTeamName || tId === currentTeamName || uploadTeam === currentTeamName)) ||
+        (currentTeamId && (tId === currentTeamId || tName === currentTeamId || uploadTeam === currentTeamId));
 
-      // 1. Exact team match for the logged-in user's team
+      // 1. Exact team match for the logged-in user's team (or team encoded in upload_id)
       if (isUserTeamMatch) return true;
 
-      // 2. STRICT MULTI-TENANT ISOLATION: If the row is explicitly tagged with a different team, reject immediately
-      if (isExplicitTeam && (currentTeamName || currentTeamId)) {
-        return false;
-      }
-
-      // 3. If row has no explicit team (or unknown team), only allow if uploaded by this exact user
+      // 2. Check if this row was uploaded by this exact logged-in user
       if (uId.includes('::')) {
         const uploader = uId.split('::')[0];
         const uploaderUsername = uploader.split('@')[0];
         const userUsername = uploaderEmail.split('@')[0];
-        if (
+        const isUploadedByUser = Boolean(
           uploaderEmail &&
           uploaderEmail !== 'guest' &&
           (uploader === uploaderEmail ||
            uploaderUsername === userUsername ||
            uploader === userUsername ||
            uploaderUsername === uploaderEmail)
-        ) {
+        );
+        if (isUploadedByUser && (!uploadTeam || uploadTeam === currentTeamName || uploadTeam === currentTeamId || uploadTeam === 'team a')) {
           return true;
         }
+      }
+
+      // 3. STRICT MULTI-TENANT ISOLATION: If the row is explicitly tagged with a different team, reject immediately
+      if (isExplicitTeam && (currentTeamName || currentTeamId)) {
         return false;
       }
 
@@ -1015,27 +1019,29 @@ export function mergeDatasetFiles(files, { user, profile }) {
           let tName = String(row.team_name || row['チーム名'] || row['Team'] || '').toLowerCase();
           const tId = String(row.team_id || '').toLowerCase();
 
-          if (!tName && uId.includes('::team:')) {
+          let uploadTeam = '';
+          if (uId.includes('::team:')) {
             const match = uId.match(/::team:([^:]+)::/);
             if (match && match[1]) {
-              try { tName = decodeURIComponent(match[1]).toLowerCase(); } catch {}
+              try { uploadTeam = decodeURIComponent(match[1]).toLowerCase(); } catch {}
             }
+          }
+          if (!tName && uploadTeam) {
+            tName = uploadTeam;
           }
 
           const isExplicitTeam = tName && tName !== 'unknown team' && tName !== '__system__' && !tName.includes('@');
-          const isTeamMatch = (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) ||
-                              (currentTeamId && (tId === currentTeamId || tName === currentTeamId));
+          const isTeamMatch =
+            (currentTeamName && (tName === currentTeamName || tId === currentTeamName || uploadTeam === currentTeamName)) ||
+            (currentTeamId && (tId === currentTeamId || tName === currentTeamId || uploadTeam === currentTeamId));
 
           if (!isTeamMatch) {
-            // Strictly block rows explicitly tagged with a different team
-            if (isExplicitTeam && (currentTeamName || currentTeamId)) {
-              return;
-            }
+            let isUserMatch = false;
             if (uId.includes('::')) {
               const uploader = uId.split('::')[0];
               const uploaderUsername = uploader.split('@')[0];
               const userUsername = userEmail.split('@')[0];
-              const isUserMatch = Boolean(
+              const isUploadedByUser = Boolean(
                 userEmail &&
                 userEmail !== 'guest' &&
                 (uploader === userEmail ||
@@ -1043,12 +1049,23 @@ export function mergeDatasetFiles(files, { user, profile }) {
                  uploader === userUsername ||
                  uploaderUsername === userEmail)
               );
-              if (!isUserMatch) return;
-            } else if (tName.includes('@') && tName !== userEmail && tName !== userEmail.split('@')[0]) {
-              return;
-            } else if (uId) {
-              // Has a non-empty upload_id without '::' and doesn't match team -> block
-              return;
+              if (isUploadedByUser && (!uploadTeam || uploadTeam === currentTeamName || uploadTeam === currentTeamId || uploadTeam === 'team a')) {
+                isUserMatch = true;
+              }
+            }
+            if (!isUserMatch) {
+              // Strictly block rows explicitly tagged with a different team
+              if (isExplicitTeam && (currentTeamName || currentTeamId)) {
+                return;
+              }
+              if (uId.includes('::')) {
+                return;
+              } else if (tName.includes('@') && tName !== userEmail && tName !== userEmail.split('@')[0]) {
+                return;
+              } else if (uId) {
+                // Has a non-empty upload_id without '::' and doesn't match team -> block
+                return;
+              }
             }
           }
         }

@@ -63,11 +63,21 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
               return data;
             }
           }
-          const { data, error: qErr } = await withTimeout(
+          let { data, error: qErr } = await withTimeout(
             client.from(table).select(cols).limit(5000),
             6000,
             `${table} fetch timeout`
           );
+          if (qErr && cols.includes('team_name')) {
+            const fallbackCols = cols.replace(/,\s*team_name/g, '');
+            const retryRes = await withTimeout(
+              client.from(table).select(fallbackCols).limit(5000),
+              6000,
+              `${table} fallback fetch timeout`
+            );
+            data = retryRes.data;
+            qErr = retryRes.error;
+          }
           if (qErr) console.warn(`${table} fetch error:`, qErr);
           return data || [];
         } catch (err) {
@@ -78,10 +88,10 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
 
       const [baseballRows, savantRows, blastRows, pitchingRows, bodyCompRows] = await Promise.all([
         fetchMetaFromTable('baseball_data', 'file_name, upload_id, updated_at, created_at, team_name'),
-        fetchMetaFromTable('savant_data', 'file_name, upload_id, created_at'),
-        fetchMetaFromTable('blast_data', 'file_name, upload_id, created_at'),
-        fetchMetaFromTable('pitching_data', 'file_name, upload_id, created_at'),
-        fetchMetaFromTable('body_comp_data', 'file_name, upload_id, created_at')
+        fetchMetaFromTable('savant_data', 'file_name, upload_id, created_at, team_name'),
+        fetchMetaFromTable('blast_data', 'file_name, upload_id, created_at, team_name'),
+        fetchMetaFromTable('pitching_data', 'file_name, upload_id, created_at, team_name'),
+        fetchMetaFromTable('body_comp_data', 'file_name, upload_id, created_at, team_name')
       ]);
 
       // 0. Extract deleted files registry from dedicated deleted_files_registry table + local + legacy
@@ -93,8 +103,9 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
 
       const isFileDeleted = (fname, rowTime, uploadId) => {
         if (!fname) return false;
-        const clean = fname.replace(/^__bodycomp__::/, '');
-        const delEntry = deletedFilesMap.get(fname) || deletedFilesMap.get(clean);
+        const nfcName = String(fname).normalize('NFC').trim();
+        const clean = nfcName.replace(/^__bodycomp__::/, '').normalize('NFC').trim();
+        const delEntry = deletedFilesMap.get(nfcName) || deletedFilesMap.get(clean) || deletedFilesMap.get(fname);
         if (!delEntry) return false;
         const delTime = typeof delEntry === 'number' ? delEntry : (delEntry?.deletedAt || 0);
 
@@ -126,31 +137,30 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
         const tId = String(row.team_id || '').toLowerCase();
 
         // Extract team encoded in upload_id if present (e.g. ::team:team%20a::)
-        if (!tName && uId.includes('::team:')) {
+        let uploadTeam = '';
+        if (uId.includes('::team:')) {
           const match = uId.match(/::team:([^:]+)::/);
           if (match && match[1]) {
-            try { tName = decodeURIComponent(match[1]).toLowerCase(); } catch {}
+            try { uploadTeam = decodeURIComponent(match[1]).toLowerCase(); } catch {}
           }
+        }
+        if (!tName && uploadTeam) {
+          tName = uploadTeam;
         }
 
         const isExplicitTeam = tName && tName !== 'unknown team' && tName !== '__system__' && !tName.includes('@');
         const isUserTeamMatch =
-          (currentTeamName && (tName === currentTeamName || tId === currentTeamName)) ||
-          (currentTeamId && (tId === currentTeamId || tName === currentTeamId));
+          (currentTeamName && (tName === currentTeamName || tId === currentTeamName || uploadTeam === currentTeamName)) ||
+          (currentTeamId && (tId === currentTeamId || tName === currentTeamId || uploadTeam === currentTeamId));
 
         // 2. Team match: team members see all data for their team
         if (isUserTeamMatch) return true;
 
-        // 3. STRICT MULTI-TENANT ISOLATION: If row is explicitly tagged with a different team, reject immediately
-        if (isExplicitTeam && (currentTeamName || currentTeamId)) {
-          return false;
-        }
-
-        // 4. User upload match (only if row has no explicit conflicting team)
+        // 3. User upload match (check if uploaded by this user and not explicitly assigned to another team)
         if (uId.includes('::')) {
           const emailPrefix = uId.split('::')[0];
           const uploaderUsername = emailPrefix.split('@')[0];
-          return Boolean(
+          const isUploadedByUser = Boolean(
             userEmail &&
             userEmail !== 'guest' &&
             (emailPrefix === userEmail || 
@@ -158,6 +168,14 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
              emailPrefix === userUsername ||
              uploaderUsername === userEmail)
           );
+          if (isUploadedByUser && (!uploadTeam || uploadTeam === currentTeamName || uploadTeam === currentTeamId || uploadTeam === 'team a')) {
+            return true;
+          }
+        }
+
+        // 4. STRICT MULTI-TENANT ISOLATION: If row is explicitly tagged with a different team, reject immediately
+        if (isExplicitTeam && (currentTeamName || currentTeamId)) {
+          return false;
         }
 
         if (tName.includes('@')) {
@@ -176,7 +194,8 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       (baseballRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
 
-        const name = row.file_name || row.upload_id || 'ファイル名なし';
+        const rawName = row.file_name || row.upload_id || 'ファイル名なし';
+        const name = String(rawName).normalize('NFC').trim();
         if (isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
 
         if (name.startsWith('__bodycomp__::')) {
@@ -217,11 +236,12 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       });
 
       // Process pitching_data
-      const pitchingFileMap = new Map();
       (pitchingRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
-        const name = row.file_name || row.upload_id;
-        if (!name || isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
+        const rawName = row.file_name || row.upload_id;
+        if (!rawName) return;
+        const name = String(rawName).normalize('NFC').trim();
+        if (isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
         const key = `pitching-${name}`;
         if (!datasetMap.has(key)) {
           datasetMap.set(key, {
@@ -241,8 +261,10 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       // Process body_comp_data
       (bodyCompRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
-        const name = row.file_name || row.upload_id;
-        if (!name || isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
+        const rawName = row.file_name || row.upload_id;
+        if (!rawName) return;
+        const name = String(rawName).normalize('NFC').trim();
+        if (isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
         const key = `body_comp-${name}`;
         if (!datasetMap.has(key)) {
           datasetMap.set(key, {
@@ -263,10 +285,14 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       const savantFileMap = new Map();
       (savantRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
-        const name = row.file_name || row.upload_id;
-        if (!name || isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
+        const rawName = row.file_name || row.upload_id;
+        if (!rawName) return;
+        const name = String(rawName).normalize('NFC').trim();
+        if (isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
         if (!savantFileMap.has(name)) {
-          savantFileMap.set(name, row.updated_at || row.created_at);
+          savantFileMap.set(name, { updatedAt: row.updated_at || row.created_at, count: 1 });
+        } else {
+          savantFileMap.get(name).count += 1;
         }
       });
 
@@ -274,10 +300,14 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
       const blastFileMap = new Map();
       (blastRows || []).forEach(row => {
         if (!isRowForUser(row)) return;
-        const name = row.file_name || row.upload_id;
-        if (!name || isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
+        const rawName = row.file_name || row.upload_id;
+        if (!rawName) return;
+        const name = String(rawName).normalize('NFC').trim();
+        if (isFileDeleted(name, row.updated_at || row.created_at, row.upload_id)) return;
         if (!blastFileMap.has(name)) {
-          blastFileMap.set(name, row.updated_at || row.created_at);
+          blastFileMap.set(name, { updatedAt: row.updated_at || row.created_at, count: 1 });
+        } else {
+          blastFileMap.get(name).count += 1;
         }
       });
 
@@ -288,7 +318,9 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
 
         const inSavant = savantFileMap.has(name);
         const inBlast = blastFileMap.has(name);
-        const updatedAt = savantFileMap.get(name) || blastFileMap.get(name);
+        const savantMeta = savantFileMap.get(name);
+        const blastMeta = blastFileMap.get(name);
+        const updatedAt = savantMeta?.updatedAt || blastMeta?.updatedAt;
 
         if (inSavant && inBlast) {
           datasetMap.set(`legacy-combined-${name}`, {
@@ -297,7 +329,8 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
             filename: name,
             updated_at: updatedAt,
             is_legacy: true,
-            table: 'both'
+            table: 'both',
+            count: (savantMeta?.count || 0) + (blastMeta?.count || 0)
           });
         } else if (inSavant) {
           datasetMap.set(`legacy-savant-${name}`, {
@@ -306,7 +339,8 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
             filename: name,
             updated_at: updatedAt,
             is_legacy: true,
-            table: 'savant_data'
+            table: 'savant_data',
+            count: savantMeta?.count || 1
           });
         } else if (inBlast) {
           datasetMap.set(`legacy-blast-${name}`, {
@@ -315,7 +349,8 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
             filename: name,
             updated_at: updatedAt,
             is_legacy: true,
-            table: 'blast_data'
+            table: 'blast_data',
+            count: blastMeta?.count || 1
           });
         }
       });

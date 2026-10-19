@@ -119,24 +119,35 @@ function LoginPage({ onLogin }) {
       if (!authError && authData?.user) {
         const authUser = authData.user;
 
-        // profiles テーブルからプロファイル情報を取得
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', authUser.id)
-          .single();
+        // profiles テーブルとクラウド同期プロファイル (getGlobalUsers) の両方から最新情報を取得
+        const [{ data: profileData, error: profileError }, globalUsers] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authUser.id)
+            .single(),
+          getGlobalUsers().catch(() => [])
+        ]);
 
         if (profileError && profileError.code !== 'PGRST116') {
           console.warn('Profile fetch warning:', profileError);
         }
 
+        const foundGlobalUser = (globalUsers || []).find(
+          u => u?.email && (
+            u.email.toLowerCase() === targetEmail ||
+            u.email.toLowerCase() === (authUser.email || '').toLowerCase() ||
+            u.email.toLowerCase() === rawInput.toLowerCase()
+          )
+        );
+
         // アカウント停止チェック
-        if (profileData?.is_disabled) {
+        if (profileData?.is_disabled || foundGlobalUser?.is_disabled) {
           await supabase.auth.signOut();
           recordSecurityLog({
             email: targetEmail,
             userId: authUser.id,
-            teamId: profileData?.team_id,
+            teamId: foundGlobalUser?.team_id || profileData?.team_id,
             eventType: 'account_disabled_try',
             status: 'warning',
             details: { reason: 'account_disabled' }
@@ -151,20 +162,48 @@ function LoginPage({ onLogin }) {
           email: authUser.email
         };
 
-        const allowHitting = profileData?.allow_hitting !== false && authUser.user_metadata?.allow_hitting !== false;
-        const allowPitching = profileData?.allow_pitching !== false && authUser.user_metadata?.allow_pitching !== false;
-        const allowBodyComp = profileData?.allow_body_comp !== false && authUser.user_metadata?.allow_body_comp !== false;
-        const allowCalendar = profileData?.allow_calendar !== false && authUser.user_metadata?.allow_calendar !== false && authUser.user_metadata?.permissions?.calendar !== false;
-        const allowGame = profileData?.allow_game !== false && authUser.user_metadata?.allow_game !== false && authUser.user_metadata?.permissions?.game !== false;
+        const allowHitting = foundGlobalUser
+          ? (foundGlobalUser.allow_hitting !== false && foundGlobalUser.permissions?.hitting !== false)
+          : (profileData?.allow_hitting !== false && authUser.user_metadata?.allow_hitting !== false);
+        const allowPitching = foundGlobalUser
+          ? (foundGlobalUser.allow_pitching !== false && foundGlobalUser.permissions?.pitching !== false)
+          : (profileData?.allow_pitching !== false && authUser.user_metadata?.allow_pitching !== false);
+        const allowBodyComp = foundGlobalUser
+          ? (foundGlobalUser.allow_body_comp !== false && foundGlobalUser.permissions?.bodyComp !== false)
+          : (profileData?.allow_body_comp !== false && authUser.user_metadata?.allow_body_comp !== false);
+        const allowCalendar = foundGlobalUser
+          ? (foundGlobalUser.allow_calendar !== false && foundGlobalUser.permissions?.calendar !== false)
+          : (profileData?.allow_calendar !== false && authUser.user_metadata?.allow_calendar !== false && authUser.user_metadata?.permissions?.calendar !== false);
+        const allowGame = foundGlobalUser
+          ? (foundGlobalUser.allow_game !== false && foundGlobalUser.permissions?.game !== false)
+          : (profileData?.allow_game !== false && authUser.user_metadata?.allow_game !== false && authUser.user_metadata?.permissions?.game !== false);
+
+        const resolvedTeamName =
+          foundGlobalUser?.team_name ||
+          foundGlobalUser?.team_id ||
+          (profileData?.team_name && profileData.team_name !== 'Team A' ? profileData.team_name : '') ||
+          (profileData?.team_id && profileData.team_id !== 'Team A' ? profileData.team_id : '') ||
+          authUser.user_metadata?.team_name ||
+          authUser.user_metadata?.team_id ||
+          profileData?.team_name ||
+          profileData?.team_id ||
+          'Team A';
+
+        const resolvedTeamId =
+          foundGlobalUser?.team_id ||
+          foundGlobalUser?.team_name ||
+          (profileData?.team_id && profileData.team_id !== 'Team A' ? profileData.team_id : '') ||
+          authUser.user_metadata?.team_id ||
+          resolvedTeamName;
 
         const profileObj = {
           id: authUser.id,
           email: authUser.email,
-          username: profileData?.username || rawInput,
-          display_name: profileData?.display_name || profileData?.username || rawInput,
-          role: profileData?.role || authUser.user_metadata?.role || 'user',
-          team_id: profileData?.team_id || authUser.user_metadata?.team_id || 'Team A',
-          team_name: profileData?.team_name || profileData?.team_id || 'Team A',
+          username: foundGlobalUser?.username || profileData?.username || rawInput,
+          display_name: foundGlobalUser?.display_name || profileData?.display_name || profileData?.username || rawInput,
+          role: foundGlobalUser?.role || profileData?.role || authUser.user_metadata?.role || 'user',
+          team_id: resolvedTeamId,
+          team_name: resolvedTeamName,
           is_disabled: false,
           allow_hitting: allowHitting,
           allow_pitching: allowPitching,
@@ -181,7 +220,8 @@ function LoginPage({ onLogin }) {
         };
 
         // 一時パスワードでのログインか確認
-        if (profileData?.temp_password_info?.is_temporary || profileData?.temp_password_info?.is_initial) {
+        const tempPwInfo = foundGlobalUser?.temp_password_info || profileData?.temp_password_info;
+        if (tempPwInfo?.is_temporary || tempPwInfo?.is_initial) {
           recordSecurityLog({
             email: userObj.email,
             userId: userObj.id,

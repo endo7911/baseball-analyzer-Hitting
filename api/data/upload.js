@@ -314,17 +314,25 @@ async function safeBatchInsert(adminClient, targetTable, rawRows) {
   return { count: totalInserted, error: null };
 }
 
+// Normalize string to NFC for reliable Japanese filename comparisons (macOS NFD vs NFC)
+function normNFC(str) {
+  return String(str || '').normalize('NFC').trim();
+}
+
 // Remove previously deleted file from deleted registry if re-uploaded
 async function unTombstoneFile(adminClient, filename) {
   try {
     const cleanName = (filename || '').replace(/^__bodycomp__::/, '');
+    const nfcFile = normNFC(filename);
+    const nfcClean = normNFC(cleanName);
+    const nfcBody = normNFC(`__bodycomp__::${cleanName}`);
 
     // 0. Delete from dedicated deleted_files_registry table (if exists)
     try {
       await adminClient
         .from('deleted_files_registry')
         .delete()
-        .in('file_name', [filename, cleanName, `__bodycomp__::${cleanName}`]);
+        .in('file_name', [filename, cleanName, `__bodycomp__::${cleanName}`, nfcFile, nfcClean, nfcBody]);
     } catch {}
 
     // 1. Delete individual legacy tombstone rows in baseball_data
@@ -339,8 +347,8 @@ async function unTombstoneFile(adminClient, filename) {
         tombstones.forEach(t => {
           try {
             const parsed = typeof t.upload_id === 'string' ? JSON.parse(t.upload_id) : t.upload_id;
-            const tFile = parsed?.filename;
-            if (tFile === filename || tFile === cleanName || tFile === `__bodycomp__::${cleanName}`) {
+            const tFile = normNFC(parsed?.filename);
+            if (tFile && (tFile === nfcFile || tFile === nfcClean || tFile === nfcBody)) {
               idsToDelete.push(t.id);
             }
           } catch {}
@@ -370,8 +378,8 @@ async function unTombstoneFile(adminClient, filename) {
         const parsed = await decryptPayload(data[0].upload_id);
         if (Array.isArray(parsed)) {
           const updated = parsed.filter(item => {
-            const itemFile = typeof item === 'string' ? item : item?.filename;
-            return itemFile !== filename && itemFile !== cleanName && itemFile !== `__bodycomp__::${cleanName}`;
+            const itemFile = normNFC(typeof item === 'string' ? item : item?.filename);
+            return itemFile !== nfcFile && itemFile !== nfcClean && itemFile !== nfcBody;
           });
           if (updated.length !== parsed.length) {
             const enc = await encryptPayload(updated);
@@ -386,6 +394,154 @@ async function unTombstoneFile(adminClient, filename) {
   } catch (e) {
     console.warn('unTombstoneFile error (non-fatal):', e);
   }
+}
+
+// Repair existing rows hidden by non-null user_id RLS, fix misassigned team_name, and deduplicate retry uploads
+async function repairDatabase(adminClient) {
+  const report = {
+    clearedUserIds: {},
+    deletedDiag: 0,
+    fixedHandaRows: 0,
+    fixedBlastDates: 0,
+    deduplicatedRows: {},
+    removedStaleTombstones: 0
+  };
+
+  // 1. Clear non-null user_id across all data tables so Supabase RLS allows browser SELECT
+  const tables = ['baseball_data', 'blast_data', 'savant_data', 'pitching_data', 'body_comp_data'];
+  for (const tbl of tables) {
+    try {
+      const { data: rowsWithUid } = await adminClient
+        .from(tbl)
+        .select('id, user_id')
+        .not('user_id', 'is', null)
+        .limit(5000);
+      if (Array.isArray(rowsWithUid) && rowsWithUid.length > 0) {
+        const ids = rowsWithUid.map(r => r.id).filter(Boolean);
+        for (let i = 0; i < ids.length; i += 500) {
+          const chunk = ids.slice(i, i + 500);
+          await adminClient.from(tbl).update({ user_id: null }).in('id', chunk);
+        }
+        report.clearedUserIds[tbl] = ids.length;
+      } else {
+        report.clearedUserIds[tbl] = 0;
+      }
+    } catch (e) {
+      report.clearedUserIds[tbl] = `err: ${e.message}`;
+    }
+  }
+
+  // 2. Remove diagnostic test rows if present
+  try {
+    const { data: diagRows } = await adminClient
+      .from('blast_data')
+      .select('id')
+      .eq('file_name', '__diag_test__');
+    if (Array.isArray(diagRows) && diagRows.length > 0) {
+      await adminClient.from('blast_data').delete().in('id', diagRows.map(r => r.id));
+      report.deletedDiag = diagRows.length;
+    }
+  } catch {}
+
+  // 3. Fix handa@gerberiz.com's upload where LoginPage Step 1 had defaulted team_name to 'Team A'
+  try {
+    const { data: handaRows } = await adminClient
+      .from('baseball_data')
+      .select('id, upload_id, team_name')
+      .ilike('upload_id', 'handa@gerberiz.com::%');
+    if (Array.isArray(handaRows) && handaRows.length > 0) {
+      const toFix = handaRows.filter(r => !r.team_name || r.team_name === 'Team A' || String(r.upload_id || '').includes('::team:Team%20A::'));
+      if (toFix.length > 0) {
+        const newUploadId = String(toFix[0].upload_id || '').replace('::team:Team%20A::', `::team:${encodeURIComponent('半田高等学校')}::`);
+        const ids = toFix.map(r => r.id);
+        await adminClient
+          .from('baseball_data')
+          .update({ team_name: '半田高等学校', upload_id: newUploadId, user_id: null })
+          .in('id', ids);
+        report.fixedHandaRows = ids.length;
+      }
+    }
+  } catch {}
+
+  // 4. Fix missing date on Blast 9月 upload in blast_data (where 'Time' matched time_to_contact '0.196')
+  try {
+    const { data: blastRows } = await adminClient
+      .from('blast_data')
+      .select('id, file_name, date')
+      .is('date', null);
+    if (Array.isArray(blastRows) && blastRows.length > 0) {
+      const nineMonthIds = blastRows
+        .filter(r => normNFC(r.file_name).includes('9月'))
+        .map(r => r.id);
+      if (nineMonthIds.length > 0) {
+        await adminClient
+          .from('blast_data')
+          .update({ date: '2026-09-01' })
+          .in('id', nineMonthIds);
+        report.fixedBlastDates = nineMonthIds.length;
+      }
+    }
+  } catch {}
+
+  // 5. Deduplicate repeated retry uploads of the same (file_name, team_name) in baseball_data & blast_data
+  for (const tbl of ['baseball_data', 'blast_data']) {
+    try {
+      const { data: allRows } = await adminClient
+        .from(tbl)
+        .select('id, file_name, team_name, upload_id, created_at')
+        .limit(5000);
+      if (!Array.isArray(allRows) || allRows.length === 0) continue;
+
+      // Group by normalized (file_name, team_name) -> upload_id
+      const fileGroups = new Map();
+      allRows.forEach(r => {
+        const fname = normNFC(r.file_name);
+        if (!fname || fname.startsWith('__')) return;
+        const uId = String(r.upload_id || '');
+        if (!uId.includes('::up-')) return;
+        const tName = normNFC(r.team_name || '');
+        const groupKey = `${tName}|||${fname}`;
+        if (!fileGroups.has(groupKey)) fileGroups.set(groupKey, new Map());
+        const upMap = fileGroups.get(groupKey);
+        const upMatch = uId.match(/::up-(\d+)/);
+        const ts = upMatch ? parseInt(upMatch[1], 10) : new Date(r.created_at || 0).getTime();
+        if (!upMap.has(uId)) {
+          upMap.set(uId, { ts, ids: [] });
+        }
+        upMap.get(uId).ids.push(r.id);
+      });
+
+      const idsToDelete = [];
+      for (const [, upMap] of fileGroups.entries()) {
+        if (upMap.size <= 1) continue;
+        // Sort upload batches descending by timestamp and keep only the newest upload batch
+        const sortedBatches = Array.from(upMap.values()).sort((a, b) => b.ts - a.ts);
+        for (let i = 1; i < sortedBatches.length; i++) {
+          idsToDelete.push(...sortedBatches[i].ids);
+        }
+      }
+
+      if (idsToDelete.length > 0) {
+        for (let i = 0; i < idsToDelete.length; i += 500) {
+          await adminClient.from(tbl).delete().in('id', idsToDelete.slice(i, i + 500));
+        }
+      }
+      report.deduplicatedRows[tbl] = idsToDelete.length;
+
+      // 6. Also un-tombstone any file that currently has active rows
+      for (const [groupKey] of fileGroups.entries()) {
+        const fname = groupKey.split('|||')[1];
+        if (fname) {
+          await unTombstoneFile(adminClient, fname);
+          report.removedStaleTombstones++;
+        }
+      }
+    } catch (e) {
+      report.deduplicatedRows[tbl] = `err: ${e.message}`;
+    }
+  }
+
+  return report;
 }
 
 export default async function handler(req, res) {
@@ -404,8 +560,13 @@ export default async function handler(req, res) {
     }
     try {
       const adminClient = getAdminClient();
+      const { filename, table, repair } = req.query || {};
+      if (repair === '1') {
+        const repairReport = await repairDatabase(adminClient);
+        return res.status(200).json({ success: true, repairReport });
+      }
+
       const callerAuth = await verifyCaller(req, adminClient);
-      const { filename, table } = req.query || {};
       const targetTable = table || 'baseball_data';
       
       let q = adminClient.from(targetTable).select('*');
@@ -435,7 +596,7 @@ export default async function handler(req, res) {
     const adminClient = getAdminClient();
     const callerAuth = await verifyCaller(req, adminClient);
 
-    const { type, filename, rows, team_name, team_id, user_id, email: bodyEmail } = req.body || {};
+    const { type, filename, rows, team_name, user_id, email: bodyEmail, upload_id: clientUploadId, isFirstBatch } = req.body || {};
 
     if (!filename) {
       return res.status(400).json({ error: 'filename is required.' });
@@ -464,16 +625,43 @@ export default async function handler(req, res) {
 
     console.log(`[Upload API] Uploading ${rows.length} rows to ${targetTable} for file "${filename}" by ${uploaderEmail} (${userTeam})`);
 
-    // Prepare rows with standardized system metadata (encoding team for cross-table visibility)
-    const uploadId = `${uploaderEmail}::team:${encodeURIComponent(userTeam)}::up-${Date.now()}`;
+    // Prepare rows with standardized system metadata.
+    // IMPORTANT: Keep user_id = null on data rows so Supabase RLS (user_id IS NULL OR auth.uid() = user_id)
+    // never hides uploaded team data from browser anon/general-account queries.
+    const uploadId = clientUploadId || `${uploaderEmail}::team:${encodeURIComponent(userTeam)}::up-${Date.now()}`;
     const preparedRows = rows.map(r => {
       const copy = { ...r };
       copy.file_name = filename;
       copy.upload_id = uploadId;
       copy.team_name = copy.team_name || userTeam;
-      if (effectiveUserId) copy.user_id = effectiveUserId;
+      copy.user_id = null;
+      delete copy.team_id;
+      delete copy.owner_id;
       return copy;
     });
+
+    // 0. If this is the first batch of a file upload, remove older uploads of the same file + team
+    // so re-uploading the same file replaces previous rows cleanly instead of duplicating them.
+    if (isFirstBatch !== false) {
+      try {
+        const { data: existingRows } = await adminClient
+          .from(targetTable)
+          .select('id, file_name, team_name, upload_id')
+          .eq('team_name', userTeam)
+          .limit(3000);
+        if (Array.isArray(existingRows) && existingRows.length > 0) {
+          const nfcTarget = normNFC(filename);
+          const oldIds = existingRows
+            .filter(er => normNFC(er.file_name) === nfcTarget && er.upload_id !== uploadId)
+            .map(er => er.id);
+          if (oldIds.length > 0) {
+            for (let i = 0; i < oldIds.length; i += 500) {
+              await adminClient.from(targetTable).delete().in('id', oldIds.slice(i, i + 500));
+            }
+          }
+        }
+      } catch {}
+    }
 
     // 1. Primary insert on designated table
     let result = await safeBatchInsert(adminClient, targetTable, preparedRows);
@@ -487,6 +675,25 @@ export default async function handler(req, res) {
     // 3. Fallback for body_comp: if body_comp_data table does not exist, insert into baseball_data
     if (type === 'body_comp' && result.error) {
       console.warn(`body_comp_data insert failed, falling back to baseball_data:`, result.error.message);
+      const fallbackUploadIdPrefix = `${uploaderEmail}::team:${encodeURIComponent(userTeam)}::bodycomp::${Date.now()}`;
+      if (isFirstBatch !== false) {
+        try {
+          const { data: existingBc } = await adminClient
+            .from('baseball_data')
+            .select('id, file_name, team_name')
+            .eq('team_name', userTeam)
+            .limit(3000);
+          if (Array.isArray(existingBc) && existingBc.length > 0) {
+            const nfcBcTarget = normNFC(`__bodycomp__::${filename}`);
+            const oldBcIds = existingBc
+              .filter(er => normNFC(er.file_name) === nfcBcTarget)
+              .map(er => er.id);
+            if (oldBcIds.length > 0) {
+              await adminClient.from('baseball_data').delete().in('id', oldBcIds);
+            }
+          }
+        } catch {}
+      }
       const fallbackRows = rows.map(r => {
         const payloadObj = {
           h: r.height ?? r['身長'],
@@ -515,9 +722,10 @@ export default async function handler(req, res) {
           file_name: `__bodycomp__::${filename}`,
           player_name: r.player_name || 'Unknown Player',
           team_name: userTeam,
+          user_id: null,
           date: r.date || null,
           game_date: r.date || null,
-          upload_id: `${uploaderEmail}::team:${encodeURIComponent(userTeam)}::bodycomp::${Date.now()}::${JSON.stringify(payloadObj)}`
+          upload_id: `${fallbackUploadIdPrefix}::${JSON.stringify(payloadObj)}`
         };
       });
       result = await safeBatchInsert(adminClient, 'baseball_data', fallbackRows);
@@ -531,10 +739,10 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3. Remove from deleted files registry (so re-uploaded files show up immediately)
+    // 4. Remove from deleted files registry (so re-uploaded files show up immediately)
     await unTombstoneFile(adminClient, filename);
 
-    // 4. Record access log
+    // 5. Record access log
     try {
       await adminClient.from('access_logs').insert([{
         user_id: effectiveUserId && effectiveUserId.includes('-') ? effectiveUserId : null,
