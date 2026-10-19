@@ -405,7 +405,7 @@ async function unTombstoneFile(adminClient, filename) {
 }
 
 // Repair existing rows hidden by non-null user_id RLS, fix misassigned team_name, and deduplicate retry uploads
-async function repairDatabase(adminClient) {
+async function repairDatabase(adminClient, { verifyTemplates = false } = {}) {
   const report = {
     clearedUserIds: {},
     deletedDiag: 0,
@@ -456,247 +456,246 @@ async function repairDatabase(adminClient) {
     } catch {}
   }
 
-  // 2b. End-to-end fictional template verification (maps template headers -> inserts to Supabase -> reads back -> verifies all columns -> deletes fictional files)
-  try {
-    const mapTemplateRowToDb = (rawRow, targetTable, targetColumns, fileName, uploadId) => {
-      const filteredRow = {};
-      Object.keys(rawRow).forEach(key => {
-        let targetKey = key;
-        const normalizedKey = key.trim();
-        const lowerKey = normalizedKey.toLowerCase();
-        let mapKey = Object.keys(COLUMN_MAP).find(k => normalizedKey === k || lowerKey === k.toLowerCase());
-        if (mapKey) {
-          targetKey = COLUMN_MAP[mapKey];
-        } else if (targetColumns.includes(normalizedKey)) {
-          targetKey = normalizedKey;
-        } else if (targetColumns.includes(lowerKey)) {
-          targetKey = lowerKey;
-        } else {
-          mapKey = Object.keys(COLUMN_MAP).find(k => {
-            const isAscii = /^[a-zA-Z0-9\s_()%-]+$/.test(k);
-            const minLen = isAscii ? 4 : 2;
-            return k.length >= minLen && (normalizedKey.includes(k) || lowerKey.includes(k.toLowerCase()));
-          });
-          if (mapKey) targetKey = COLUMN_MAP[mapKey];
+  // 2b. End-to-end fictional template verification (only when verifyTemplates is true)
+  if (verifyTemplates) {
+    try {
+      const mapTemplateRowToDb = (rawRow, targetTable, targetColumns, fileName, uploadId) => {
+        const filteredRow = {};
+        Object.keys(rawRow).forEach(key => {
+          let targetKey = key;
+          const normalizedKey = key.trim();
+          const lowerKey = normalizedKey.toLowerCase();
+          let mapKey = Object.keys(COLUMN_MAP).find(k => normalizedKey === k || lowerKey === k.toLowerCase());
+          if (mapKey) {
+            targetKey = COLUMN_MAP[mapKey];
+          } else if (targetColumns.includes(normalizedKey)) {
+            targetKey = normalizedKey;
+          } else if (targetColumns.includes(lowerKey)) {
+            targetKey = lowerKey;
+          } else {
+            mapKey = Object.keys(COLUMN_MAP).find(k => {
+              const isAscii = /^[a-zA-Z0-9\s_()%-]+$/.test(k);
+              const minLen = isAscii ? 4 : 2;
+              return k.length >= minLen && (normalizedKey.includes(k) || lowerKey.includes(k.toLowerCase()));
+            });
+            if (mapKey) targetKey = COLUMN_MAP[mapKey];
+          }
+          filteredRow[targetKey] = rawRow[key];
+        });
+
+        if (targetTable === 'blast_data' || targetTable === 'baseball_data') {
+          filteredRow.player_name = filteredRow.player_name || filteredRow.batter_name;
+          filteredRow.batter_name = filteredRow.batter_name || filteredRow.player_name;
+        } else if (targetTable === 'savant_data') {
+          filteredRow.batter_name = filteredRow.batter_name || filteredRow.player_name;
+          filteredRow.player_name = filteredRow.player_name || filteredRow.batter_name;
+        } else if (targetTable === 'pitching_data') {
+          filteredRow.pitcher_name = filteredRow.pitcher_name || filteredRow.player_name;
+          filteredRow.player_name = filteredRow.player_name || filteredRow.pitcher_name;
         }
-        filteredRow[targetKey] = rawRow[key];
-      });
 
-      if (targetTable === 'blast_data' || targetTable === 'baseball_data') {
-        filteredRow.player_name = filteredRow.player_name || filteredRow.batter_name;
-        filteredRow.batter_name = filteredRow.batter_name || filteredRow.player_name;
-      } else if (targetTable === 'savant_data') {
-        filteredRow.batter_name = filteredRow.batter_name || filteredRow.player_name;
-        filteredRow.player_name = filteredRow.player_name || filteredRow.batter_name;
-      } else if (targetTable === 'pitching_data') {
-        filteredRow.pitcher_name = filteredRow.pitcher_name || filteredRow.player_name;
-        filteredRow.player_name = filteredRow.player_name || filteredRow.pitcher_name;
-      }
-
-      const d = filteredRow.date || filteredRow.game_date;
-      if (d) {
-        filteredRow.date = d;
-        filteredRow.game_date = d;
-      }
-      if (targetTable === 'body_comp_data' && filteredRow.height && filteredRow.weight && filteredRow.body_fat_pct != null && filteredRow.ffmi == null) {
-        const m = filteredRow.height / 100;
-        filteredRow.ffmi = Math.round(((filteredRow.weight * (1 - filteredRow.body_fat_pct / 100)) / (m * m)) * 100) / 100;
-      }
-
-      const payload = {};
-      targetColumns.forEach(col => {
-        if (filteredRow[col] !== undefined && filteredRow[col] !== null) {
-          payload[col] = filteredRow[col];
+        const d = filteredRow.date || filteredRow.game_date;
+        if (d) {
+          filteredRow.date = d;
+          filteredRow.game_date = d;
         }
-      });
-      payload.file_name = fileName;
-      payload.upload_id = uploadId;
-      payload.team_name = filteredRow.team_name || '架空テスト高校';
-      payload.user_id = null;
-      return payload;
-    };
+        if (targetTable === 'body_comp_data' && filteredRow.height && filteredRow.weight && filteredRow.body_fat_pct != null && filteredRow.ffmi == null) {
+          const m = filteredRow.height / 100;
+          filteredRow.ffmi = Math.round(((filteredRow.weight * (1 - filteredRow.body_fat_pct / 100)) / (m * m)) * 100) / 100;
+        }
 
-    const ts = Date.now();
-    const templateSuite = [
-      {
-        name: 'combined (打撃統合テンプレ: 英語・日本語ヘッダー)',
-        table: 'baseball_data',
-        columns: COMBINED_COLUMNS,
-        fileName: `__fictional_template_test_combined_${ts}.csv`,
-        rawRows: [
-          // 1. 打撃データ入力フォーマット_統合データ.csv (English headers)
-          { Date: '2026-09-01', 'Player Name': '架空 太郎', Team: '架空テスト高校', Grade: '3年', 'Bat Speed': 142.5, 'Exit Velocity': 155.0, 'Launch Angle': 24.0, Direction: -12.5, Distance: 110, 'Attack Angle': 12.5, 'Time to Contact': 0.15, 'On Plane Efficiency': 78.5, 'Peak Hand Speed': 35.0, 'Pitch Speed': 138.0 },
-          // 2. 連動テスト_打撃統合データ.csv (Japanese headers)
-          { '日付': '2026-09-02', 'チーム名': '架空テスト高校', '選手名': '架空 次郎', '学年': '2年', 'スイング速度': 135.2, '打球速度': 148.0, '打球角度': 21.5, '打球方向': 8.2, '飛距離': 102.0, 'アッパー': 11.0, 'スイング時間': 0.14, 'オンプレーン効率': 81.0, '手の最大速度': 33.5, '球速': 134.0 }
-        ],
-        expectedChecks: [
-          { player_name: '架空 太郎', date: '2026-09-01', team_name: '架空テスト高校', grade: '3年', bat_speed: 142.5, launch_speed: 155, launch_angle: 24, hc_x: -12.5, hit_distance_sc: 110, attack_angle: 12.5, time_to_contact: 0.15, on_plane_efficiency: 78.5, peak_hand_speed: 35, release_speed: 138 },
-          { player_name: '架空 次郎', date: '2026-09-02', team_name: '架空テスト高校', grade: '2年', bat_speed: 135.2, launch_speed: 148, launch_angle: 21.5, hc_x: 8.2, hit_distance_sc: 102, attack_angle: 11, time_to_contact: 0.14, on_plane_efficiency: 81, peak_hand_speed: 33.5, release_speed: 134 }
-        ]
-      },
-      {
-        name: 'blast (Blast打撃テンプレ: 英語・日本語ヘッダー)',
-        table: 'blast_data',
-        columns: BLAST_COLUMNS,
-        fileName: `__fictional_template_test_blast_${ts}.csv`,
-        rawRows: [
-          // 1. 打撃データ入力フォーマット_Blast.csv (English headers)
-          { Date: '2026-09-01', 'Player Name': '架空 太郎', 'Bat Speed': 142.5, 'Attack Angle': 12.5, 'On Plane Efficiency': 78.5, 'Connection Score': 60, 'Rotation Score': 65, 'Time to Contact': 0.15, 'Peak Hand Speed': 35.0, Power: 4.2, 'Vertical Bat Angle': 30.0 },
-          // 2. Japanese Blast headers
-          { '日付': '2026-09-02', '選手名': '架空 次郎', 'スイング速度': 138.0, 'アタックアングル': 10.5, 'オンプレーン効率': 80.0, 'コネクションスコア': 62, 'ローテーションスコア': 68, 'スイング時間': 0.14, '手の最大速度': 34.0, 'パワー': 3.9, '垂直バット角度': 28.5 }
-        ],
-        expectedChecks: [
-          { player_name: '架空 太郎', date: '2026-09-01', bat_speed: 142.5, attack_angle: 12.5, on_plane_efficiency: 78.5, connection_score: 60, rotation_score: 65, time_to_contact: 0.15, peak_hand_speed: 35, power: 4.2, vertical_bat_angle: 30 },
-          { player_name: '架空 次郎', date: '2026-09-02', bat_speed: 138, attack_angle: 10.5, on_plane_efficiency: 80, connection_score: 62, rotation_score: 68, time_to_contact: 0.14, peak_hand_speed: 34, power: 3.9, vertical_bat_angle: 28.5 }
-        ]
-      },
-      {
-        name: 'savant (Rapsodo打撃テンプレ: 英語・日本語ヘッダー)',
-        table: 'savant_data',
-        columns: SAVANT_COLUMNS,
-        fileName: `__fictional_template_test_savant_${ts}.csv`,
-        rawRows: [
-          // 1. 打撃データ入力フォーマット_Rapsodo打撃.csv (English headers)
-          { Date: '2026-09-01', 'Player Name': '架空 太郎', Team: '架空テスト高校', 'Exit Velocity': 155.0, 'Launch Angle': 24.0, Distance: 110, Direction: -12.5 },
-          // 2. Japanese Rapsodo hitting headers
-          { '日付': '2026-09-02', '選手名': '架空 次郎', 'チーム名': '架空テスト高校', '打球速度': 149.5, '打球角度': 19.0, '飛距離': 98.5, '打球方向': 5.0 }
-        ],
-        expectedChecks: [
-          { batter_name: '架空 太郎', game_date: '2026-09-01', team_name: '架空テスト高校', launch_speed: 155, launch_angle: 24, hit_distance_sc: 110, hc_x: -12.5 },
-          { batter_name: '架空 次郎', game_date: '2026-09-02', team_name: '架空テスト高校', launch_speed: 149.5, launch_angle: 19, hit_distance_sc: 98.5, hc_x: 5 }
-        ]
-      },
-      {
-        name: 'savant_pitching (Rapsodo投球テンプレ: 英語・日本語ヘッダー)',
-        table: 'pitching_data',
-        columns: PITCHING_COLUMNS,
-        fileName: `__fictional_template_test_pitching_${ts}.csv`,
-        rawRows: [
-          // 1. 投球データ入力フォーマット_Rapsodo投球.csv (English headers)
-          { Date: '2026-09-01', 'Pitcher Name': '架空 投手一', Team: '架空テスト高校', 'Pitch Type': 'Fastball', 'Pitch Speed': 145.0, 'Spin Rate': 2250, 'Spin Axis': '1:15', 'VB (trajectory)': 42.5, 'HB (trajectory)': 15.2, 'Release Height': 1.80, 'Release Side': 0.45 },
-          // 2. 連動テスト_投球データ.csv (Japanese headers incl. リリース横)
-          { '日付': '2026-09-02', 'チーム名': '架空テスト高校', '投手名': '架空 投手二', '学年': '3年', '球種': 'Slider', '球速': 128.5, '回転数': 2420, '回転軸': '9:42', '縦変化量': -5.0, '横変化量': -24.5, '回転効率': 54.0, 'リリース高度': 1.80, 'リリース横': 0.44 }
-        ],
-        expectedChecks: [
-          { pitcher_name: '架空 投手一', date: '2026-09-01', team_name: '架空テスト高校', pitch_type: 'Fastball', release_speed: 145, release_spin_rate: 2250, spin_axis: '1:15', vb_traj: 42.5, hb_traj: 15.2, release_pos_z: 1.8, release_pos_x: 0.45 },
-          { pitcher_name: '架空 投手二', date: '2026-09-02', team_name: '架空テスト高校', pitch_type: 'Slider', release_speed: 128.5, release_spin_rate: 2420, spin_axis: '9:42', vb_traj: -5, hb_traj: -24.5, spin_efficiency: 54, release_pos_z: 1.8, release_pos_x: 0.44 }
-        ]
-      },
-      {
-        name: 'body_comp (体組成テンプレ: 日本語・英語ヘッダー)',
-        table: 'body_comp_data',
-        columns: BODY_COMP_COLUMNS,
-        fileName: `__fictional_template_test_bodycomp_${ts}.csv`,
-        rawRows: [
-          // 1. テスト体組成データ.csv (Japanese headers)
-          { '日付': '2026-09-01', 'チーム名': '架空テスト高校', '選手名': '架空 太郎', '身長': 178.0, '体重': 78.5, '筋肉量': 62.0, '体脂肪率': 14.2, '基礎代謝量': 1750, 'BMI': 24.8, '体幹': 30.2, '左腕': 3.8, '右腕': 4.1, '左足': 9.8, '右足': 10.1 },
-          // 2. English body comp headers
-          { Date: '2026-09-02', Team: '架空テスト高校', 'Player Name': '架空 次郎', Height: 175.0, Weight: 73.0, 'Muscle Mass': 58.0, 'Body Fat': 14.8, BMR: 1680, BMI: 23.8, Trunk: 28.2, 'Left Arm': 3.5, 'Right Arm': 3.7, 'Left Leg': 9.2, 'Right Leg': 9.4 }
-        ],
-        expectedChecks: [
-          { player_name: '架空 太郎', date: '2026-09-01', team_name: '架空テスト高校', height: 178, weight: 78.5, muscle_mass: 62, body_fat_pct: 14.2, bmr: 1750, bmi: 24.8, trunk_muscle: 30.2, left_arm_muscle: 3.8, right_arm_muscle: 4.1, left_leg_muscle: 9.8, right_leg_muscle: 10.1 },
-          { player_name: '架空 次郎', date: '2026-09-02', team_name: '架空テスト高校', height: 175, weight: 73, muscle_mass: 58, body_fat_pct: 14.8, bmr: 1680, bmi: 23.8, trunk_muscle: 28.2, left_arm_muscle: 3.5, right_arm_muscle: 3.7, left_leg_muscle: 9.2, right_leg_muscle: 9.4 }
-        ]
-      }
-    ];
-
-    report.templateVerification = [];
-    for (const tCase of templateSuite) {
-      const uploadId = `verify@test.local::team:${encodeURIComponent('架空テスト高校')}::up-${ts}`;
-      const dbPayloads = tCase.rawRows.map(r => mapTemplateRowToDb(r, tCase.table, tCase.columns, tCase.fileName, uploadId));
-      let caseResult = {
-        template: tCase.name,
-        table: tCase.table,
-        fileName: tCase.fileName,
-        insertedCount: 0,
-        fetchedCount: 0,
-        allColumnsMatched: false,
-        mismatches: [],
-        cleanedUp: false
+        const payload = {};
+        targetColumns.forEach(col => {
+          if (filteredRow[col] !== undefined && filteredRow[col] !== null) {
+            payload[col] = filteredRow[col];
+          }
+        });
+        payload.file_name = fileName;
+        payload.upload_id = uploadId;
+        payload.team_name = filteredRow.team_name || '架空テスト高校';
+        payload.user_id = null;
+        return payload;
       };
 
-      try {
-        let targetTbl = tCase.table;
-        let payloadsToInsert = dbPayloads;
-        if (tCase.table === 'body_comp_data') {
-          const insTry = await safeBatchInsert(adminClient, 'body_comp_data', dbPayloads);
-          if (insTry.error) {
-            // Use the production baseball_data fallback for body_comp
-            targetTbl = 'baseball_data';
-            payloadsToInsert = dbPayloads.map(r => ({
-              file_name: `__bodycomp__::${tCase.fileName}`,
-              player_name: r.player_name,
-              team_name: r.team_name,
-              user_id: null,
-              date: r.date,
-              game_date: r.date,
-              upload_id: `${uploadId}::bodycomp::${ts}::${JSON.stringify(r)}`
-            }));
-          } else {
-            caseResult.insertedCount = insTry.count;
-          }
+      const ts = Date.now();
+      const templateSuite = [
+        {
+          name: 'combined (打撃統合テンプレ: 英語・日本語ヘッダー)',
+          table: 'baseball_data',
+          columns: COMBINED_COLUMNS,
+          fileName: `__fictional_template_test_combined_${ts}.csv`,
+          rawRows: [
+            { Date: '2026-09-01', 'Player Name': '架空 太郎', Team: '架空テスト高校', Grade: '3年', 'Bat Speed': 142.5, 'Exit Velocity': 155.0, 'Launch Angle': 24.0, Direction: -12.5, Distance: 110, 'Attack Angle': 12.5, 'Time to Contact': 0.15, 'On Plane Efficiency': 78.5, 'Peak Hand Speed': 35.0, 'Pitch Speed': 138.0 },
+            { '日付': '2026-09-02', 'チーム名': '架空テスト高校', '選手名': '架空 次郎', '学年': '2年', 'スイング速度': 135.2, '打球速度': 148.0, '打球角度': 21.5, '打球方向': 8.2, '飛距離': 102.0, 'アッパー': 11.0, 'スイング時間': 0.14, 'オンプレーン効率': 81.0, '手の最大速度': 33.5, '球速': 134.0 }
+          ],
+          expectedChecks: [
+            { player_name: '架空 太郎', date: '2026-09-01', team_name: '架空テスト高校', grade: '3年', bat_speed: 142.5, launch_speed: 155, launch_angle: 24, hc_x: -12.5, hit_distance_sc: 110, attack_angle: 12.5, time_to_contact: 0.15, on_plane_efficiency: 78.5, peak_hand_speed: 35, release_speed: 138 },
+            { player_name: '架空 次郎', date: '2026-09-02', team_name: '架空テスト高校', grade: '2年', bat_speed: 135.2, launch_speed: 148, launch_angle: 21.5, hc_x: 8.2, hit_distance_sc: 102, attack_angle: 11, time_to_contact: 0.14, on_plane_efficiency: 81, peak_hand_speed: 33.5, release_speed: 134 }
+          ]
+        },
+        {
+          name: 'blast (Blast打撃テンプレ: 英語・日本語ヘッダー)',
+          table: 'blast_data',
+          columns: BLAST_COLUMNS,
+          fileName: `__fictional_template_test_blast_${ts}.csv`,
+          rawRows: [
+            { Date: '2026-09-01', 'Player Name': '架空 太郎', 'Bat Speed': 142.5, 'Attack Angle': 12.5, 'On Plane Efficiency': 78.5, 'Connection Score': 60, 'Rotation Score': 65, 'Time to Contact': 0.15, 'Peak Hand Speed': 35.0, Power: 4.2, 'Vertical Bat Angle': 30.0 },
+            { '日付': '2026-09-02', '選手名': '架空 次郎', 'スイング速度': 138.0, 'アタックアングル': 10.5, 'オンプレーン効率': 80.0, 'コネクションスコア': 62, 'ローテーションスコア': 68, 'スイング時間': 0.14, '手の最大速度': 34.0, 'パワー': 3.9, '垂直バット角度': 28.5 }
+          ],
+          expectedChecks: [
+            { player_name: '架空 太郎', date: '2026-09-01', bat_speed: 142.5, attack_angle: 12.5, on_plane_efficiency: 78.5, connection_score: 60, rotation_score: 65, time_to_contact: 0.15, peak_hand_speed: 35, power: 4.2, vertical_bat_angle: 30 },
+            { player_name: '架空 次郎', date: '2026-09-02', bat_speed: 138, attack_angle: 10.5, on_plane_efficiency: 80, connection_score: 62, rotation_score: 68, time_to_contact: 0.14, peak_hand_speed: 34, power: 3.9, vertical_bat_angle: 28.5 }
+          ]
+        },
+        {
+          name: 'savant (Rapsodo打撃テンプレ: 英語・日本語ヘッダー)',
+          table: 'savant_data',
+          columns: SAVANT_COLUMNS,
+          fileName: `__fictional_template_test_savant_${ts}.csv`,
+          rawRows: [
+            { Date: '2026-09-01', 'Player Name': '架空 太郎', Team: '架空テスト高校', 'Exit Velocity': 155.0, 'Launch Angle': 24.0, Distance: 110, Direction: -12.5 },
+            { '日付': '2026-09-02', '選手名': '架空 次郎', 'チーム名': '架空テスト高校', '打球速度': 149.5, '打球角度': 19.0, '飛距離': 98.5, '打球方向': 5.0 }
+          ],
+          expectedChecks: [
+            { batter_name: '架空 太郎', game_date: '2026-09-01', team_name: '架空テスト高校', launch_speed: 155, launch_angle: 24, hit_distance_sc: 110, hc_x: -12.5 },
+            { batter_name: '架空 次郎', game_date: '2026-09-02', team_name: '架空テスト高校', launch_speed: 149.5, launch_angle: 19, hit_distance_sc: 98.5, hc_x: 5 }
+          ]
+        },
+        {
+          name: 'savant_pitching (Rapsodo投球テンプレ: 英語・日本語ヘッダー)',
+          table: 'pitching_data',
+          columns: PITCHING_COLUMNS,
+          fileName: `__fictional_template_test_pitching_${ts}.csv`,
+          rawRows: [
+            { Date: '2026-09-01', 'Pitcher Name': '架空 投手一', Team: '架空テスト高校', 'Pitch Type': 'Fastball', 'Pitch Speed': 145.0, 'Spin Rate': 2250, 'Spin Axis': '1:15', 'VB (trajectory)': 42.5, 'HB (trajectory)': 15.2, 'Release Height': 1.80, 'Release Side': 0.45 },
+            { '日付': '2026-09-02', 'チーム名': '架空テスト高校', '投手名': '架空 投手二', '学年': '3年', '球種': 'Slider', '球速': 128.5, '回転数': 2420, '回転軸': '9:42', '縦変化量': -5.0, '横変化量': -24.5, '回転効率': 54.0, 'リリース高度': 1.80, 'リリース横': 0.44 }
+          ],
+          expectedChecks: [
+            { pitcher_name: '架空 投手一', date: '2026-09-01', team_name: '架空テスト高校', pitch_type: 'Fastball', release_speed: 145, release_spin_rate: 2250, spin_axis: '1:15', vb_traj: 42.5, hb_traj: 15.2, release_pos_z: 1.8, release_pos_x: 0.45 },
+            { pitcher_name: '架空 投手二', date: '2026-09-02', team_name: '架空テスト高校', pitch_type: 'Slider', release_speed: 128.5, release_spin_rate: 2420, spin_axis: '9:42', vb_traj: -5, hb_traj: -24.5, spin_efficiency: 54, release_pos_z: 1.8, release_pos_x: 0.44 }
+          ]
+        },
+        {
+          name: 'body_comp (体組成テンプレ: 日本語・英語ヘッダー)',
+          table: 'body_comp_data',
+          columns: BODY_COMP_COLUMNS,
+          fileName: `__fictional_template_test_bodycomp_${ts}.csv`,
+          rawRows: [
+            { '日付': '2026-09-01', 'チーム名': '架空テスト高校', '選手名': '架空 太郎', '身長': 178.0, '体重': 78.5, '筋肉量': 62.0, '体脂肪率': 14.2, '基礎代謝量': 1750, 'BMI': 24.8, '体幹': 30.2, '左腕': 3.8, '右腕': 4.1, '左足': 9.8, '右足': 10.1 },
+            { Date: '2026-09-02', Team: '架空テスト高校', 'Player Name': '架空 次郎', Height: 175.0, Weight: 73.0, 'Muscle Mass': 58.0, 'Body Fat': 14.8, BMR: 1680, BMI: 23.8, Trunk: 28.2, 'Left Arm': 3.5, 'Right Arm': 3.7, 'Left Leg': 9.2, 'Right Leg': 9.4 }
+          ],
+          expectedChecks: [
+            { player_name: '架空 太郎', date: '2026-09-01', team_name: '架空テスト高校', height: 178, weight: 78.5, muscle_mass: 62, body_fat_pct: 14.2, bmr: 1750, bmi: 24.8, trunk_muscle: 30.2, left_arm_muscle: 3.8, right_arm_muscle: 4.1, left_leg_muscle: 9.8, right_leg_muscle: 10.1 },
+            { player_name: '架空 次郎', date: '2026-09-02', team_name: '架空テスト高校', height: 175, weight: 73, muscle_mass: 58, body_fat_pct: 14.8, bmr: 1680, bmi: 23.8, trunk_muscle: 28.2, left_arm_muscle: 3.5, right_arm_muscle: 3.7, left_leg_muscle: 9.2, right_leg_muscle: 9.4 }
+          ]
         }
+      ];
 
-        if (caseResult.insertedCount === 0) {
-          const ins = await safeBatchInsert(adminClient, targetTbl, payloadsToInsert);
-          caseResult.insertedCount = ins.count;
-          if (ins.error) {
-            caseResult.error = ins.error.message;
-          }
-        }
+      report.templateVerification = [];
+      for (const tCase of templateSuite) {
+        const uploadId = `verify@test.local::team:${encodeURIComponent('架空テスト高校')}::up-${ts}`;
+        const dbPayloads = tCase.rawRows.map(r => mapTemplateRowToDb(r, tCase.table, tCase.columns, tCase.fileName, uploadId));
+        let caseResult = {
+          template: tCase.name,
+          table: tCase.table,
+          fileName: tCase.fileName,
+          insertedCount: 0,
+          fetchedCount: 0,
+          allColumnsMatched: false,
+          mismatches: [],
+          cleanedUp: false
+        };
 
-        if (!caseResult.error) {
-          const queryFileName = targetTbl === 'baseball_data' && tCase.table === 'body_comp_data'
-            ? `__bodycomp__::${tCase.fileName}`
-            : tCase.fileName;
-          const { data: fetched } = await adminClient
-            .from(targetTbl)
-            .select('*')
-            .eq('file_name', queryFileName);
-          const sortedFetched = (fetched || []).sort((a, b) =>
-            String(a.date || a.game_date || '').localeCompare(String(b.date || b.game_date || ''))
-          ).map(r => {
-            if (targetTbl === 'baseball_data' && tCase.table === 'body_comp_data' && String(r.upload_id || '').includes('::bodycomp::')) {
-              const parts = String(r.upload_id).split('::');
-              try {
-                const parsed = JSON.parse(parts[parts.length - 1]);
-                return { ...r, ...parsed };
-              } catch {}
+        try {
+          let targetTbl = tCase.table;
+          let payloadsToInsert = dbPayloads;
+          if (tCase.table === 'body_comp_data') {
+            const insTry = await safeBatchInsert(adminClient, 'body_comp_data', dbPayloads);
+            if (insTry.error) {
+              // Use the production baseball_data fallback for body_comp
+              targetTbl = 'baseball_data';
+              payloadsToInsert = dbPayloads.map(r => {
+                const { upload_id: _u, file_name: _f, ...metricFields } = r;
+                return {
+                  file_name: `__bodycomp__::${tCase.fileName}`,
+                  player_name: r.player_name,
+                  team_name: r.team_name,
+                  user_id: null,
+                  date: r.date,
+                  game_date: r.date,
+                  upload_id: `${uploadId}::bodycomp::${ts}::${JSON.stringify(metricFields)}`
+                };
+              });
+            } else {
+              caseResult.insertedCount = insTry.count;
             }
-            return r;
-          });
-          caseResult.fetchedCount = sortedFetched.length;
+          }
 
-          const mismatches = [];
-          tCase.expectedChecks.forEach((exp, idx) => {
-            const actual = sortedFetched[idx] || {};
-            Object.entries(exp).forEach(([col, expVal]) => {
-              const actVal = actual[col];
-              if (typeof expVal === 'number') {
-                if (actVal == null || Math.abs(Number(actVal) - expVal) > 0.01) {
-                  mismatches.push(`Row ${idx + 1} ${col}: expected ${expVal}, got ${actVal}`);
-                }
-              } else if (String(actVal || '') !== String(expVal)) {
-                mismatches.push(`Row ${idx + 1} ${col}: expected "${expVal}", got "${actVal}"`);
+          if (caseResult.insertedCount === 0) {
+            const ins = await safeBatchInsert(adminClient, targetTbl, payloadsToInsert);
+            caseResult.insertedCount = ins.count;
+            if (ins.error) {
+              caseResult.error = ins.error.message;
+            }
+          }
+
+          if (!caseResult.error) {
+            const queryFileName = targetTbl === 'baseball_data' && tCase.table === 'body_comp_data'
+              ? `__bodycomp__::${tCase.fileName}`
+              : tCase.fileName;
+            const { data: fetched } = await adminClient
+              .from(targetTbl)
+              .select('*')
+              .eq('file_name', queryFileName);
+            const sortedFetched = (fetched || []).sort((a, b) =>
+              String(a.date || a.game_date || '').localeCompare(String(b.date || b.game_date || ''))
+            ).map(r => {
+              const uId = String(r.upload_id || '');
+              if (targetTbl === 'baseball_data' && tCase.table === 'body_comp_data' && uId.includes('::bodycomp::')) {
+                const bodyCompIdx = uId.indexOf('::bodycomp::');
+                const remainder = uId.slice(bodyCompIdx + '::bodycomp::'.length);
+                const parts = remainder.split('::');
+                const jsonPart = parts.slice(1).join('::');
+                try {
+                  const parsed = JSON.parse(jsonPart);
+                  return { ...r, ...parsed };
+                } catch {}
               }
+              return r;
             });
-          });
-          caseResult.mismatches = mismatches;
-          caseResult.allColumnsMatched = caseResult.fetchedCount === tCase.expectedChecks.length && mismatches.length === 0;
-        }
-      } finally {
-        // Always delete fictional test rows immediately after verification
-        await adminClient.from(tCase.table).delete().eq('file_name', tCase.fileName);
-        await adminClient.from('baseball_data').delete().eq('file_name', `__bodycomp__::${tCase.fileName}`);
-        const { data: checkRem1 } = await adminClient.from(tCase.table).select('id').eq('file_name', tCase.fileName);
-        const { data: checkRem2 } = await adminClient.from('baseball_data').select('id').eq('file_name', `__bodycomp__::${tCase.fileName}`);
-        caseResult.cleanedUp = (!checkRem1 || checkRem1.length === 0) && (!checkRem2 || checkRem2.length === 0);
-      }
+            caseResult.fetchedCount = sortedFetched.length;
 
-      report.templateVerification.push(caseResult);
+            const mismatches = [];
+            tCase.expectedChecks.forEach((exp, idx) => {
+              const actual = sortedFetched[idx] || {};
+              Object.entries(exp).forEach(([col, expVal]) => {
+                const actVal = actual[col];
+                if (typeof expVal === 'number') {
+                  if (actVal == null || Math.abs(Number(actVal) - expVal) > 0.01) {
+                    mismatches.push(`Row ${idx + 1} ${col}: expected ${expVal}, got ${actVal}`);
+                  }
+                } else if (String(actVal || '') !== String(expVal)) {
+                  mismatches.push(`Row ${idx + 1} ${col}: expected "${expVal}", got "${actVal}"`);
+                }
+              });
+            });
+            caseResult.mismatches = mismatches;
+            caseResult.allColumnsMatched = caseResult.fetchedCount === tCase.expectedChecks.length && mismatches.length === 0;
+          }
+        } finally {
+          // Always delete fictional test rows immediately after verification
+          await adminClient.from(tCase.table).delete().eq('file_name', tCase.fileName);
+          await adminClient.from('baseball_data').delete().eq('file_name', `__bodycomp__::${tCase.fileName}`);
+          const { data: checkRem1 } = await adminClient.from(tCase.table).select('id').eq('file_name', tCase.fileName);
+          const { data: checkRem2 } = await adminClient.from('baseball_data').select('id').eq('file_name', `__bodycomp__::${tCase.fileName}`);
+          caseResult.cleanedUp = (!checkRem1 || checkRem1.length === 0) && (!checkRem2 || checkRem2.length === 0);
+        }
+
+        report.templateVerification.push(caseResult);
+      }
+    } catch (verErr) {
+      report.templateVerificationError = verErr.message;
     }
-  } catch (verErr) {
-    report.templateVerificationError = verErr.message;
   }
 
   // 3. Fix handa@gerberiz.com's upload where LoginPage Step 1 had defaulted team_name to 'Team A'
@@ -816,9 +815,9 @@ export default async function handler(req, res) {
     }
     try {
       const adminClient = getAdminClient();
-      const { filename, table, repair } = req.query || {};
-      if (repair === '1') {
-        const repairReport = await repairDatabase(adminClient);
+      const { filename, table, repair, verify_templates } = req.query || {};
+      if (repair === '1' || verify_templates === '1') {
+        const repairReport = await repairDatabase(adminClient, { verifyTemplates: verify_templates === '1' });
         return res.status(200).json({ success: true, repairReport });
       }
 
