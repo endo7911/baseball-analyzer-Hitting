@@ -1006,9 +1006,9 @@ export default async function handler(req, res) {
     // 4. Remove from deleted files registry (so re-uploaded files show up immediately)
     await unTombstoneFile(adminClient, filename);
 
-    // 5. Record access log
+    // 5. Record access log (with baseball_data fallback)
     try {
-      await adminClient.from('access_logs').insert([{
+      const logEntry = {
         user_id: effectiveUserId && effectiveUserId.includes('-') ? effectiveUserId : null,
         email: uploaderEmail,
         team_id: userTeam,
@@ -1016,7 +1016,16 @@ export default async function handler(req, res) {
         status: 'success',
         details: { filename, type, table: targetTable, rowsCount: rows.length },
         created_at: new Date().toISOString()
-      }]);
+      };
+      const { error: logErr } = await adminClient.from('access_logs').insert([logEntry]);
+      if (logErr) {
+        await adminClient.from('baseball_data').insert([{
+          file_name: '__access_log__',
+          upload_id: `__log__::${Date.now()}::${JSON.stringify(logEntry)}`,
+          team_name: userTeam,
+          user_id: null
+        }]);
+      }
     } catch {}
 
     return res.status(200).json({

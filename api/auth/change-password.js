@@ -265,16 +265,25 @@ export default async function handler(req, res) {
       console.warn('Legacy password update error:', legErr);
     }
 
-    // 4. Log to access_logs
+    // 4. Log to access_logs (with baseball_data fallback)
     try {
-      await adminClient.from('access_logs').insert([{
+      const logEntry = {
         user_id: callerUserId && callerUserId.includes('-') ? callerUserId : null,
         email: cleanEmail,
         event_type: 'password_changed',
         status: 'info',
         details: { action: 'user_changed_password' },
         created_at: new Date().toISOString()
-      }]);
+      };
+      const { error: logErr } = await adminClient.from('access_logs').insert([logEntry]);
+      if (logErr) {
+        await adminClient.from('baseball_data').insert([{
+          file_name: '__access_log__',
+          upload_id: `__log__::${Date.now()}::${JSON.stringify(logEntry)}`,
+          team_name: 'System',
+          user_id: null
+        }]);
+      }
     } catch {}
 
     return res.status(200).json({

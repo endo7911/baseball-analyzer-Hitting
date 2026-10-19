@@ -165,6 +165,23 @@ async function saveLegacyUsers(adminClient, usersList) {
   }
 }
 
+async function recordLogEntry(adminClient, entry) {
+  try {
+    const { error } = await adminClient.from('access_logs').insert([entry]);
+    if (!error) return;
+  } catch {}
+  try {
+    await adminClient.from('baseball_data').insert([{
+      file_name: '__access_log__',
+      upload_id: `__log__::${Date.now()}::${JSON.stringify(entry)}`,
+      team_name: entry.team_id || 'System',
+      user_id: null
+    }]);
+  } catch (e) {
+    console.warn('recordLogEntry fallback error:', e);
+  }
+}
+
 
 // Helper to normalize username/email
 function normalizeIdentifier(rawId) {
@@ -248,22 +265,63 @@ export default async function handler(req, res) {
 
       // 1. Security Audit Logs
       if (type === 'logs') {
-        const emailFilter = req.query?.email;
-        let query = adminClient
-          .from('access_logs')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(300);
+        const emailFilter = (req.query?.email || '').toLowerCase().trim();
+        const allLogs = [];
 
-        if (emailFilter && emailFilter !== 'all') {
-          query = query.eq('email', emailFilter.toLowerCase().trim());
-        }
+        // 1a. Try dedicated access_logs table
+        try {
+          let query = adminClient
+            .from('access_logs')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(300);
 
-        const { data: logs, error: lError } = await query;
-        if (lError) {
-          return res.status(200).json({ logs: [] });
-        }
-        return res.status(200).json({ logs: logs || [] });
+          if (emailFilter && emailFilter !== 'all') {
+            query = query.eq('email', emailFilter);
+          }
+
+          const { data: dedicatedLogs } = await query;
+          if (Array.isArray(dedicatedLogs)) {
+            allLogs.push(...dedicatedLogs);
+          }
+        } catch {}
+
+        // 1b. Fetch from baseball_data (__access_log__)
+        try {
+          const { data: fbRows } = await adminClient
+            .from('baseball_data')
+            .select('id, upload_id, created_at')
+            .eq('file_name', '__access_log__')
+            .order('created_at', { ascending: false })
+            .limit(500);
+
+          if (Array.isArray(fbRows)) {
+            fbRows.forEach(r => {
+              const uId = String(r.upload_id || '');
+              if (uId.includes('::')) {
+                const parts = uId.split('::');
+                const jsonStr = parts.slice(2).join('::') || parts.slice(1).join('::');
+                try {
+                  const parsed = JSON.parse(jsonStr);
+                  if (parsed && parsed.event_type) {
+                    if (!emailFilter || emailFilter === 'all' || (parsed.email || '').toLowerCase() === emailFilter) {
+                      allLogs.push({
+                        ...parsed,
+                        id: parsed.id || r.id,
+                        created_at: parsed.created_at || r.created_at
+                      });
+                    }
+                  }
+                } catch {}
+              }
+            });
+          }
+        } catch {}
+
+        // Sort by created_at descending
+        allLogs.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+        return res.status(200).json({ logs: allLogs.slice(0, 300) });
       }
 
       // 2. Return User Profiles & Migration Status (Merged from Profiles & Legacy Store)
@@ -514,19 +572,15 @@ export default async function handler(req, res) {
         }
 
         // 5. Log to access_logs (non-blocking)
-        try {
-          await adminClient.from('access_logs').insert([{
-            user_id: finalUserId,
-            email,
-            team_id: team_id || 'Team A',
-            event_type: 'migrated_to_auth',
-            status: 'success',
-            details: { admin_action: true, issuer: authCheck.adminUser.email },
-            created_at: new Date().toISOString()
-          }]);
-        } catch (logErr) {
-          console.warn('access_logs insert error:', logErr);
-        }
+        await recordLogEntry(adminClient, {
+          user_id: finalUserId,
+          email,
+          team_id: team_id || 'Team A',
+          event_type: 'migrated_to_auth',
+          status: 'success',
+          details: { admin_action: true, issuer: authCheck.adminUser.email },
+          created_at: new Date().toISOString()
+        });
 
         return res.status(200).json({
           message: `「${username}」を Supabase Auth に個別移行しました。`,
@@ -690,19 +744,15 @@ export default async function handler(req, res) {
         }
 
         // 4. Record in access_logs
-        try {
-          await adminClient.from('access_logs').insert([{
-            user_id: finalUserId || null,
-            email: cleanEmail,
-            team_id: req.body.team_id || 'Team A',
-            event_type: 'temp_password_issued',
-            status: 'warning',
-            details: { issuer: authCheck.adminUser.email, expires_at: expiresAt },
-            created_at: new Date().toISOString()
-          }]);
-        } catch (logErr) {
-          console.warn('temp_password access_logs insert error:', logErr);
-        }
+        await recordLogEntry(adminClient, {
+          user_id: finalUserId || null,
+          email: cleanEmail,
+          team_id: req.body.team_id || 'Team A',
+          event_type: 'temp_password_issued',
+          status: 'warning',
+          details: { issuer: authCheck.adminUser.email, expires_at: expiresAt },
+          created_at: new Date().toISOString()
+        });
 
         return res.status(200).json({
           message: 'Temporary password issued.',

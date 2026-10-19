@@ -171,14 +171,52 @@ function AdminPanel() {
       setLogs(data.logs || []);
     } catch (err) {
       console.error("Fetch logs error:", err);
-      // Fallback: direct Supabase query
+      // Fallback: direct query from baseball_data (__access_log__) + access_logs
       try {
-        let q = supabase.from('access_logs').select('*').order('created_at', { ascending: false }).limit(200);
-        if (logAccountFilter !== 'all') {
-          q = q.eq('email', logAccountFilter.toLowerCase().trim());
-        }
-        const { data: fbLogs } = await q;
-        setLogs(fbLogs || []);
+        const cleanFilter = logAccountFilter.toLowerCase().trim();
+        const logsList = [];
+        try {
+          let q = supabase.from('access_logs').select('*').order('created_at', { ascending: false }).limit(200);
+          if (cleanFilter !== 'all') {
+            q = q.eq('email', cleanFilter);
+          }
+          const { data: fbLogs } = await q;
+          if (Array.isArray(fbLogs)) logsList.push(...fbLogs);
+        } catch {}
+
+        try {
+          const { data: fbRows } = await supabase
+            .from('baseball_data')
+            .select('id, upload_id, created_at')
+            .eq('file_name', '__access_log__')
+            .order('created_at', { ascending: false })
+            .limit(300);
+
+          if (Array.isArray(fbRows)) {
+            fbRows.forEach(r => {
+              const uId = String(r.upload_id || '');
+              if (uId.includes('::')) {
+                const parts = uId.split('::');
+                const jsonStr = parts.slice(2).join('::') || parts.slice(1).join('::');
+                try {
+                  const parsed = JSON.parse(jsonStr);
+                  if (parsed && parsed.event_type) {
+                    if (cleanFilter === 'all' || (parsed.email || '').toLowerCase() === cleanFilter) {
+                      logsList.push({
+                        ...parsed,
+                        id: parsed.id || r.id,
+                        created_at: parsed.created_at || r.created_at
+                      });
+                    }
+                  }
+                } catch {}
+              }
+            });
+          }
+        } catch {}
+
+        logsList.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        setLogs(logsList);
       } catch (fbErr) {
         setLogs([]);
       }
@@ -1135,7 +1173,10 @@ function AdminPanel() {
                         password_changed: 'パスワード変更',
                         account_disabled_try: '停止中アカウントによるログイン試行',
                         migrated_to_auth: 'Supabase Authへ移行完了',
-                        data_upload: 'データ保存'
+                        account_migrated: 'アカウント移行',
+                        temp_password_issued: '仮パスワード発行',
+                        data_upload: 'データ保存',
+                        data_deleted: 'データ削除'
                       };
 
                       return (

@@ -292,9 +292,9 @@ export default async function handler(req, res) {
       }]);
     } catch {}
 
-    // Log deletion in access_logs
+    // Log deletion in access_logs (with baseball_data fallback)
     try {
-      await adminClient.from('access_logs').insert([{
+      const logEntry = {
         user_id: callerAuth.user?.id && callerAuth.user.id.includes('-') ? callerAuth.user.id : null,
         email: userEmail || 'unknown',
         team_id: userTeam || 'Team A',
@@ -302,7 +302,16 @@ export default async function handler(req, res) {
         status: 'info',
         details: { filename, table, isAdmin, totalDeleted },
         created_at: new Date().toISOString()
-      }]);
+      };
+      const { error: logErr } = await adminClient.from('access_logs').insert([logEntry]);
+      if (logErr) {
+        await adminClient.from('baseball_data').insert([{
+          file_name: '__access_log__',
+          upload_id: `__log__::${Date.now()}::${JSON.stringify(logEntry)}`,
+          team_name: userTeam || 'Team A',
+          user_id: null
+        }]);
+      }
     } catch {}
 
     return res.status(200).json({
