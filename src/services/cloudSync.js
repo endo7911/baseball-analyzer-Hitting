@@ -1088,6 +1088,17 @@ export function mergeDatasetFiles(files, { user, profile }) {
           }
         }
 
+        // Normalize team_name if it was saved as an email address or generic tag
+        const currentExplicitTeam = profile?.team_name || profile?.team_id;
+        let rowTeam = String(row.team_name || row['チーム名'] || row['Team'] || '').trim();
+        if (rowTeam.includes('@') || rowTeam === '管理者' || rowTeam.toLowerCase() === 'admin' || rowTeam === 'Unknown Team') {
+          if (!isAdmin && currentExplicitTeam && currentExplicitTeam !== 'Unknown Team') {
+            row.team_name = currentExplicitTeam;
+            if (row['チーム名'] !== undefined) row['チーム名'] = currentExplicitTeam;
+            if (row['Team'] !== undefined) row['Team'] = currentExplicitTeam;
+          }
+        }
+
         safeRows.push(row);
       });
     }

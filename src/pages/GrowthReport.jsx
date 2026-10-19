@@ -305,12 +305,19 @@ export default function GrowthReport({
   const { teams, dates } = useMemo(() => {
     const teamSet = new Set();
     const dateSet = new Set();
+    const fallbackUserTeam = profile?.team_name || profile?.team_id || '';
 
     activeRows.forEach(r => {
       if (!r) return;
-      const t = category === 'bodyComp'
+      let t = category === 'bodyComp'
         ? (getBodyTeam(r) || getRawDataValue(r, TEAM_KEYS))
         : getRawDataValue(r, TEAM_KEYS);
+
+      // メールアドレスやシステム文字列がチーム名に入っていた場合は所属チーム名に自動補正
+      if (t && (t.includes('@') || t === '管理者' || t === 'admin' || String(t).toLowerCase() === 'admin')) {
+        t = fallbackUserTeam || t;
+      }
+
       if (t && t !== 'Unknown Team') teamSet.add(String(t).trim());
 
       const d = category === 'bodyComp'
@@ -324,7 +331,7 @@ export default function GrowthReport({
       teams: Array.from(teamSet).sort(),
       dates: sortedDates
     };
-  }, [activeRows, category]);
+  }, [activeRows, category, profile]);
 
   // 日付一覧が変わったら beforeDate / afterDate の初期値を設定
   useEffect(() => {
@@ -348,12 +355,19 @@ export default function GrowthReport({
   // 選手ごと・日付ごとの集計データを構築
   const playerGrowthList = useMemo(() => {
     const byPlayer = new Map();
+    const fallbackUserTeam = profile?.team_name || profile?.team_id || '';
 
     activeRows.forEach(r => {
       if (!r) return;
-      const team = category === 'bodyComp'
+      let team = category === 'bodyComp'
         ? (getBodyTeam(r) || getRawDataValue(r, TEAM_KEYS) || '')
         : (getRawDataValue(r, TEAM_KEYS) || '');
+
+      // メールアドレスやシステム文字列がチーム名に入っていた場合は所属チーム名に自動補正
+      if (team && (team.includes('@') || team === '管理者' || team === 'admin' || String(team).toLowerCase() === 'admin')) {
+        team = fallbackUserTeam || team;
+      }
+
       if (selectedTeam !== 'ALL' && String(team).trim() !== selectedTeam) return;
 
       let rawName = '';
@@ -380,7 +394,9 @@ export default function GrowthReport({
         });
       }
       const pEntry = byPlayer.get(playerName);
-      if (!pEntry.team && team) pEntry.team = String(team).trim();
+      if ((!pEntry.team || pEntry.team.includes('@')) && team) {
+        pEntry.team = String(team).trim();
+      }
       pEntry.allRows.push(r);
 
       if (!pEntry.byDate.has(d)) {
