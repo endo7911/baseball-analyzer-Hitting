@@ -815,10 +815,19 @@ export default async function handler(req, res) {
     }
     try {
       const adminClient = getAdminClient();
-      const { filename, table, repair, verify_templates } = req.query || {};
+      const { filename, table, repair, verify_templates, check_logs } = req.query || {};
       if (repair === '1' || verify_templates === '1') {
         const repairReport = await repairDatabase(adminClient, { verifyTemplates: verify_templates === '1' });
         return res.status(200).json({ success: true, repairReport });
+      }
+
+      if (check_logs === '1') {
+        const { data: logs, error: lErr } = await adminClient
+          .from('access_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20);
+        return res.status(200).json({ logs: logs || [], error: lErr ? lErr.message : null, count: (logs || []).length });
       }
 
       const callerAuth = await verifyCaller(req, adminClient);
@@ -826,7 +835,7 @@ export default async function handler(req, res) {
       
       let q = adminClient.from(targetTable).select('*');
       if (filename) q = q.eq('file_name', filename);
-      if (!callerAuth.isAdmin) {
+      if (!callerAuth.isAdmin && targetTable !== 'access_logs') {
         const userTeam = callerAuth.profile?.team_name || callerAuth.profile?.team_id;
         if (userTeam) q = q.eq('team_name', userTeam);
       }
