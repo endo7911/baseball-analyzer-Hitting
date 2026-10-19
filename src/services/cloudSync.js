@@ -68,60 +68,72 @@ export async function saveDatasetToCloud({ type, dataObj, user, profile }) {
           const normalizedKey = key.trim();
           const lowerKey = normalizedKey.toLowerCase();
 
+          // 1. Exact match in COLUMN_MAP (case-insensitive)
           let mapKey = Object.keys(COLUMN_MAP).find(k => normalizedKey === k || lowerKey === k.toLowerCase());
-          if (!mapKey) {
-            mapKey = Object.keys(COLUMN_MAP).find(k => k.length >= 2 && (normalizedKey.includes(k) || lowerKey.includes(k.toLowerCase())));
-          }
           if (mapKey) {
             targetKey = COLUMN_MAP[mapKey];
+          } else if (targetColumns.includes(normalizedKey)) {
+            // 2. Already a valid DB column name (e.g. plate_x, events, hc_x)
+            targetKey = normalizedKey;
+          } else if (targetColumns.includes(lowerKey)) {
+            targetKey = lowerKey;
+          } else {
+            // 3. Substring match fallback only for longer keys (>= 4 chars for ASCII, >= 2 chars for Japanese)
+            // so 2-letter abbreviations like 'LA', 'EV', 'AA', 'VB', 'HB' never false-match unrelated columns
+            mapKey = Object.keys(COLUMN_MAP).find(k => {
+              const isAscii = /^[a-zA-Z0-9\s_()%-]+$/.test(k);
+              const minLen = isAscii ? 4 : 2;
+              return k.length >= minLen && (normalizedKey.includes(k) || lowerKey.includes(k.toLowerCase()));
+            });
+            if (mapKey) {
+              targetKey = COLUMN_MAP[mapKey];
+            }
           }
 
-          if (targetColumns.includes(targetKey)) {
-            const val = row[key];
+          const val = row[key];
 
-            const numericColumns = [
-              'launch_speed', 'launch_angle', 'bat_speed', 'attack_angle',
-              'release_speed', 'release_spin_rate', 'hit_distance_sc',
-              'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle',
-              'on_plane_efficiency', 'rotation_score', 'on_plane_score', 'connection_score',
-              'rotation_acceleration', 'connection_at_impact', 'connection_at_address', 'bat_angle',
-              'hc_x', 'hc_y', 'pfx_x', 'pfx_z', 'plate_x', 'plate_z',
-              'vx0', 'vy0', 'vz0', 'ax', 'ay', 'az', 'sz_top', 'sz_bot',
-              'effective_speed', 'release_extension', 'delta_home_win_exp', 'delta_run_exp',
-              'release_pos_x', 'release_pos_y', 'release_pos_z', 'vaa', 'haa',
-              'attack_direction', 'estimated_woba_using_speedangle', 'swing_length',
-              'zone', 'balls', 'strikes', 'game_year', 'outs_when_up', 'inning',
-              'spin_efficiency', 'gyro_angle', 'vb_traj', 'hb_traj',
-              'height', 'weight', 'muscle_mass', 'body_fat_pct', 'bmr', 'bmi',
-              'trunk_muscle', 'left_arm_muscle', 'right_arm_muscle', 'left_leg_muscle', 'right_leg_muscle', 'ffmi'
-            ];
+          const numericColumns = [
+            'launch_speed', 'launch_angle', 'bat_speed', 'attack_angle',
+            'release_speed', 'release_spin_rate', 'hit_distance_sc',
+            'time_to_contact', 'peak_hand_speed', 'power', 'vertical_bat_angle',
+            'on_plane_efficiency', 'rotation_score', 'on_plane_score', 'connection_score',
+            'rotation_acceleration', 'connection_at_impact', 'connection_at_address', 'bat_angle',
+            'hc_x', 'hc_y', 'pfx_x', 'pfx_z', 'plate_x', 'plate_z',
+            'vx0', 'vy0', 'vz0', 'ax', 'ay', 'az', 'sz_top', 'sz_bot',
+            'effective_speed', 'release_extension', 'delta_home_win_exp', 'delta_run_exp',
+            'release_pos_x', 'release_pos_y', 'release_pos_z', 'vaa', 'haa',
+            'attack_direction', 'estimated_woba_using_speedangle', 'swing_length',
+            'zone', 'balls', 'strikes', 'game_year', 'outs_when_up', 'inning',
+            'spin_efficiency', 'gyro_angle', 'vb_traj', 'hb_traj',
+            'height', 'weight', 'muscle_mass', 'body_fat_pct', 'bmr', 'bmi',
+            'trunk_muscle', 'left_arm_muscle', 'right_arm_muscle', 'left_leg_muscle', 'right_leg_muscle', 'ffmi'
+          ];
 
-            if (numericColumns.includes(targetKey)) {
-              const strVal = val != null ? String(val).trim() : '';
-              if (
-                val === null || val === undefined || strVal === '' ||
-                strVal === '-' || strVal === '---' || strVal === 'ー' ||
-                strVal.startsWith('#') || strVal.toLowerCase() === 'nan' || strVal.toLowerCase() === 'n/a'
-              ) {
-                if (filteredRow[targetKey] === undefined) {
-                  filteredRow[targetKey] = null;
-                }
-              } else {
-                const ascii = toAsciiNumbers(strVal);
-                const cleaned = String(ascii).replace(/[^-0-9.]/g, '');
-                const num = parseFloat(cleaned);
-                if (!isNaN(num) && isFinite(num)) {
-                  filteredRow[targetKey] = num;
-                } else if (filteredRow[targetKey] === undefined) {
-                  filteredRow[targetKey] = null;
-                }
+          if (numericColumns.includes(targetKey)) {
+            const strVal = val != null ? String(val).trim() : '';
+            if (
+              val === null || val === undefined || strVal === '' ||
+              strVal === '-' || strVal === '---' || strVal === 'ー' ||
+              strVal.startsWith('#') || strVal.toLowerCase() === 'nan' || strVal.toLowerCase() === 'n/a'
+            ) {
+              if (filteredRow[targetKey] === undefined) {
+                filteredRow[targetKey] = null;
               }
             } else {
-              if (val != null && val !== '') {
-                filteredRow[targetKey] = val;
+              const ascii = toAsciiNumbers(strVal);
+              const cleaned = String(ascii).replace(/[^-0-9.]/g, '');
+              const num = parseFloat(cleaned);
+              if (!isNaN(num) && isFinite(num)) {
+                filteredRow[targetKey] = num;
               } else if (filteredRow[targetKey] === undefined) {
                 filteredRow[targetKey] = null;
               }
+            }
+          } else {
+            if (val != null && val !== '') {
+              filteredRow[targetKey] = val;
+            } else if (filteredRow[targetKey] === undefined) {
+              filteredRow[targetKey] = null;
             }
           }
         });
@@ -832,6 +844,9 @@ export async function fetchDatasetsFromCloud({ user, profile }) {
         row.game_date = normD;
       }
 
+      if (!row.player_name && row.batter_name) row.player_name = row.batter_name;
+      if (!row.batter_name && row.player_name) row.batter_name = row.player_name;
+
       const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);
       if (evVal != null) {
         row.launch_speed = evVal;
@@ -980,6 +995,9 @@ export function mergeDatasetFiles(files, { user, profile }) {
           row.date = normD;
           row.game_date = normD;
         }
+
+        if (!row.player_name && row.batter_name) row.player_name = row.batter_name;
+        if (!row.batter_name && row.player_name) row.batter_name = row.player_name;
 
         if (row.launch_speed == null) {
           const evVal = extractRowVal(row, ['launch_speed', 'exit_velocity', 'ExitVelocity', 'Exit Velocity', '打球速度', '打球初速', '打球スピード']);

@@ -338,7 +338,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
             type: 'savant',
             filename: name,
             updated_at: updatedAt,
-            is_legacy: true,
+            is_legacy: false,
             table: 'savant_data',
             count: savantMeta?.count || 1
           });
@@ -348,7 +348,7 @@ function CloudDataManager({ updateDataState, profile, syncState, fetchFromCloud 
             type: 'blast',
             filename: name,
             updated_at: updatedAt,
-            is_legacy: true,
+            is_legacy: false,
             table: 'blast_data',
             count: blastMeta?.count || 1
           });

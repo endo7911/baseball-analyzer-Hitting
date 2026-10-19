@@ -266,9 +266,11 @@ export const COLUMN_MAP = {
   'hbreak_traj': 'hb_traj',
   // リリース位置
   'リリース高度': 'release_pos_z',
+  'リリース高': 'release_pos_z',
   'Release Height': 'release_pos_z',
   'ReleaseHeight': 'release_pos_z',
   'release_pos_z': 'release_pos_z',
+  'リリース横': 'release_pos_x',
   'リリース幅': 'release_pos_x',
   'Release Side': 'release_pos_x',
   'ReleaseSide': 'release_pos_x',
