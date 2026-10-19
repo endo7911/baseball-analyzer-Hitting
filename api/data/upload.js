@@ -822,12 +822,48 @@ export default async function handler(req, res) {
       }
 
       if (check_logs === '1') {
-        const { data: logs, error: lErr } = await adminClient
-          .from('access_logs')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(20);
-        return res.status(200).json({ logs: logs || [], error: lErr ? lErr.message : null, count: (logs || []).length });
+        const testId = `test_log_${Date.now()}`;
+        const testPayload = {
+          id: testId,
+          email: 'test@system.local',
+          team_id: 'System',
+          event_type: 'login_success',
+          status: 'info',
+          user_agent: 'VerificationAgent/1.0',
+          details: { check: true },
+          created_at: new Date().toISOString()
+        };
+        // 1. Test insert
+        let writeError = null;
+        try {
+          await adminClient.from('baseball_data').insert([{
+            file_name: '__access_log__',
+            upload_id: `__log__::${Date.now()}::${JSON.stringify(testPayload)}`,
+            team_name: 'System',
+            user_id: null
+          }]);
+        } catch (e) {
+          writeError = e.message;
+        }
+
+        // 2. Test read
+        const { data: readRows } = await adminClient
+          .from('baseball_data')
+          .select('id, upload_id, created_at')
+          .eq('file_name', '__access_log__')
+          .ilike('upload_id', `%${testId}%`);
+
+        // 3. Clean up test log immediately
+        if (Array.isArray(readRows) && readRows.length > 0) {
+          await adminClient.from('baseball_data').delete().in('id', readRows.map(r => r.id));
+        }
+
+        return res.status(200).json({
+          logSystemWorking: !writeError && Array.isArray(readRows) && readRows.length > 0,
+          canWrite: !writeError,
+          canRead: Array.isArray(readRows) && readRows.length > 0,
+          cleanedTestLog: true
+        });
       }
 
       const callerAuth = await verifyCaller(req, adminClient);
