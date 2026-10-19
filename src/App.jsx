@@ -377,22 +377,58 @@ function App() {
   const handleLogin = (u, p) => { setUser(u); setProfile(p); };
 
   const handleLogout = async () => {
-    sessionStorage.removeItem('mockUser');
-    sessionStorage.removeItem('mockProfile');
-    localStorage.removeItem('mockUser');
-    localStorage.removeItem('mockProfile');
-
+    // 1. Immediately wipe all cached user data and Supabase tokens from storage
     try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.error('Sign out error:', e);
+      sessionStorage.removeItem('mockUser');
+      sessionStorage.removeItem('mockProfile');
+      localStorage.removeItem('mockUser');
+      localStorage.removeItem('mockProfile');
+      localStorage.removeItem('baseball_current_user');
+
+      const clearAuthTokens = (storage) => {
+        const toRemove = [];
+        for (let i = 0; i < storage.length; i++) {
+          const k = storage.key(i);
+          if (k && (k.startsWith('sb-') || k.includes('auth-token') || k.includes('supabase.auth'))) {
+            toRemove.push(k);
+          }
+        }
+        toRemove.forEach(k => storage.removeItem(k));
+      };
+      clearAuthTokens(localStorage);
+      clearAuthTokens(sessionStorage);
+    } catch (storageErr) {
+      console.warn('Storage wipe error on logout:', storageErr);
     }
-    setUser(null); setProfile(null);
-    setSavantFiles([]); setSavantPitchingFiles([]); setBlastFiles([]); setCombinedFiles([]); setBodyCompFiles([]);
-    setCloudSavantFiles([]); setCloudSavantPitchingFiles([]); setCloudBlastFiles([]); setCloudCombinedFiles([]); setCloudBodyCompFiles([]);
+
+    // 2. Immediately reset state so UI switches to LoginPage instantly (0ms)
+    setUser(null);
+    setProfile(null);
+    setShowAccountModal(false);
+    setIsMenuOpen(false);
+    setSavantFiles([]);
+    setSavantPitchingFiles([]);
+    setBlastFiles([]);
+    setCombinedFiles([]);
+    setBodyCompFiles([]);
+    setCloudSavantFiles([]);
+    setCloudSavantPitchingFiles([]);
+    setCloudBlastFiles([]);
+    setCloudCombinedFiles([]);
+    setCloudBodyCompFiles([]);
     setAnalysisState({ team: '', player: '' });
     setActiveView('upload');
-    await clearLocalDB();
+
+    // 3. Trigger Supabase signOut in background with timeout guard so network latency never blocks UI
+    try {
+      Promise.race([
+        supabase.auth.signOut(),
+        new Promise(resolve => setTimeout(resolve, 800))
+      ]).catch(e => console.warn('Non-blocking signOut notice:', e));
+    } catch {}
+
+    // 4. Background cleanup of IndexedDB
+    clearLocalDB().catch(e => console.warn('clearLocalDB error:', e));
   };
 
   // Concurrency guard to prevent overlapping cloud sync requests
@@ -618,7 +654,7 @@ function App() {
   };
 
   const applyProfileUpdateToState = (authoritativeUpdate) => {
-    if (!authoritativeUpdate) return;
+    if (!authoritativeUpdate || !user) return;
     if (authoritativeUpdate.is_disabled === true) {
       localStorage.removeItem('mockUser');
       localStorage.removeItem('mockProfile');

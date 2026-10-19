@@ -285,6 +285,7 @@ function AccountModal({ isOpen, onClose, profile, onLogout }) {
           <span className="text-[11px] text-slate-500">Baseball Analyzer v2.0</span>
           {onLogout && (
             <button
+              type="button"
               onClick={() => {
                 onClose();
                 onLogout();

@@ -144,14 +144,24 @@ function Sidebar({
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <button
-              onClick={onOpenAccount}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (setIsOpen) setIsOpen(false);
+                onOpenAccount();
+              }}
               title="パスワード変更"
               className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition cursor-pointer"
             >
               <KeyRound className="w-4 h-4" />
             </button>
             <button 
-              onClick={onLogout} 
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (setIsOpen) setIsOpen(false);
+                onLogout();
+              }} 
               title="ログアウト" 
               className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition cursor-pointer"
             >
