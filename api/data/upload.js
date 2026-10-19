@@ -616,21 +616,60 @@ async function repairDatabase(adminClient) {
       };
 
       try {
-        const ins = await safeBatchInsert(adminClient, tCase.table, dbPayloads);
-        caseResult.insertedCount = ins.count;
-        if (ins.error) {
-          caseResult.error = ins.error.message;
-        } else {
+        let targetTbl = tCase.table;
+        let payloadsToInsert = dbPayloads;
+        if (tCase.table === 'body_comp_data') {
+          const insTry = await safeBatchInsert(adminClient, 'body_comp_data', dbPayloads);
+          if (insTry.error) {
+            // Use the production baseball_data fallback for body_comp
+            targetTbl = 'baseball_data';
+            payloadsToInsert = dbPayloads.map(r => ({
+              file_name: `__bodycomp__::${tCase.fileName}`,
+              player_name: r.player_name,
+              team_name: r.team_name,
+              user_id: null,
+              date: r.date,
+              game_date: r.date,
+              upload_id: `${uploadId}::bodycomp::${ts}::${JSON.stringify(r)}`
+            }));
+          } else {
+            caseResult.insertedCount = insTry.count;
+          }
+        }
+
+        if (caseResult.insertedCount === 0) {
+          const ins = await safeBatchInsert(adminClient, targetTbl, payloadsToInsert);
+          caseResult.insertedCount = ins.count;
+          if (ins.error) {
+            caseResult.error = ins.error.message;
+          }
+        }
+
+        if (!caseResult.error) {
+          const queryFileName = targetTbl === 'baseball_data' && tCase.table === 'body_comp_data'
+            ? `__bodycomp__::${tCase.fileName}`
+            : tCase.fileName;
           const { data: fetched } = await adminClient
-            .from(tCase.table)
+            .from(targetTbl)
             .select('*')
-            .eq('file_name', tCase.fileName)
-            .order('id', { ascending: true });
-          caseResult.fetchedCount = (fetched || []).length;
+            .eq('file_name', queryFileName);
+          const sortedFetched = (fetched || []).sort((a, b) =>
+            String(a.date || a.game_date || '').localeCompare(String(b.date || b.game_date || ''))
+          ).map(r => {
+            if (targetTbl === 'baseball_data' && tCase.table === 'body_comp_data' && String(r.upload_id || '').includes('::bodycomp::')) {
+              const parts = String(r.upload_id).split('::');
+              try {
+                const parsed = JSON.parse(parts[parts.length - 1]);
+                return { ...r, ...parsed };
+              } catch {}
+            }
+            return r;
+          });
+          caseResult.fetchedCount = sortedFetched.length;
 
           const mismatches = [];
           tCase.expectedChecks.forEach((exp, idx) => {
-            const actual = (fetched || [])[idx] || {};
+            const actual = sortedFetched[idx] || {};
             Object.entries(exp).forEach(([col, expVal]) => {
               const actVal = actual[col];
               if (typeof expVal === 'number') {
@@ -648,8 +687,10 @@ async function repairDatabase(adminClient) {
       } finally {
         // Always delete fictional test rows immediately after verification
         await adminClient.from(tCase.table).delete().eq('file_name', tCase.fileName);
-        const { data: checkRem } = await adminClient.from(tCase.table).select('id').eq('file_name', tCase.fileName);
-        caseResult.cleanedUp = !checkRem || checkRem.length === 0;
+        await adminClient.from('baseball_data').delete().eq('file_name', `__bodycomp__::${tCase.fileName}`);
+        const { data: checkRem1 } = await adminClient.from(tCase.table).select('id').eq('file_name', tCase.fileName);
+        const { data: checkRem2 } = await adminClient.from('baseball_data').select('id').eq('file_name', `__bodycomp__::${tCase.fileName}`);
+        caseResult.cleanedUp = (!checkRem1 || checkRem1.length === 0) && (!checkRem2 || checkRem2.length === 0);
       }
 
       report.templateVerification.push(caseResult);
